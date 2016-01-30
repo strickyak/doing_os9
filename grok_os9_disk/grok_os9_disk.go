@@ -1,3 +1,14 @@
+/*
+  Grok and extract the contnts of a Microware OS-9 (or NitrOS9) disk image (at least, for Motorola 6809).
+
+  Usage:
+
+    go run grok_os9_disk.go [target_dirname] < nitros9/nos96809l1v030208coco_40d_1.dsk
+
+  The command will list and explain the contents of the OS9 disk image on its stdin.
+
+  If an argument is provided, the disk will be unbundled into that Posix directory on your host system.
+*/
 package main
 
 import D "github.com/strickyak/doing_os9"
