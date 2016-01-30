@@ -60,6 +60,14 @@ func PrintInode(inode int, path string) {
     at := D.FindInt(D.SegmentEntry, bb, "FDSL.A")
     segs := D.FindInt(D.SegmentEntry, bb, "FDSL.B")
     if segs == 0 { continue }
+
+    // Grr. Some flawed disks let me this heuristic hack.
+    if at > 1000000 || segs > 1000 {
+      fmt.Printf("ERROR: FLAWED SEGMENT TABLE: %d %d\n", at, segs)
+      break
+    }
+
+
     segments = append(segments, Segment{at, segs})
     fmt.Printf("=== Segment %d ===\n", i)
     D.PrintRecords(D.SegmentEntry, bb)
@@ -83,17 +91,20 @@ func PrintInode(inode int, path string) {
         size -= segsize
       }
 
+      nth := 0
       for i := 0; i*32 < segsize; i++ {
         bb = ReadAtLen(p.At*256 + i*32, 32)
         fd := D.FindInt(D.DirEntry, bb, "DIR.FD")
         if fd == 0 { continue }
         D.PrintRecords(D.DirEntry, bb)
         name := D.FindString(D.DirEntry, bb, "DIR.NM")
-        if name != "." && name != ".." {
+        // Grr. Some flawed disks led me to the "nth >= 2" heuristic hack.
+        if name != "." && name != ".." && nth >= 2 {
           subName := path + "/" + name
           if path == "/" { subName = "/" + name }
           subs = append(subs, PairIS{fd, subName})
         }
+        nth++
       }
     }
     for _, p := range subs {

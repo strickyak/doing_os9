@@ -215,7 +215,7 @@ var FileDescSector = []Record {
   {  1, "d", "FD.LNK", "Link count" },
   {  4, "d", "FD.SIZ", "File size" },
   {  3, "T", "FD.Creat", "File creation date (YY/MM/DD)" },
-  {  1, "@", "FD.SEG", "Beginning of segment list" },
+  {  0, "@", "FD.SEG", "Beginning of segment list" },
 }
 
 //* Segment List Entry Format
