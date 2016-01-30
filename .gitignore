@@ -3,6 +3,10 @@
 *.a
 *.so
 
+# RCS
+*,v
+RCS/
+
 # Folders
 _obj
 _test
