@@ -156,12 +156,12 @@ func (o *M) Branch(cond bool) {
 // define IMMBYTE(b) b=mem[o.pc++];
 // define IMMWORD(w) {w=GETWORD(o.pc);o.pc+=2;}
 
-// define PUSHBYTE(b) {--o.s;SETBYTE(o.s,b)}
-// define PUSHWORD(w) {o.s-=2;SETWORD(o.s,w)}
+// define o.PushByteS(b) {--o.s;SETBYTE(o.s,b)}
+// define o.PushWordS(w) {o.s-=2;SETWORD(o.s,w)}
 // define PULLBYTE(b) b=mem[o.s++];
 // define PULLWORD(w) {w=GETWORD(o.s);o.s+=2;}
-// define PSHUBYTE(b) {--o.u;SETBYTE(o.u,b)}
-// define PSHUWORD(w) {o.u-=2;SETWORD(o.u,w)}
+// define o.PushByteU(b) {--o.u;SETBYTE(o.u,b)}
+// define o.PushWordU(w) {o.u-=2;SETWORD(o.u,w)}
 // define PULUBYTE(b) b=mem[o.u++];
 // define PULUWORD(w) {w=GETWORD(o.u);o.u+=2;}
 
@@ -289,20 +289,20 @@ func (o *M) Step() {
    if(escape){ SAVEREGS do_escape(); LOADREGS }
    if(irq) {
     if(irq==1&&!(o.cc&0x10)) { // standard IRQ
-			 PUSHWORD(o.pc)
-			 PUSHWORD(o.u)
-                   	 PUSHWORD(o.y)
-   			 PUSHWORD(o.x)
-   			 PUSHBYTE(o.dp)
-   			 PUSHBYTE(o.b)
-   			 PUSHBYTE(o.a)
-   			 PUSHBYTE(o.cc)
+			 o.PushWordS(o.pc)
+			 o.PushWordS(o.u)
+                   	 o.PushWordS(o.y)
+   			 o.PushWordS(o.x)
+   			 o.PushByteS(o.dp)
+   			 o.PushByteS(o.b)
+   			 o.PushByteS(o.a)
+   			 o.PushByteS(o.cc)
    			 o.cc|=0x90;
      			 o.pc=GETWORD(0xfff8);
     }
     if(irq==2&&!(o.cc&0x40)) { // Fast IRQ
-			 PUSHWORD(o.pc)
-   			 PUSHBYTE(o.cc)
+			 o.PushWordS(o.pc)
+   			 o.PushByteS(o.cc)
    			 o.cc&=0x7f;
     			 o.cc|=0x50;
     			 o.pc=GETWORD(0xfff6);
@@ -714,144 +714,200 @@ func (o *M) Step() {
    case 0x31: /* LEAY*/ o.y=o.ea; if(0 != o.y) {o.CLZ()} else {o.SEZ()}
    case 0x32: /* LEAS*/ o.s=o.ea;break;
    case 0x33: /* LEAU*/ o.u=o.ea;break;
-//QQ   case 0x34: /* PSHS*/ tb=o.ImmByte();
-//QQ   		if(tb&0x80)PUSHWORD(o.pc)
-//QQ	        if(tb&0x40)PUSHWORD(o.u)
-//QQ		if(tb&0x20)PUSHWORD(o.y)
-//QQ	        if(tb&0x10)PUSHWORD(o.x)
-//QQ                if(tb&0x08)PUSHBYTE(o.dp)
-//QQ                if(tb&0x04)PUSHBYTE(o.b)
-//QQ                if(tb&0x02)PUSHBYTE(o.a)
-//QQ                if(tb&0x01)PUSHBYTE(o.cc) break;
-//QQ   case 0x35: /* PULS*/ tb=o.ImmByte();
-//QQ	        if(tb&0x01)PULLBYTE(o.cc)
-//QQ   		if(tb&0x02)PULLBYTE(o.a)
-//QQ     		if(tb&0x04)PULLBYTE(o.b)
-//QQ   		if(tb&0x08)PULLBYTE(o.dp)
-//QQ     		if(tb&0x10)PULLWORD(o.x)
-//QQ 		if(tb&0x20)PULLWORD(o.y)
-//QQ 		if(tb&0x40)PULLWORD(o.u)
-//QQ 		if(tb&0x80)PULLWORD(o.pc)
-//QQ 		if(tracetrick&&tb==0xff) { /* Arrange fake FIRQ after next insn
-//QQ 		for hardware tracing */
-//QQ		  tracetrick=0;
-//QQ		  irq=2;
-//QQ		  attention=1;
-//QQ		  goto flaginstr;
-//QQ 		}
-//QQ 		break;
-//QQ   case 0x36: /* PSHU*/ tb=o.ImmByte();
-//QQ   		if(tb&0x80)PSHUWORD(o.pc)
-//QQ	        if(tb&0x40)PSHUWORD(o.s)
-//QQ		if(tb&0x20)PSHUWORD(o.y)
-//QQ	        if(tb&0x10)PSHUWORD(o.x)
-//QQ                if(tb&0x08)PSHUBYTE(o.dp)
-//QQ                if(tb&0x04)PSHUBYTE(o.b)
-//QQ                if(tb&0x02)PSHUBYTE(o.a)
-//QQ                if(tb&0x01)PSHUBYTE(o.cc) break;
-//QQ   case 0x37: /* PULU*/ tb=o.ImmByte();
-//QQ	        if(tb&0x01)PULUBYTE(o.cc)
-//QQ   		if(tb&0x02)PULUBYTE(o.a)
-//QQ     		if(tb&0x04)PULUBYTE(o.b)
-//QQ   		if(tb&0x08)PULUBYTE(o.dp)
-//QQ     		if(tb&0x10)PULUWORD(o.x)
-//QQ 		if(tb&0x20)PULUWORD(o.y)
-//QQ 		if(tb&0x40)PULUWORD(o.s)
-//QQ 		if(tb&0x80)PULUWORD(o.pc) break;
-//QQ   case 0x39: /* RTS*/ PULLWORD(o.pc) break;
-//QQ   case 0x3A: /* ABX*/ o.x+=o.b; break;
-//QQ   case 0x3B: /* RTI*/  tb=o.cc&0x80;
-//QQ			PULLBYTE(o.cc)
-//QQ			if(tb)
-//QQ 			{
-//QQ  			 PULLBYTE(o.a)
-//QQ  			 PULLBYTE(o.b)
-//QQ  			 PULLBYTE(o.dp)
-//QQ  			 PULLWORD(o.x)
-//QQ	  		 PULLWORD(o.y)
-//QQ  			 PULLWORD(o.u)
-//QQ 			}
-//QQ			PULLWORD(o.pc) break;
-//QQ   case 0x3C: /* CWAI*/ tb=o.ImmByte();
-//QQ   			 PUSHWORD(o.pc)
-//QQ   			 PUSHWORD(o.u)
-//QQ                   	 PUSHWORD(o.y)
-//QQ   			 PUSHWORD(o.x)
-//QQ   			 PUSHBYTE(o.dp)
-//QQ   			 PUSHBYTE(o.b)
-//QQ   			 PUSHBYTE(o.a)
-//QQ   			 PUSHBYTE(o.cc)
-//QQ   			 o.cc&=tb;
-//QQ                         o.cc|=0x80;
-//QQ                      while(!(irq==1&&!(o.cc&0x10)||irq==2&&!(o.cc&0x040)))
-//QQ                           ;/* Wait for irq */
-//QQ                         if(irq==1)o.pc=GETWORD(0xfff8);
-//QQ                         	else o.pc=GETWORD(0xfff6);
-//QQ                         irq=0;
-//QQ                         if(!tracing)attention=0;
-//QQ   			 break;
-//QQ   case 0x3D: /* MUL*/ tw=o.a*o.b; if(tw)CLZ else SEZ
-//QQ                       if(tw&0x80)  {o.SEC()} else {o.CLC()} o.SetD(tw); break;
+   case 0x34: /* PSHS*/ tb=o.ImmByte();
+   		if(0 != tb&0x80) {o.PushWordS(o.pc)}
+	        if(0 != tb&0x40) {o.PushWordS(o.u)}
+		if(0 != tb&0x20) {o.PushWordS(o.y)}
+	        if(0 != tb&0x10) {o.PushWordS(o.x)}
+                if(0 != tb&0x08) {o.PushByteS(o.dp)}
+                if(0 != tb&0x04) {o.PushByteS(o.b)}
+                if(0 != tb&0x02) {o.PushByteS(o.a)}
+                if(0 != tb&0x01) {o.PushByteS(o.cc)}
+   case 0x35: /* PULS*/ tb=o.ImmByte();
+	        if(0 != tb&0x01) {o.cc = o.PullByteS()}
+   		if(0 != tb&0x02) {o.a = o.PullByteS()}
+     		if(0 != tb&0x04) {o.b = o.PullByteS()}
+   		if(0 != tb&0x08) {o.dp = o.PullByteS()}
+     		if(0 != tb&0x10) {o.x = o.PullWordS()}
+ 		if(0 != tb&0x20) {o.y = o.PullWordS()}
+ 		if(0 != tb&0x40) {o.u = o.PullWordS()}
+ 		if(0 != tb&0x80) {o.pc = o.PullWordS()}
+
+/*
+ 		if(tracetrick&&tb==0xff) { // Arrange fake FIRQ after next insn for hardware tracing
+		  tracetrick=0;
+		  irq=2;
+		  attention=1;
+		  goto flaginstr;
+ 		}
+*/
+   case 0x36: /* PSHU*/ tb=o.ImmByte();
+   		if(0 != tb&0x80) {o.PushWordU(o.pc)}
+	        if(0 != tb&0x40) {o.PushWordU(o.s)}
+		if(0 != tb&0x20) {o.PushWordU(o.y)}
+	        if(0 != tb&0x10) {o.PushWordU(o.x)}
+                if(0 != tb&0x08) {o.PushByteU(o.dp)}
+                if(0 != tb&0x04) {o.PushByteU(o.b)}
+                if(0 != tb&0x02) {o.PushByteU(o.a)}
+                if(0 != tb&0x01) {o.PushByteU(o.cc) }
+   case 0x37: /* PULU*/ tb=o.ImmByte();
+	        if(0 != tb&0x01) {o.cc = o.PullByteU()}
+   		if(0 != tb&0x02) {o.a = o.PullByteU()}
+     		if(0 != tb&0x04) {o.b = o.PullByteU()}
+   		if(0 != tb&0x08) {o.dp = o.PullByteU()}
+     		if(0 != tb&0x10) {o.x = o.PullWordU()}
+ 		if(0 != tb&0x20) {o.y = o.PullWordU()}
+ 		if(0 != tb&0x40) {o.s = o.PullWordU()}
+ 		if(0 != tb&0x80) {o.pc = o.PullWordU()}
+
+   case 0x39: /* RTS*/ o.pc=o.PullWordS() 
+   case 0x3A: /* ABX*/ o.x+=Word(SWord(o.b)) 
+   case 0x3B: /* RTI*/  tb=o.cc&0x80;
+			o.cc=o.PullByteS()
+			if(tb != 0) {
+  			 o.a=o.PullByteS()
+  			 o.b=o.PullByteS()
+  			 o.dp=o.PullByteS()
+  			 o.x=o.PullWordS()
+	  		 o.y=o.PullWordS()
+  			 o.u=o.PullWordS()
+ 			}
+			o.pc=o.PullWordS() 
+   case 0x3C: /* CWAI*/ tb=o.ImmByte();
+   			 o.PushWordS(o.pc)
+   			 o.PushWordS(o.u)
+                   	 o.PushWordS(o.y)
+   			 o.PushWordS(o.x)
+   			 o.PushByteS(o.dp)
+   			 o.PushByteS(o.b)
+   			 o.PushByteS(o.a)
+   			 o.PushByteS(o.cc)
+   			 o.cc&=tb;
+         o.cc|=0x80;
+         panic(F("UNIMPLEMENTED Opcode: CWAI: 0x%02x", ireg))
+         /*
+                      while(!(irq==1&&!(o.cc&0x10)||irq==2&&!(o.cc&0x040)))
+                           continue; // Wait for irq
+                         if(irq==1)o.pc=GETWORD(0xfff8);
+                         	else o.pc=GETWORD(0xfff6);
+                         irq=0;
+                         if(!tracing)attention=0;
+   			 */
+   case 0x3D: /* MUL*/ 
+       tw=Word(SWord(SByte(o.a))*SWord(SByte(o.b)))
+       if(0 != tw) {o.CLZ()} else  {o.SEZ()}
+       if(0 != tw&0x80)  {o.SEC()} else {o.CLC()}
+       o.SetD(tw);
+
    case 0x3E: panic(F("ILLEGAL Opcode: 0x%02x", ireg))
-//QQ   case 0x3F: /* SWI (SWI2 SWI3)*/ {
-//QQ			 PUSHWORD(o.pc)
-//QQ			 PUSHWORD(o.u)
-//QQ                   	 PUSHWORD(o.y)
-//QQ   			 PUSHWORD(o.x)
-//QQ   			 PUSHBYTE(o.dp)
-//QQ   			 PUSHBYTE(o.b)
-//QQ   			 PUSHBYTE(o.a)
-//QQ   			 PUSHBYTE(o.cc)
-//QQ   			 o.cc|=0x80;
-//QQ   			 if(!o.iflag)o.cc|=0x50;
-//QQ   			 switch(o.iflag) {
-//QQ                          case 0:o.pc=GETWORD(0xfffa);break;
-//QQ                          case 1:o.pc=GETWORD(0xfff4);break;
-//QQ                          case 2:o.pc=GETWORD(0xfff2);break;
-//QQ                         }
-//QQ		      }break;
-//QQ   case 0x40: /*NEGA*/  tw=-o.a;o.SetStatus(0,o.a,tw)
-//QQ                             o.a=tw;break;
+
+   case 0x3F: /* SWI (SWI2 SWI3)*/ {
+			 o.PushWordS(o.pc)
+			 o.PushWordS(o.u)
+       o.PushWordS(o.y)
+   			 o.PushWordS(o.x)
+   			 o.PushByteS(o.dp)
+   			 o.PushByteS(o.b)
+   			 o.PushByteS(o.a)
+   			 o.PushByteS(o.cc)
+   			 o.cc|=0x80;
+   			 switch(o.iflag) {
+                          case 0:o.pc=o.GetWord(0xfffa)
+   			                         o.cc|=0x50
+                          case 1:o.pc=o.GetWord(0xfff4)
+                          case 2:o.pc=o.GetWord(0xfff2)
+                         }
+		      }
+
+   case 0x40: /*NEGA*/  
+       tw=Word(-SWord(SByte(o.a)))
+       o.SetStatus(0,o.a,tw)
+       o.a=Byte(tw)
    case 0x41: panic(F("ILLEGAL Opcode: 0x%02x", ireg))
    case 0x42: panic(F("ILLEGAL Opcode: 0x%02x", ireg))
-//QQ   case 0x43: /*COMA*/   tb=~o.a;o.SetNZ8(tb); {o.SEC()} {o.CLV()}
-//QQ                             o.a=tb;break;
-//QQ   case 0x44: /*LSRA*/  tb=o.a;if(tb&0x01) {o.SEC()} else {o.CLC()}
-//QQ                             if(tb&0x10){o.SEH()} else {o.CLH()} tb>>=1;o.SetNZ8(tb)
-//QQ                             o.a=tb;break;
+   case 0x43: /*COMA*/   
+       tb= ^o.a
+       o.SetNZ8(tb);
+       {o.SEC()}
+       {o.CLV()}
+       o.a=tb
+   case 0x44: /*LSRA*/  
+     tb=o.a
+     if(0 != tb&0x01) {o.SEC()} else {o.CLC()}
+     if(0 != tb&0x10){o.SEH()} else {o.CLH()}
+     tb>>=1
+     o.SetNZ8(tb)
+     o.a=tb
    case 0x45: panic(F("ILLEGAL Opcode: 0x%02x", ireg))
-//QQ   case 0x46: /*RORA*/  tb=(o.cc&0x01)<<7;
-//QQ                             if(o.a&0x01) {o.SEC()} else {o.CLC()}
-//QQ                             o.a=(o.a>>1)+tb;o.SetNZ8(o.a)
-//QQ                       	     break;
-//QQ   case 0x47: /*ASRA*/  tb=o.a;if(tb&0x01) {o.SEC()} else {o.CLC()}
-//QQ                             if(tb&0x10){o.SEH()} else {o.CLH()} tb>>=1;
-//QQ                             if(tb&0x40)tb|=0x80;o.a=tb;o.SetNZ8(tb)
-//QQ                             break;
-//QQ   case 0x48: /*ASLA*/  tw=o.a<<1;
-//QQ                             o.SetStatus(o.a,o.a,tw)
-//QQ                             o.a=tw;break;
-//QQ   case 0x49: /*ROLA*/  tb=o.a;tw=o.cc&0x01;
-//QQ                             if(tb&0x80) {o.SEC()} else {o.CLC()}
-//QQ                             if((tb&0x80)^((tb<<1)&0x80)){o.SEV()} else {o.CLV()}
-//QQ                             tb=(tb<<1)+tw;o.SetNZ8(tb) o.a=tb;break;
-//QQ   case 0x4A: /*DECA*/  tb=o.a-1;if(tb==0x7F){o.SEV()} else {o.CLV()}
-//QQ   			     o.SetNZ8(tb) o.a=tb;break;
+   case 0x46: /*RORA*/  
+     tb=(o.cc&0x01)<<7;
+     if(0 != o.a&0x01) {o.SEC()} else {o.CLC()}
+     o.a=(o.a>>1)+tb
+     o.SetNZ8(o.a)
+
+   case 0x47: /*ASRA*/  
+     tb=o.a
+     if(0 != tb&0x01) {o.SEC()} else {o.CLC()}
+     if(0 != tb&0x10){o.SEH()} else {o.CLH()}
+     tb>>=1;
+     if(0 != tb&0x40) {tb|=0x80}
+     o.a=tb
+     o.SetNZ8(tb)
+
+   case 0x48: /*ASLA*/  
+     tw=Word(SByte(o.a))<<1;
+     o.SetStatus(o.a,o.a,tw)
+     o.a=Byte(tw);
+   case 0x49: /*ROLA*/  
+     tb=o.a
+     tw= Word(o.cc&0x01)
+     if(0 != tb&0x80) {o.SEC()} else {o.CLC()}
+     if(0 != ((tb&0x80)^((tb<<1)&0x80))) {o.SEV()} else {o.CLV()}
+     tb=Byte(  (Word(SWord(SByte(tb)))<<1)+tw )
+     o.SetNZ8(tb)
+     o.a=tb
+
+   case 0x4A: /*DECA*/  
+     tb=o.a-1
+     if(tb==0x7F){o.SEV()} else {o.CLV()}
+   	o.SetNZ8(tb) 
+    o.a=tb
+
    case 0x4B: panic(F("ILLEGAL Opcode: 0x%02x", ireg))
-//QQ   case 0x4C: /*INCA*/  tb=o.a+1;if(tb==0x80){o.SEV()} else {o.CLV()}
-//QQ   			     o.SetNZ8(tb) o.a=tb;break;
-//QQ   case 0x4D: /*TSTA*/  o.SetNZ8(o.a) break;
+   case 0x4C: /*INCA*/  
+     tb=o.a+1
+     if(tb==0x80){o.SEV()} else {o.CLV()}
+     o.SetNZ8(tb)
+     o.a=tb
+   case 0x4D: /*TSTA*/  
+     o.SetNZ8(o.a)
+
    case 0x4E: panic(F("ILLEGAL Opcode: 0x%02x", ireg))
-//QQ   case 0x4F: /*CLRA*/  o.a=0;CLN {o.CLV()} SEZ {o.CLC()} break;
-//QQ   case 0x50: /*NEGB*/  tw=-o.b;o.SetStatus(0,o.b,tw)
-//QQ                             o.b=tw;break;
+   case 0x4F: /*CLRA*/  
+     o.a=0
+     o.CLN()
+     o.CLV()
+     o.SEZ()
+     o.CLC()
+   case 0x50: /*NEGB*/  
+     tw= Word(SByte(-o.b))
+     o.SetStatus(0,o.b,tw)
+     o.b=Byte(tw)
    case 0x51: panic(F("ILLEGAL Opcode: 0x%02x", ireg))
    case 0x52: panic(F("ILLEGAL Opcode: 0x%02x", ireg))
-//QQ   case 0x53: /*COMB*/   tb=~o.b;o.SetNZ8(tb); {o.SEC()} {o.CLV()}
-//QQ                             o.b=tb;break;
-//QQ   case 0x54: /*LSRB*/  tb=o.b;if(tb&0x01) {o.SEC()} else {o.CLC()}
-//QQ                             if(tb&0x10){o.SEH()} else {o.CLH()} tb>>=1;o.SetNZ8(tb)
-//QQ                             o.b=tb;break;
+   case 0x53: /*COMB*/   
+     tb= ^o.b;
+     o.SetNZ8(tb)
+     {o.SEC()}
+     {o.CLV()}
+     o.b=tb
+   case 0x54: /*LSRB*/  
+     tb=o.b
+     if(0 != tb&0x01) {o.SEC()} else {o.CLC()}
+     if(0 != tb&0x10){o.SEH()} else {o.CLH()}
+     tb>>=1
+     o.SetNZ8(tb)
+     o.b=tb
    case 0x55: panic(F("ILLEGAL Opcode: 0x%02x", ireg))
 //QQ   case 0x56: /*RORB*/  tb=(o.cc&0x01)<<7;
 //QQ                             if(o.b&0x01) {o.SEC()} else {o.CLC()}
@@ -985,7 +1041,7 @@ func (o *M) Step() {
 //QQ   				 res=dreg-breg;
 //QQ   				 SETSTATUSD(dreg,breg,res)
 //QQ   				 }break;
-//QQ   case 0x8D: /*BSR */   tb=o.ImmByte(); PUSHWORD(o.pc) o.pc+=SIGNED(tb);
+//QQ   case 0x8D: /*BSR */   tb=o.ImmByte(); o.PushWordS(o.pc) o.pc+=SIGNED(tb);
 //QQ                         break;
 //QQ   case 0x8E: /* LDX (LDY) immediate */ o.EaImm16(); tw=o.GetWordE();
 //QQ                                  {o.CLV()} o.SetNZ16(tw) if(!o.iflag)o.x=tw; else
@@ -1034,7 +1090,7 @@ func (o *M) Step() {
 //QQ   				 res=dreg-breg;
 //QQ   				 SETSTATUSD(dreg,breg,res)
 //QQ   				 }break;
-//QQ   case 0x9D: /*JSR direct */  o.EaDirect();  PUSHWORD(o.pc) o.pc=o.ea;
+//QQ   case 0x9D: /*JSR direct */  o.EaDirect();  o.PushWordS(o.pc) o.pc=o.ea;
 //QQ                         break;
 //QQ   case 0x9E: /* LDX (LDY) direct */ o.EaDirect(); tw=o.GetWordE();
 //QQ                                  {o.CLV()} o.SetNZ16(tw) if(!o.iflag)o.x=tw; else
@@ -1083,7 +1139,7 @@ func (o *M) Step() {
 //QQ   				 res=dreg-breg;
 //QQ   				 SETSTATUSD(dreg,breg,res)
 //QQ   				 }break;
-//QQ   case 0xAD: /*JSR indexed */    PUSHWORD(o.pc) o.pc=o.ea;
+//QQ   case 0xAD: /*JSR indexed */    o.PushWordS(o.pc) o.pc=o.ea;
 //QQ                         break;
 //QQ   case 0xAE: /* LDX (LDY) indexed */  tw=o.GetWordE();
 //QQ                                  {o.CLV()} o.SetNZ16(tw) if(!o.iflag)o.x=tw; else
@@ -1132,7 +1188,7 @@ func (o *M) Step() {
 //QQ   				 res=dreg-breg;
 //QQ   				 SETSTATUSD(dreg,breg,res)
 //QQ   				 }break;
-//QQ   case 0xBD: /*JSR ext */  o.EaExtended();  PUSHWORD(o.pc) o.pc=o.ea;
+//QQ   case 0xBD: /*JSR ext */  o.EaExtended();  o.PushWordS(o.pc) o.pc=o.ea;
 //QQ                         break;
 //QQ   case 0xBE: /* LDX (LDY) ext */ o.EaExtended(); tw=o.GetWordE();
 //QQ                                  {o.CLV()} o.SetNZ16(tw) if(!o.iflag)o.x=tw; else
@@ -1321,6 +1377,7 @@ func (o *M) Step() {
 //QQ                                  if(!o.iflag) tw=o.u; else tw=o.s;
 //QQ                                  {o.CLV()} o.SetNZ16(tw) SETWORD(o.ea,tw) break;
 
+   default: panic(F("UNIMPLEMENTED Opcode: 0x%02x", ireg))
 
   }
 }
