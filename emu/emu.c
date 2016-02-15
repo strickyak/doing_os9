@@ -1182,13 +1182,13 @@ nop()
 
 sync_inst()
 {
- fprintf(stderr, "HEY, Waiting, sync_inst.");
+ fprintf(stderr, "HEY, Waiting, sync_inst.\n");
  Waiting = true;
 }
 
 cwai()
 {
- fprintf(stderr, "HEY, Waiting, cwai_inst.");
+ fprintf(stderr, "HEY, Waiting, cwai.\n");
  Waiting = true;
 }
 
