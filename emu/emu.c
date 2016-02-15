@@ -1188,7 +1188,11 @@ sync_inst()
 
 cwai()
 {
- fprintf(stderr, "HEY, Waiting, cwai.\n");
+ Byte b = mem[pcreg];  /* Immediate operand */
+ ccreg &= b;
+ pcreg++;
+
+ fprintf(stderr, "HEY, Waiting, cwai #$%02x.\n", b);
  Waiting = true;
 }
 
