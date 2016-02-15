@@ -1,0 +1,3 @@
+CFLAGS= -g -DTERM_CONTROL -DTRACE
+
+all : emu
