@@ -1188,12 +1188,17 @@ sync_inst()
 
 cwai()
 {
+ char off[8];
  Byte b = mem[pcreg];  /* Immediate operand */
  ccreg &= b;
  pcreg++;
 
  fprintf(stderr, "HEY, Waiting, cwai #$%02x.\n", b);
  Waiting = true;
+
+ da_inst("cwai",NULL,20);
+ sprintf(off,"#$%02x", b);
+ da_ops(off,NULL,0);
 }
 
 lbra()
