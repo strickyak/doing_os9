@@ -15,6 +15,20 @@ import "os"
 
 const BOOT_SECTOR = 1224
 
+// 005F 8E0106           (/home/strick/6809):00368                  ldx  #D.XSWI
+// 0062 BFFFFA           (/home/strick/6809):00369                  stx  $FFFA
+// 0065 8E0103           (/home/strick/6809):00370                  ldx  #D.XSWI2
+// 0068 BFFFF4           (/home/strick/6809):00371                  stx  $FFF4
+// 006B 8E0100           (/home/strick/6809):00372                  ldx  #D.XSWI3
+// 006E BFFFF2           (/home/strick/6809):00373                  stx  $FFF2
+// 0071 8E0109           (/home/strick/6809):00374                  ldx  #D.XNMI
+// 0074 BFFFFC           (/home/strick/6809):00375                  stx  $FFFC
+// 0077 8E010C           (/home/strick/6809):00376                  ldx  #D.XIRQ
+// 007A BFFFF8           (/home/strick/6809):00377                  stx  $FFF8
+// 007D 8E010F           (/home/strick/6809):00378                  ldx  #D.XFIRQ
+// 0080 BFFFF6           (/home/strick/6809):00379                  stx  $FFF6
+
+
 func main() {
   // Emit "JMP $2602" at $100.
   n, _ := os.Stdout.Write([]byte{0x7E, 0x26, 0x02})
