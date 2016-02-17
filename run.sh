@@ -1,7 +1,7 @@
 set -ex
 (cd emu; make)
 
-DSK=/home/strick/6809/hg.code.sf.net/nitros9/level1/coco1_yak/nos96809l1coco1_yak_40d_1.dsk
+DSK=/home/strick/6809/hg.code.sf.net/nitros9/level1/coco1_yak/nos96809l1coco1_yak_80d.dsk
 
 go run  bootdisk_to_sbc09_file/bootdisk_to_sbc09_file.go < $DSK > /tmp/boot
 
