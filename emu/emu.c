@@ -138,7 +138,7 @@ typedef int bool;
 #define false 0
 #define true 1
 
-#define IRQ_FREQ (20*1000)
+#define IRQ_FREQ (10*1000)
 
 #define CC_INHIBIT_IRQ 0x10
 #define CC_INHIBIT_FIRQ 0x40
