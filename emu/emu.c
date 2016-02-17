@@ -148,6 +148,61 @@ typedef int bool;
 #define VECTOR_FIRQ 0xFFF6
 #define VECTOR_NMI 0xFFFC
 
+
+#define D_FMBM         0x0020 // RMB 4 Free memory bit map pointers
+#define D_MLIM         0x0024 // RMB 2 Memory limit $24
+#define D_ModDir       0x0026 // RMB 4 Module directory $26
+#define D_Init         0x002a // RMB 2 Rom base address $2A
+#define D_SWI3         0x002c // RMB 2 Swi3 vector $2C
+#define D_SWI2         0x002e // RMB 2 Swi2 vector $2E
+#define D_FIRQ         0x0030 // RMB 2 Firq vector $30
+#define D_IRQ          0x0032 // RMB 2 Irq vector $32
+#define D_SWI          0x0034 // RMB 2 Swi vector $34
+#define D_NMI          0x0036 // RMB 2 Nmi vector $36
+#define D_SvcIRQ       0x0038 // RMB 2 Interrupt service entry $38
+#define D_Poll         0x003a // RMB 2 Interrupt polling routine $3A
+#define D_UsrIRQ       0x003c // RMB 2 User irq routine $3C
+#define D_SysIRQ       0x003e // RMB 2 System irq routine $3E
+#define D_UsrSvc       0x0040 // RMB 2 User service request routine $40
+#define D_SysSvc       0x0042 // RMB 2 System service request routine $42
+#define D_UsrDis       0x0044 // RMB 2 User service request dispatch table
+#define D_SysDis       0x0046 // RMB 2 System service reuest dispatch table
+#define D_Slice        0x0048 // RMB 1 Process time slice count $48
+#define D_PrcDBT       0x0049 // RMB 2 Process descriptor block address  $49
+#define D_Proc         0x004b // RMB 2 Process descriptor address $4B
+#define D_AProcQ       0x004d // RMB 2 Active process queue $4D
+#define D_WProcQ       0x004f // RMB 2 Waiting process queue $4F
+#define D_SProcQ       0x0051 // RMB 2 Sleeping process queue $51
+#define D_Year         0x0053 // RMB 1 $53
+#define D_Month        0x0054 // RMB 1 $54
+#define D_Day          0x0055 // RMB 1 $55
+#define D_Hour         0x0056 // RMB 1 $56
+#define D_Min          0x0057 // RMB 1 $57
+#define D_Sec          0x0058 // RMB 1 $58
+#define D_Tick         0x0059 // RMB 1 $59
+#define D_TSec         0x005a // RMB 1 Ticks / second $5A
+#define D_TSlice       0x005b // RMB 1 Ticks / time-slice $5B
+#define D_IOML         0x005c // RMB 2 I/O mgr free memory low bound $5C
+#define D_IOMH         0x005e // RMB 2 I/O mgr free memory hi  bound $5E
+#define D_DevTbl       0x0060 // RMB 2 Device driver table addr $60
+#define D_PolTbl       0x0062 // RMB 2 Irq polling table addr $62
+#define D_PthDBT       0x0064 // RMB 2 Path descriptor block table addr $64
+#define D_BTLO         0x0066 // RMB 2 Bootstrap low address $66
+#define D_BTHI         0x0068 // RMB 2 Bootstrap hi address $68
+#define D_DMAReq       0x006a // RMB 1 DMA in use flag $6A
+#define D_AltIRQ       0x006b // RMB 2  Alternate IRQ vector (CC) $6B
+#define D_KbdSta       0x006d // RMB 2  Keyboard scanner static storage (CC) $6D
+#define D_DskTmr       0x006f // RMB 2  Disk Motor Timer (CC) $6F
+#define D_CBStrt       0x0071 // RMB 16 reserved for CC warmstart ($71)
+#define D_Clock        0x0081 // RMB 2  Address of Clock Tick Routine (CC) $81
+#define D_Boot         0x0083 // RMB 1  Bootstrap attempted flag
+#define D_URtoSs       0x0084 // RMB 2  address of user to system routine (VIRQ) $84
+#define D_CLTb         0x0086 // RMB 2  Pointer to clock interrupt table (VIRQ) $86
+#define D_MDREG        0x0088 // RMB 1  6309 MD (mode) shadow register $88 (added in V2.01.00)
+#define D_CRC          0x0089 // RMB 1  CRC checking mode flag $89 (added in V2.01.00)
+#define D_Clock2       0x008a // RMB 2  CC Clock2 entry address
+
+
 void finish();
 void trace();
 
