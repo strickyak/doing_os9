@@ -1515,8 +1515,9 @@ Os9AllMemoryModules() {
   for (; i < limit; i += 4) {
     Word mod = GETWORD(i);
     if (mod) {
+      Word end = mod + GETWORD(mod+2);
       Word name = mod + GETWORD(mod+4);
-      fprintf(stderr, "%x:%x:<%s> ", mod, name, Os9String(name));
+      fprintf(stderr, "%x:%x:<%s> ", mod, end, Os9String(name));
     }
   }
   fprintf(stderr, "\n\n");
