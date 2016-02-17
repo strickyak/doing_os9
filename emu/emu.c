@@ -129,6 +129,11 @@ int tflags;
 #include <ctype.h>
 #include <assert.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+
 typedef int bool;
 #define false 0
 #define true 1
@@ -193,6 +198,7 @@ unsigned int low_reg, high_reg;  /* range for IO HW ports */
  Byte *areg=d_reg+1;
 #endif
 
+int kbd_ch;
 
 /* 6809 memory space */
 static Byte mem[65536];
@@ -247,6 +253,39 @@ int irqs_pending;
 #define IRQ_PENDING CC_INHIBIT_IRQ
 #define FIRQ_PENDING CC_INHIBIT_FIRQ
 
+char KB_NORMAL[] = "@abcdefghijklmnopqrstuvwxyz{}[] 0123456789:;,-./\r\b\0\0\0\0\0\0";
+char KB_SHIFT[] = "_ABCDEFGHIJKLMNOPQRSTUVWXYZ____ 0!\"#$%&'()*+<=>?\0\0\0\0\0\0\0\0";
+
+Byte keypress(Byte a, char ch) {
+  int i, j;
+  bool shifted = false;
+  Byte probe;
+  Byte sense = 0;
+  //fprintf(stderr,"HEY, SENSE INPUT $%02x ~> $%02x\n", (Byte)a, (Byte)~a);
+  a = ~a;
+  for (j=0; j<8; j++) {
+    if ((1<<j) & a) {
+      for (i=0; i<7; i++) {
+        if (KB_NORMAL[i*8+j] == ch) {
+          Byte old_sense = sense;
+          sense |= 1<<i;
+          //fprintf(stderr,"HEY, SENSE {%c} (i=%d, j=%d) $%02x => $%02x\n", ch, i, j, old_sense, sense);
+        }
+        if (KB_SHIFT[i*8+j] == ch) {
+          Byte old_sense = sense;
+          sense |= 1<<i;
+          //fprintf(stderr,"HEY, SENSE {%c} (i=%d, j=%d) $%02x => $%02x\n", ch, i, j, old_sense, sense);
+          shifted = true;
+        }
+      }
+    }
+  }
+  if (shifted && (a & 0x40)) {
+    sense |= 0x80;  // Shift key.
+  }
+  return ~sense;
+}
+
 interrupt(Word vector_addr) {
   PUSHWORD(pcreg)
   if (vector_addr == VECTOR_FIRQ) {
@@ -299,6 +338,20 @@ irq() {
   fprintf(stderr,"HEY, INTERRUPTING with IRQ (kbd_cycle = %d)\n", kbd_cycle);
   assert(!(ccreg&CC_INHIBIT_IRQ));
 
+  if ((kbd_cycle&1) == 0) {
+    int ch = getchar();
+    if (0 < ch && ch < 127) {
+          kbd_ch = ch;
+    } else {
+          kbd_ch = 0;
+    }
+    fprintf(stderr,"HEY, getchar -> ch %x %c kbd_ch %x %c (kbd_cycle = %d)\n", ch, ch, kbd_ch, kbd_ch, kbd_cycle);
+  }
+  if ((kbd_cycle&1) == 1) {
+    kbd_ch = 0;
+  }
+  fprintf(stderr,"HEY, irq -> kbd_ch %x %c (kbd_cycle = %d)\n", kbd_ch, kbd_ch, kbd_cycle);
+
   interrupt(VECTOR_IRQ);
   irqs_pending &= ~IRQ_PENDING;
 }
@@ -324,16 +377,19 @@ Byte GetIOByte(Word a) {
     0099 7DFF02           (/home/strick/6809):00230         L0032    tst   PIA0Base+2 clear interrupt
     */
     case 0xFF00:
-      if (kbd_cycle%3 == 2) {
-        z = 1 << ((kbd_cycle/3)&7);
+      z = 255;
+      if (kbd_ch) {
+        z = keypress(kbd_probe, kbd_ch);
+        fprintf(stderr, "HEY, KEYBOARD: %02x {%c} -> %02x\n", kbd_probe, kbd_ch, z);
       } else {
-        z = 0;
+        fprintf(stderr, "HEY, KEYBOARD: %02x      -> %02x\n", kbd_probe,         z);
       }
-      fprintf(stderr, "HEY, KEYBOARD: ~ %02x\n", z);
-      return ~z;
+      return z;
 
+    //case 0xFF01:
+    //  return 0;
     case 0xFF02:
-      return 0;    /* Reset IRQ when this is read. TODO: multiple sources of IRQ. */
+      return kbd_probe;    /* Reset IRQ when this is read. TODO: multiple sources of IRQ. */
     case 0xFF03:
       return 0x80; /* Negative bit set: Yes the PIA caused IRQ. */
 
@@ -988,7 +1044,15 @@ neg()
  a=GETBYTE_ea(ea);
  r=-a;
  SETSTATUS(0,a,r)
- *ea=r;
+ // *ea=r;
+ long gap = ea-mem;  // PUTBYTE_ea
+ if (0 <= gap && gap <= 0x10000) {
+   /* for memory */
+   PUTBYTE((Word)gap, r);
+ } else {
+   /* for registers */
+   *ea = r;
+ }
 }
 
 com()
@@ -1007,7 +1071,15 @@ com()
 */
  SETNZ8(r)
  SEC CLV
- *ea=r;
+ // *ea=r;
+ long gap = ea-mem;  // PUTBYTE_ea
+ if (0 <= gap && gap <= 0x10000) {
+   /* for memory */
+   PUTBYTE((Word)gap, r);
+ } else {
+   /* for registers */
+   *ea = r;
+ }
 }
 
 lsr()
@@ -1022,7 +1094,15 @@ lsr()
  if(r&0x10)SEH else CLH
  r>>=1;
  SETNZ8(r)
- *ea=r;
+ // *ea=r;
+ long gap = ea-mem;  // PUTBYTE_ea
+ if (0 <= gap && gap <= 0x10000) {
+   /* for memory */
+   PUTBYTE((Word)gap, r);
+ } else {
+   /* for registers */
+   *ea = r;
+ }
 }
 
 ror()
@@ -1037,7 +1117,15 @@ ror()
  if(r&0x01)SEC else CLC
  r=(r>>1)+c;
  SETNZ8(r)
- *ea=r;
+ // *ea=r;
+ long gap = ea-mem;  // PUTBYTE_ea
+ if (0 <= gap && gap <= 0x10000) {
+   /* for memory */
+   PUTBYTE((Word)gap, r);
+ } else {
+   /* for registers */
+   *ea = r;
+ }
 }
 
 asr()
@@ -1053,7 +1141,15 @@ asr()
  r>>=1;
  if(r&0x40)r|=0x80;
  SETNZ8(r)
- *ea=r;
+ //*ea=r;
+ long gap = ea-mem;  // PUTBYTE_ea
+ if (0 <= gap && gap <= 0x10000) {
+   /* for memory */
+   PUTBYTE((Word)gap, r);
+ } else {
+   /* for registers */
+   *ea = r;
+ }
 }
 
 asl()
@@ -1066,7 +1162,15 @@ asl()
  a=GETBYTE_ea(ea);
  r=a<<1;
  SETSTATUS(a,a,r)
- *ea=r;
+ // *ea=r;
+ long gap = ea-mem;  // PUTBYTE_ea
+ if (0 <= gap && gap <= 0x10000) {
+   /* for memory */
+   PUTBYTE((Word)gap, r);
+ } else {
+   /* for registers */
+   *ea = r;
+ }
 }
 
 rol()
@@ -1082,7 +1186,15 @@ rol()
  if((r&0x80)^((r<<1)&0x80))SEV else CLV
  r=(r<<1)+c;
  SETNZ8(r)
- *ea=r;
+ // *ea=r;
+ long gap = ea-mem;  // PUTBYTE_ea
+ if (0 <= gap && gap <= 0x10000) {
+   /* for memory */
+   PUTBYTE((Word)gap, r);
+ } else {
+   /* for registers */
+   *ea = r;
+ }
 }
 
 inc()
@@ -1142,7 +1254,15 @@ clr()
 
  da_inst("clr",NULL,4);
  ea=eaddr0();
- *ea=0;CLN CLV SEZ CLC
+ long gap = ea-mem;
+ if (0 <= gap && gap <= 0x10000) {
+   /* for memory */
+   PUTBYTE((Word)gap, 0);
+ } else {
+   /* for registers */
+   *ea = 0;
+ }
+ CLN CLV SEZ CLC
 }
 
 extern (*instrtable[])();
@@ -1538,7 +1658,16 @@ char* DecodeOs9GetStat(Byte b) {
   }
   return s;
 }
-
+char* Os9WritLnWhat() {
+  static char buf[1025];
+  int i;
+  memset(buf, 0, sizeof buf);
+  for (i=0; i<yreg && i<1024; i++) {
+    buf[i] = mem[(Word)(xreg + i)];
+    if (buf[i] == '\r') { break; }
+  }
+  return buf;
+}
 char* ModuleName(Word a) {
   Word s = a + GETWORD(a+4);
   return Os9String(s);
@@ -1671,6 +1800,9 @@ DecodeOs9Opcode(Byte b) {
     case 0x8B: s = "I$ReadLn : Read Line of ASCII Data";
       break;
     case 0x8C: s = "I$WritLn : Write Line of ASCII Data";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... {{{%s}}}\n", b, s, Os9WritLnWhat());
+      printf("{%s}\n", Os9WritLnWhat());
+      fflush(stdout);
       break;
     case 0x8D: s = "I$GetStt : Get Path Status";
       fprintf(stderr, "HEY, Kernel 0x%02x: %s .... %s\n", b, s, DecodeOs9GetStat(*areg));
@@ -1688,7 +1820,10 @@ DecodeOs9Opcode(Byte b) {
   fprintf(stderr, "HEY, Kernel 0x%02x: %s\n", b, s);
 }
 
+typedef void Callback(int, int, int);
 Byte Os9SysCallReturnAddr[0x10000];
+//Callback Os9SysCallReturnCallback[0x10000];
+//int Os9SysCallReturnArgs[0x10000][3];
 
 swi()
 {
@@ -2406,11 +2541,15 @@ main(int argc,char *argv[])
  iflag=0;
  /* raw disables SIGINT, brkint reenables it ...
   */
-#if defined(TERM_CONTROL) && ! defined(TRACE)
+#if defined(TERM_CONTROL) /* && ! defined(TRACE) */
   /* raw, but still allow key signaling, especial if ^C is desired
      - if not, remove brkint and isig!
    */
   system("stty -echo nl raw brkint isig");
+
+  //close(0);
+  //open("/dev/tty", O_RDWR);
+
   tflags=fcntl(0,F_GETFL,0);
   fcntl(0,F_SETFL,tflags|O_NDELAY);
 #endif
@@ -2446,6 +2585,7 @@ main(int argc,char *argv[])
       continue;
     }
     if ((irqs_pending & IRQ_PENDING) && !(ccreg & CC_INHIBIT_IRQ)) {
+
       irq();
       continue;
     }
@@ -2482,7 +2622,7 @@ void finish()
  fprintf(stderr,"Cycles: %lu", cycles_sum);
  cr();
 #if defined(TERM_CONTROL) && ! defined(TRACE)
- system("stty -raw -nl echo brkint");
+ ///////////// system("stty -raw -nl echo brkint");
  fcntl(0,F_SETFL,tflags&~O_NDELAY);
 #endif
  if (fdump) dump();

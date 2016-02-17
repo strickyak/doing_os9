@@ -31,3 +31,6 @@ go run annotate_trace/annotate_trace.go \
   |
 tee __ |
 grep Kernel
+
+reset
+reset
