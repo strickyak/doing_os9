@@ -308,6 +308,408 @@ int irqs_pending;
 #define IRQ_PENDING CC_INHIBIT_IRQ
 #define FIRQ_PENDING CC_INHIBIT_FIRQ
 
+struct Completion;
+typedef void (*Callback)(struct Completion*);
+struct Completion {
+  Callback f;
+  Byte service;
+  Word a, b, c;
+} Os9SysCallCompletion[0x10000];
+
+void DefaultCompleter(struct Completion* cp);
+Byte GETBYTE(Word a);
+
+char* DecodeOs9Error(Byte b) {
+  char* s = "???";
+  switch (b) {
+    case 0x0A: s = "E$UnkSym :Unknown symbol"; break;
+    case 0x0B: s = "E$ExcVrb :Excessive verbage"; break;
+    case 0x0C: s = "E$IllStC :Illegal statement construction"; break;
+    case 0x0D: s = "E$ICOvf  :I-code overflow"; break;
+    case 0x0E: s = "E$IChRef :Illegal channel reference"; break;
+    case 0x0F: s = "E$IllMod :Illegal mode"; break;
+    case 0x10: s = "E$IllNum :Illegal number"; break;
+    case 0x11: s = "E$IllPrf :Illegal prefix"; break;
+    case 0x12: s = "E$IllOpd :Illegal operand"; break;
+    case 0x13: s = "E$IllOpr :Illegal operator"; break;
+    case 0x14: s = "E$IllRFN :Illegal record field name"; break;
+    case 0x15: s = "E$IllDim :Illegal dimension"; break;
+    case 0x16: s = "E$IllLit :Illegal literal"; break;
+    case 0x17: s = "E$IllRet :Illegal relational"; break;
+    case 0x18: s = "E$IllSfx :Illegal type suffix"; break;
+    case 0x19: s = "E$DimLrg :Dimension too large"; break;
+    case 0x1A: s = "E$LinLrg :Line number too large"; break;
+    case 0x1B: s = "E$NoAssg :Missing assignment statement"; break;
+    case 0x1C: s = "E$NoPath :Missing path number"; break;
+    case 0x1D: s = "E$NoComa :Missing coma"; break;
+    case 0x1E: s = "E$NoDim  :Missing dimension"; break;
+    case 0x1F: s = "E$NoDO   :Missing DO statement"; break;
+    case 0x20: s = "E$MFull  :Memory full"; break;
+    case 0x21: s = "E$NoGoto :Missing GOTO"; break;
+    case 0x22: s = "E$NoLPar :Missing left parenthesis"; break;
+    case 0x23: s = "E$NoLRef :Missing line reference"; break;
+    case 0x24: s = "E$NoOprd :Missing operand"; break;
+    case 0x25: s = "E$NoRPar :Missing right parenthesis"; break;
+    case 0x26: s = "E$NoTHEN :Missing THEN statement"; break;
+    case 0x27: s = "E$NoTO   :Missing TO statement"; break;
+    case 0x28: s = "E$NoVRef :Missing variable reference"; break;
+    case 0x29: s = "E$EndQou :Missing end quote"; break;
+    case 0x2A: s = "E$SubLrg :Too many subscripts"; break;
+    case 0x2B: s = "E$UnkPrc :Unknown procedure"; break;
+    case 0x2C: s = "E$MulPrc :Multiply defined procedure"; break;
+    case 0x2D: s = "E$DivZer :Divice by zero"; break;
+    case 0x2E: s = "E$TypMis :Operand type mismatch"; break;
+    case 0x2F: s = "E$StrOvf :String stack overflow"; break;
+    case 0x30: s = "E$NoRout :Unimplemented routine"; break;
+    case 0x31: s = "E$UndVar :Undefined variable"; break;
+    case 0x32: s = "E$FltOvf :Floating Overflow"; break;
+    case 0x33: s = "E$LnComp :Line with compiler error"; break;
+    case 0x34: s = "E$ValRng :Value out of range for destination"; break;
+    case 0x35: s = "E$SubOvf :Subroutine stack overflow"; break;
+    case 0x36: s = "E$SubUnd :Subroutine stack underflow"; break;
+    case 0x37: s = "E$SubRng :Subscript out of range"; break;
+    case 0x38: s = "E$ParmEr :Paraemter error"; break;
+    case 0x39: s = "E$SysOvf :System stack overflow"; break;
+    case 0x3A: s = "E$IOMism :I/O type mismatch"; break;
+    case 0x3B: s = "E$IONum  :I/O numeric input format bad"; break;
+    case 0x3C: s = "E$IOConv :I/O conversion: number out of range"; break;
+    case 0x3D: s = "E$IllInp :Illegal input format"; break;
+    case 0x3E: s = "E$IOFRpt :I/O format repeat error"; break;
+    case 0x3F: s = "E$IOFSyn :I/O format syntax error"; break;
+    case 0x40: s = "E$IllPNm :Illegal path number"; break;
+    case 0x41: s = "E$WrSub  :Wrong number of subscripts"; break;
+    case 0x42: s = "E$NonRcO :Non-record type operand"; break;
+    case 0x43: s = "E$IllA   :Illegal argument"; break;
+    case 0x44: s = "E$IllCnt :Illegal control structure"; break;
+    case 0x45: s = "E$UnmCnt :Unmatched control structure"; break;
+    case 0x46: s = "E$IllFOR :Illegal FOR variable"; break;
+    case 0x47: s = "E$IllExp :Illegal expression type"; break;
+    case 0x48: s = "E$IllDec :Illegal declarative statement"; break;
+    case 0x49: s = "E$ArrOvf :Array size overflow"; break;
+    case 0x4A: s = "E$UndLin :Undefined line number"; break;
+    case 0x4B: s = "E$MltLin :Multiply defined line number"; break;
+    case 0x4C: s = "E$MltVar :Multiply defined variable"; break;
+    case 0x4D: s = "E$IllIVr :Illegal input variable"; break;
+    case 0x4E: s = "E$SeekRg :Seek out of range"; break;
+    case 0x4F: s = "E$NoData :Missing data statement"; break;
+    case 0xB7: s = "E$IWTyp  :Illegal window type"; break;
+    case 0xB8: s = "E$WADef  :Window already defined"; break;
+    case 0xB9: s = "E$NFont  :Font not found"; break;
+    case 0xBA: s = "E$StkOvf :Stack overflow"; break;
+    case 0xBB: s = "E$IllArg :Illegal argument"; break;
+    case 0xBD: s = "E$ICoord :Illegal coordinates"; break;
+    case 0xBE: s = "E$Bug    :Bug (should never be returned)"; break;
+    case 0xBF: s = "E$BufSiz :Buffer size is too small"; break;
+    case 0xC0: s = "E$IllCmd :Illegal command"; break;
+    case 0xC1: s = "E$TblFul :Screen or window table is full"; break;
+    case 0xC2: s = "E$BadBuf :Bad/Undefined buffer number"; break;
+    case 0xC3: s = "E$IWDef  :Illegal window definition"; break;
+    case 0xC4: s = "E$WUndef :Window undefined"; break;
+    case 0xC5: s = "E$Up     :Up arrow pressed on SCF I$ReadLn with PD.UP enabled"; break;
+    case 0xC6: s = "E$Dn     :Down arrow pressed on SCF I$ReadLn with PD.DOWN enabled"; break;
+    case 0xC8: s = "E$PthFul :Path Table full"; break;
+    case 0xC9: s = "E$BPNum  :Bad Path Number"; break;
+    case 0xCA: s = "E$Poll   :Polling Table Full"; break;
+    case 0xCB: s = "E$BMode  :Bad Mode"; break;
+    case 0xCC: s = "E$DevOvf :Device Table Overflow"; break;
+    case 0xCD: s = "E$BMID   :Bad Module ID"; break;
+    case 0xCE: s = "E$DirFul :Module Directory Full"; break;
+    case 0xCF: s = "E$MemFul :Process Memory Full"; break;
+    case 0xD0: s = "E$UnkSvc :Unknown Service Code"; break;
+    case 0xD1: s = "E$ModBsy :Module Busy"; break;
+    case 0xD2: s = "E$BPAddr :Bad Page Address"; break;
+    case 0xD3: s = "E$EOF    :End of File"; break;
+    case 0xD5: s = "E$NES    :Non-Existing Segment"; break;
+    case 0xD6: s = "E$FNA    :File Not Accesible"; break;
+    case 0xD7: s = "E$BPNam  :Bad Path Name"; break;
+    case 0xD8: s = "E$PNNF   :Path Name Not Found"; break;
+    case 0xD9: s = "E$SLF    :Segment List Full"; break;
+    case 0xDA: s = "E$CEF    :Creating Existing File"; break;
+    case 0xDB: s = "E$IBA    :Illegal Block Address"; break;
+    case 0xDC: s = "E$HangUp :Carrier Detect Lost"; break;
+    case 0xDD: s = "E$MNF    :Module Not Found"; break;
+    case 0xDF: s = "E$DelSP  :Deleting Stack Pointer memory"; break;
+    case 0xE0: s = "E$IPrcID :Illegal Process ID"; break;
+    case 0xE2: s = "E$NoChld :No Children"; break;
+    case 0xE3: s = "E$ISWI   :Illegal SWI code"; break;
+    case 0xE4: s = "E$PrcAbt :Process Aborted"; break;
+    case 0xE5: s = "E$PrcFul :Process Table Full"; break;
+    case 0xE6: s = "E$IForkP :Illegal Fork Parameter"; break;
+    case 0xE7: s = "E$KwnMod :Known Module"; break;
+    case 0xE8: s = "E$BMCRC  :Bad Module CRC"; break;
+    case 0xE9: s = "E$USigP  :Unprocessed Signal Pending"; break;
+    case 0xEA: s = "E$NEMod  :Non Existing Module"; break;
+    case 0xEB: s = "E$BNam   :Bad Name"; break;
+    case 0xEC: s = "E$BMHP   :(bad module header parity)"; break;
+    case 0xED: s = "E$NoRAM  :No (System) RAM Available"; break;
+    case 0xEE: s = "E$DNE    :Directory not empty"; break;
+    case 0xEF: s = "E$NoTask :No available Task number"; break;
+    case 0xF0: s = "E$Unit   :Illegal Unit (drive)"; break;
+    case 0xF1: s = "E$Sect   :Bad Sector number"; break;
+    case 0xF2: s = "E$WP     :Write Protect"; break;
+    case 0xF3: s = "E$CRC    :Bad Check Sum"; break;
+    case 0xF4: s = "E$Read   :Read Error"; break;
+    case 0xF5: s = "E$Write  :Write Error"; break;
+    case 0xF6: s = "E$NotRdy :Device Not Ready"; break;
+    case 0xF7: s = "E$Seek   :Seek Error"; break;
+    case 0xF8: s = "E$Full   :Media Full"; break;
+    case 0xF9: s = "E$BTyp   :Bad Type (incompatable) media"; break;
+    case 0xFA: s = "E$DevBsy :Device Busy"; break;
+    case 0xFB: s = "E$DIDC   :Disk ID Change"; break;
+    case 0xFC: s = "E$Lock   :Record is busy (locked out)"; break;
+    case 0xFD: s = "E$Share  :Non-sharable file busy"; break;
+    case 0xFE: s = "E$DeadLk :I/O Deadlock error"; break;
+  }
+  return s;
+}
+
+char* DecodeOs9GetStat(Byte b) {
+  char* s = "???";
+  switch (b) {
+    case 0x00: s = "SS.Opt    : Read/Write PD Options"; break;
+    case 0x01: s = "SS.Ready  : Check for Device Ready"; break;
+    case 0x02: s = "SS.Size   : Read/Write File Size"; break;
+    case 0x03: s = "SS.Reset  : Device Restore"; break;
+    case 0x04: s = "SS.WTrk   : Device Write Track"; break;
+    case 0x05: s = "SS.Pos    : Get File Current Position"; break;
+    case 0x06: s = "SS.EOF    : Test for End of File"; break;
+    case 0x07: s = "SS.Link   : Link to Status routines"; break;
+    case 0x08: s = "SS.ULink  : Unlink Status routines"; break;
+    case 0x09: s = "SS.Feed   : Issue form feed"; break;
+    case 0x0A: s = "SS.Frz    : Freeze DD. information"; break;
+    case 0x0B: s = "SS.SPT    : Set DD.TKS to given value"; break;
+    case 0x0C: s = "SS.SQD    : Sequence down hard disk"; break;
+    case 0x0D: s = "SS.DCmd   : Send direct command to disk"; break;
+    case 0x0E: s = "SS.DevNm  : Return Device name (32-bytes at [X])"; break;
+    case 0x0F: s = "SS.FD     : Return File Descriptor (Y-bytes at [X])"; break;
+    case 0x10: s = "SS.Ticks  : Set Lockout honor duration"; break;
+    case 0x11: s = "SS.Lock   : Lock/Release record"; break;
+    case 0x12: s = "SS.DStat  : Return Display Status (CoCo)"; break;
+    case 0x13: s = "SS.Joy    : Return Joystick Value (CoCo)"; break;
+    case 0x14: s = "SS.BlkRd  : Block Read"; break;
+    case 0x15: s = "SS.BlkWr  : Block Write"; break;
+    case 0x16: s = "SS.Reten  : Retension cycle"; break;
+    case 0x17: s = "SS.WFM    : Write File Mark"; break;
+    case 0x18: s = "SS.RFM    : Read past File Mark"; break;
+    case 0x19: s = "SS.ELog   : Read Error Log"; break;
+    case 0x1A: s = "SS.SSig   : Send signal on data ready"; break;
+    case 0x1B: s = "SS.Relea  : Release device"; break;
+    case 0x1C: s = "SS.AlfaS  : Return Alfa Display Status (CoCo, SCF/GetStat)"; break;
+    case 0x1D: s = "SS.Break  : Send break signal out acia"; break;
+    case 0x1E: s = "SS.RsBit  : Reserve bitmap sector (do not allocate in) LSB(X)=sct#"; break;
+    case 0x20: s = "SS.DirEnt : Reserve bitmap sector (do not allocate in) LSB(X)=sct#"; break;
+    case 0x24: s = "SS.SetMF  : Reserve $24 for Gimix G68 (Flex compatability?)"; break;
+    case 0x25: s = "SS.Cursr  : Cursor information for COCO"; break;
+    case 0x26: s = "SS.ScSiz  : Return screen size for COCO"; break;
+    case 0x27: s = "SS.KySns  : Getstat/SetStat for COCO keyboard"; break;
+    case 0x28: s = "SS.ComSt  : Getstat/SetStat for Baud/Parity"; break;
+    case 0x29: s = "SS.Open   : SetStat to tell driver a path was opened"; break;
+    case 0x2A: s = "SS.Close  : SetStat to tell driver a path was closed"; break;
+    case 0x2B: s = "SS.HngUp  : SetStat to tell driver to hangup phone"; break;
+    case 0x2C: s = "SS.FSig   : New signal for temp locked files"; break;
+  }
+  return s;
+}
+char* Os9String(Word w) {
+  static char buf[99];
+  char* p = buf;
+  while (1) {
+    Byte b = GETBYTE(w);
+    Byte ch = 127 & b;
+    if (33 <= ch && ch < 127) {
+      *p++ = ch;
+    } else {
+      break;
+    }
+    if (b&128) break;
+    ++w;
+  }
+  *p = 0;
+  return buf;
+}
+char* Os9WritLnWhat() {
+  static char buf[9999];
+  int i;
+  int j = 0;
+  memset(buf, 0, sizeof buf);
+  for (i=0; i<yreg && i<1024; i++) {
+    Byte ch = mem[(Word)(xreg + i)];
+    if (32 <= ch && ch < 127) {
+      buf[j] = mem[(Word)(xreg + i)];
+      ++j;
+    } else {
+      sprintf(buf+j, "{%d}", ch);
+      j = strlen(buf);
+    }
+    if (ch == '\r') { break; }
+  }
+  return buf;
+}
+char* ModuleName(Word a) {
+  Word s = a + GETWORD(a+4);
+  return Os9String(s);
+}
+void DecodeOs9Opcode(Byte b) {
+  struct Completion* cp = &Os9SysCallCompletion[pcreg+1];
+  cp->f = DefaultCompleter;
+  cp->service = GETBYTE(pcreg)+1;
+
+  Os9AllMemoryModules();
+  char* s = "???";
+  switch(b) {
+    case 0x00: s = "F$Link   : Link to Module";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... module='%s'\n", b, s, Os9String(xreg));
+      return;
+    case 0x01: s = "F$Load   : Load Module from File";
+      break;
+    case 0x02: s = "F$UnLink : Unlink Module";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... u=%04x magic=%04x module='%s'\n", b, s, ureg, GETWORD(ureg), ModuleName(ureg));
+      return;
+      break;
+    case 0x03: s = "F$Fork   : Start New Process";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
+      return;
+      break;
+    case 0x04: s = "F$Wait   : Wait for Child Process to Die";
+      break;
+    case 0x05: s = "F$Chain  : Chain Process to New Module";
+      break;
+    case 0x06: s = "F$Exit   : Terminate Process";
+      break;
+    case 0x07: s = "F$Mem    : Set Memory Size";
+      break;
+    case 0x08: s = "F$Send   : Send Signal to Process";
+      break;
+    case 0x09: s = "F$Icpt   : Set Signal Intercept";
+      break;
+    case 0x0A: s = "F$Sleep  : Suspend Process";
+      break;
+    case 0x0B: s = "F$SSpd   : Suspend Process";
+      break;
+    case 0x0C: s = "F$ID     : Return Process ID";
+      break;
+    case 0x0D: s = "F$SPrior : Set Process Priority";
+      break;
+    case 0x0E: s = "F$SSWI   : Set Software Interrupt";
+      break;
+    case 0x0F: s = "F$PErr   : Print Error";
+      break;
+    case 0x10: s = "F$PrsNam : Parse Pathlist Name";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... path='%s'\n", b, s, Os9String(xreg));
+      return;
+    case 0x11: s = "F$CmpNam : Compare Two Names";
+      break;
+    case 0x12: s = "F$SchBit : Search Bit Map";
+      break;
+    case 0x13: s = "F$AllBit : Allocate in Bit Map";
+      break;
+    case 0x14: s = "F$DelBit : Deallocate in Bit Map";
+      break;
+    case 0x15: s = "F$Time   : Get Current Time";
+      break;
+    case 0x16: s = "F$STime  : Set Current Time";
+      break;
+    case 0x17: s = "F$CRC    : Generate CRC ($1";
+      break;
+
+    // NitrOS9:
+
+    case 0x27: s = "F$VIRQ   : Install/Delete Virtual IRQ";
+      break;
+    case 0x28: s = "F$SRqMem : System Memory Request";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... size=%02x%02x\n", b, s, *areg, *breg);
+      return;
+    case 0x29: s = "F$SRtMem : System Memory Return";
+      break;
+    case 0x2A: s = "F$IRQ    : Enter IRQ Polling Table";
+      break;
+    case 0x2B: s = "F$IOQu   : Enter I/O Queue";
+      break;
+    case 0x2C: s = "F$AProc  : Enter Active Process Queue";
+      break;
+    case 0x2D: s = "F$NProc  : Start Next Process";
+      break;
+    case 0x2E: s = "F$VModul : Validate Module";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... D=%04x X=%04x\n", b, s, *dreg, xreg);
+      return;
+    case 0x2F: s = "F$Find64 : Find Process/Path Descriptor";
+      break;
+    case 0x30: s = "F$All64  : Allocate Process/Path Descriptor";
+      break;
+    case 0x31: s = "F$Ret64  : Return Process/Path Descriptor";
+      break;
+    case 0x32: s = "F$SSvc   : Service Request Table Initialization";
+      break;
+    case 0x33: s = "F$IODel  : Delete I/O Module";
+      break;
+
+    // IOMan:
+
+    case 0x80: s = "I$Attach : Attach I/O Device";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... u=%04x magic=%04x module='%s'\n", b, s, ureg, GETWORD(ureg), Os9String(ureg+GETWORD(ureg+4)));
+      return;
+      break;
+    case 0x81: s = "I$Detach : Detach I/O Device";
+      break;
+    case 0x82: s = "I$Dup    : Duplicate Path";
+      break;
+    case 0x83: s = "I$Create : Create New File";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
+      return;
+      break;
+    case 0x84: s = "I$Open   : Open Existing File";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
+      return;
+      break;
+    case 0x85: s = "I$MakDir : Make Directory File";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
+      return;
+      break;
+    case 0x86: s = "I$ChgDir : Change Default Directory";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
+      return;
+    case 0x87: s = "I$Delete : Delete File";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
+      return;
+      break;
+    case 0x88: s = "I$Seek   : Change Current Position";
+      break;
+    case 0x89: s = "I$Read   : Read Data";
+      break;
+    case 0x8A: s = "I$Write  : Write Data";
+      break;
+    case 0x8B: s = "I$ReadLn : Read Line of ASCII Data";
+      break;
+    case 0x8C: s = "I$WritLn : Write Line of ASCII Data";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... {{{%s}}}\n", b, s, Os9WritLnWhat());
+      printf("{%s}\n", Os9WritLnWhat());
+      fflush(stdout);
+      break;
+    case 0x8D: s = "I$GetStt : Get Path Status";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... %s\n", b, s, DecodeOs9GetStat(*areg));
+      return;
+      break;
+    case 0x8E: s = "I$SetStt : Set Path Status";
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... %s\n", b, s, DecodeOs9GetStat(*areg));
+      return;
+      break;
+    case 0x8F: s = "I$Close  : Close Path";
+      break;
+    case 0x90: s = "I$DeletX : Delete from current exec dir";
+      break;
+  }
+  fprintf(stderr, "HEY, Kernel 0x%02x: %s\n", b, s);
+}
+
+void DefaultCompleter(struct Completion* cp) {
+  if (ccreg&1) {
+    Byte errcode = *breg;
+    fprintf(stderr, "HEY, Kernel 0x%02x -> ERROR [%02x] %s\n", cp->service-1, errcode, DecodeOs9Error(errcode));
+  } else {
+    fprintf(stderr, "HEY, Kernel 0x%02x -> okay\n", cp->service-1);
+  }
+}
+
 char KB_NORMAL[] = "@abcdefghijklmnopqrstuvwxyz{}[] 0123456789:;,-./\r\b\0\0\0\0\0\0";
 char KB_SHIFT[] = "_ABCDEFGHIJKLMNOPQRSTUVWXYZ____ 0!\"#$%&'()*+<=>?\0\0\0\0\0\0\0\0";
 
@@ -1490,23 +1892,6 @@ rti()
  PULLWORD(pcreg)
 }
 
-char* Os9String(Word w) {
-  static char buf[99];
-  char* p = buf;
-  while (1) {
-    Byte b = GETBYTE(w);
-    Byte ch = 127 & b;
-    if (33 <= ch && ch < 127) {
-      *p++ = ch;
-    } else {
-      break;
-    }
-    if (b&128) break;
-    ++w;
-  }
-  *p = 0;
-  return buf;
-}
 Os9AllMemoryModules() {
   Word start = GETWORD(0x26);
   Word limit = GETWORD(0x28);
@@ -1522,364 +1907,6 @@ Os9AllMemoryModules() {
   }
   fprintf(stderr, "\n\n");
 }
-
-char* DecodeOs9Error(Byte b) {
-  char* s = "???";
-  switch (b) {
-    case 0x0A: s = "E$UnkSym :Unknown symbol"; break;
-    case 0x0B: s = "E$ExcVrb :Excessive verbage"; break;
-    case 0x0C: s = "E$IllStC :Illegal statement construction"; break;
-    case 0x0D: s = "E$ICOvf  :I-code overflow"; break;
-    case 0x0E: s = "E$IChRef :Illegal channel reference"; break;
-    case 0x0F: s = "E$IllMod :Illegal mode"; break;
-    case 0x10: s = "E$IllNum :Illegal number"; break;
-    case 0x11: s = "E$IllPrf :Illegal prefix"; break;
-    case 0x12: s = "E$IllOpd :Illegal operand"; break;
-    case 0x13: s = "E$IllOpr :Illegal operator"; break;
-    case 0x14: s = "E$IllRFN :Illegal record field name"; break;
-    case 0x15: s = "E$IllDim :Illegal dimension"; break;
-    case 0x16: s = "E$IllLit :Illegal literal"; break;
-    case 0x17: s = "E$IllRet :Illegal relational"; break;
-    case 0x18: s = "E$IllSfx :Illegal type suffix"; break;
-    case 0x19: s = "E$DimLrg :Dimension too large"; break;
-    case 0x1A: s = "E$LinLrg :Line number too large"; break;
-    case 0x1B: s = "E$NoAssg :Missing assignment statement"; break;
-    case 0x1C: s = "E$NoPath :Missing path number"; break;
-    case 0x1D: s = "E$NoComa :Missing coma"; break;
-    case 0x1E: s = "E$NoDim  :Missing dimension"; break;
-    case 0x1F: s = "E$NoDO   :Missing DO statement"; break;
-    case 0x20: s = "E$MFull  :Memory full"; break;
-    case 0x21: s = "E$NoGoto :Missing GOTO"; break;
-    case 0x22: s = "E$NoLPar :Missing left parenthesis"; break;
-    case 0x23: s = "E$NoLRef :Missing line reference"; break;
-    case 0x24: s = "E$NoOprd :Missing operand"; break;
-    case 0x25: s = "E$NoRPar :Missing right parenthesis"; break;
-    case 0x26: s = "E$NoTHEN :Missing THEN statement"; break;
-    case 0x27: s = "E$NoTO   :Missing TO statement"; break;
-    case 0x28: s = "E$NoVRef :Missing variable reference"; break;
-    case 0x29: s = "E$EndQou :Missing end quote"; break;
-    case 0x2A: s = "E$SubLrg :Too many subscripts"; break;
-    case 0x2B: s = "E$UnkPrc :Unknown procedure"; break;
-    case 0x2C: s = "E$MulPrc :Multiply defined procedure"; break;
-    case 0x2D: s = "E$DivZer :Divice by zero"; break;
-    case 0x2E: s = "E$TypMis :Operand type mismatch"; break;
-    case 0x2F: s = "E$StrOvf :String stack overflow"; break;
-    case 0x30: s = "E$NoRout :Unimplemented routine"; break;
-    case 0x31: s = "E$UndVar :Undefined variable"; break;
-    case 0x32: s = "E$FltOvf :Floating Overflow"; break;
-    case 0x33: s = "E$LnComp :Line with compiler error"; break;
-    case 0x34: s = "E$ValRng :Value out of range for destination"; break;
-    case 0x35: s = "E$SubOvf :Subroutine stack overflow"; break;
-    case 0x36: s = "E$SubUnd :Subroutine stack underflow"; break;
-    case 0x37: s = "E$SubRng :Subscript out of range"; break;
-    case 0x38: s = "E$ParmEr :Paraemter error"; break;
-    case 0x39: s = "E$SysOvf :System stack overflow"; break;
-    case 0x3A: s = "E$IOMism :I/O type mismatch"; break;
-    case 0x3B: s = "E$IONum  :I/O numeric input format bad"; break;
-    case 0x3C: s = "E$IOConv :I/O conversion: number out of range"; break;
-    case 0x3D: s = "E$IllInp :Illegal input format"; break;
-    case 0x3E: s = "E$IOFRpt :I/O format repeat error"; break;
-    case 0x3F: s = "E$IOFSyn :I/O format syntax error"; break;
-    case 0x40: s = "E$IllPNm :Illegal path number"; break;
-    case 0x41: s = "E$WrSub  :Wrong number of subscripts"; break;
-    case 0x42: s = "E$NonRcO :Non-record type operand"; break;
-    case 0x43: s = "E$IllA   :Illegal argument"; break;
-    case 0x44: s = "E$IllCnt :Illegal control structure"; break;
-    case 0x45: s = "E$UnmCnt :Unmatched control structure"; break;
-    case 0x46: s = "E$IllFOR :Illegal FOR variable"; break;
-    case 0x47: s = "E$IllExp :Illegal expression type"; break;
-    case 0x48: s = "E$IllDec :Illegal declarative statement"; break;
-    case 0x49: s = "E$ArrOvf :Array size overflow"; break;
-    case 0x4A: s = "E$UndLin :Undefined line number"; break;
-    case 0x4B: s = "E$MltLin :Multiply defined line number"; break;
-    case 0x4C: s = "E$MltVar :Multiply defined variable"; break;
-    case 0x4D: s = "E$IllIVr :Illegal input variable"; break;
-    case 0x4E: s = "E$SeekRg :Seek out of range"; break;
-    case 0x4F: s = "E$NoData :Missing data statement"; break;
-    case 0xB7: s = "E$IWTyp  :Illegal window type"; break;
-    case 0xB8: s = "E$WADef  :Window already defined"; break;
-    case 0xB9: s = "E$NFont  :Font not found"; break;
-    case 0xBA: s = "E$StkOvf :Stack overflow"; break;
-    case 0xBB: s = "E$IllArg :Illegal argument"; break;
-    case 0xBD: s = "E$ICoord :Illegal coordinates"; break;
-    case 0xBE: s = "E$Bug    :Bug (should never be returned)"; break;
-    case 0xBF: s = "E$BufSiz :Buffer size is too small"; break;
-    case 0xC0: s = "E$IllCmd :Illegal command"; break;
-    case 0xC1: s = "E$TblFul :Screen or window table is full"; break;
-    case 0xC2: s = "E$BadBuf :Bad/Undefined buffer number"; break;
-    case 0xC3: s = "E$IWDef  :Illegal window definition"; break;
-    case 0xC4: s = "E$WUndef :Window undefined"; break;
-    case 0xC5: s = "E$Up     :Up arrow pressed on SCF I$ReadLn with PD.UP enabled"; break;
-    case 0xC6: s = "E$Dn     :Down arrow pressed on SCF I$ReadLn with PD.DOWN enabled"; break;
-    case 0xC8: s = "E$PthFul :Path Table full"; break;
-    case 0xC9: s = "E$BPNum  :Bad Path Number"; break;
-    case 0xCA: s = "E$Poll   :Polling Table Full"; break;
-    case 0xCB: s = "E$BMode  :Bad Mode"; break;
-    case 0xCC: s = "E$DevOvf :Device Table Overflow"; break;
-    case 0xCD: s = "E$BMID   :Bad Module ID"; break;
-    case 0xCE: s = "E$DirFul :Module Directory Full"; break;
-    case 0xCF: s = "E$MemFul :Process Memory Full"; break;
-    case 0xD0: s = "E$UnkSvc :Unknown Service Code"; break;
-    case 0xD1: s = "E$ModBsy :Module Busy"; break;
-    case 0xD2: s = "E$BPAddr :Bad Page Address"; break;
-    case 0xD3: s = "E$EOF    :End of File"; break;
-    case 0xD5: s = "E$NES    :Non-Existing Segment"; break;
-    case 0xD6: s = "E$FNA    :File Not Accesible"; break;
-    case 0xD7: s = "E$BPNam  :Bad Path Name"; break;
-    case 0xD8: s = "E$PNNF   :Path Name Not Found"; break;
-    case 0xD9: s = "E$SLF    :Segment List Full"; break;
-    case 0xDA: s = "E$CEF    :Creating Existing File"; break;
-    case 0xDB: s = "E$IBA    :Illegal Block Address"; break;
-    case 0xDC: s = "E$HangUp :Carrier Detect Lost"; break;
-    case 0xDD: s = "E$MNF    :Module Not Found"; break;
-    case 0xDF: s = "E$DelSP  :Deleting Stack Pointer memory"; break;
-    case 0xE0: s = "E$IPrcID :Illegal Process ID"; break;
-    case 0xE2: s = "E$NoChld :No Children"; break;
-    case 0xE3: s = "E$ISWI   :Illegal SWI code"; break;
-    case 0xE4: s = "E$PrcAbt :Process Aborted"; break;
-    case 0xE5: s = "E$PrcFul :Process Table Full"; break;
-    case 0xE6: s = "E$IForkP :Illegal Fork Parameter"; break;
-    case 0xE7: s = "E$KwnMod :Known Module"; break;
-    case 0xE8: s = "E$BMCRC  :Bad Module CRC"; break;
-    case 0xE9: s = "E$USigP  :Unprocessed Signal Pending"; break;
-    case 0xEA: s = "E$NEMod  :Non Existing Module"; break;
-    case 0xEB: s = "E$BNam   :Bad Name"; break;
-    case 0xEC: s = "E$BMHP   :(bad module header parity)"; break;
-    case 0xED: s = "E$NoRAM  :No (System) RAM Available"; break;
-    case 0xEE: s = "E$DNE    :Directory not empty"; break;
-    case 0xEF: s = "E$NoTask :No available Task number"; break;
-    case 0xF0: s = "E$Unit   :Illegal Unit (drive)"; break;
-    case 0xF1: s = "E$Sect   :Bad Sector number"; break;
-    case 0xF2: s = "E$WP     :Write Protect"; break;
-    case 0xF3: s = "E$CRC    :Bad Check Sum"; break;
-    case 0xF4: s = "E$Read   :Read Error"; break;
-    case 0xF5: s = "E$Write  :Write Error"; break;
-    case 0xF6: s = "E$NotRdy :Device Not Ready"; break;
-    case 0xF7: s = "E$Seek   :Seek Error"; break;
-    case 0xF8: s = "E$Full   :Media Full"; break;
-    case 0xF9: s = "E$BTyp   :Bad Type (incompatable) media"; break;
-    case 0xFA: s = "E$DevBsy :Device Busy"; break;
-    case 0xFB: s = "E$DIDC   :Disk ID Change"; break;
-    case 0xFC: s = "E$Lock   :Record is busy (locked out)"; break;
-    case 0xFD: s = "E$Share  :Non-sharable file busy"; break;
-    case 0xFE: s = "E$DeadLk :I/O Deadlock error"; break;
-  }
-  return s;
-}
-
-char* DecodeOs9GetStat(Byte b) {
-  char* s = "???";
-  switch (b) {
-    case 0x00: s = "SS.Opt    : Read/Write PD Options"; break;
-    case 0x01: s = "SS.Ready  : Check for Device Ready"; break;
-    case 0x02: s = "SS.Size   : Read/Write File Size"; break;
-    case 0x03: s = "SS.Reset  : Device Restore"; break;
-    case 0x04: s = "SS.WTrk   : Device Write Track"; break;
-    case 0x05: s = "SS.Pos    : Get File Current Position"; break;
-    case 0x06: s = "SS.EOF    : Test for End of File"; break;
-    case 0x07: s = "SS.Link   : Link to Status routines"; break;
-    case 0x08: s = "SS.ULink  : Unlink Status routines"; break;
-    case 0x09: s = "SS.Feed   : Issue form feed"; break;
-    case 0x0A: s = "SS.Frz    : Freeze DD. information"; break;
-    case 0x0B: s = "SS.SPT    : Set DD.TKS to given value"; break;
-    case 0x0C: s = "SS.SQD    : Sequence down hard disk"; break;
-    case 0x0D: s = "SS.DCmd   : Send direct command to disk"; break;
-    case 0x0E: s = "SS.DevNm  : Return Device name (32-bytes at [X])"; break;
-    case 0x0F: s = "SS.FD     : Return File Descriptor (Y-bytes at [X])"; break;
-    case 0x10: s = "SS.Ticks  : Set Lockout honor duration"; break;
-    case 0x11: s = "SS.Lock   : Lock/Release record"; break;
-    case 0x12: s = "SS.DStat  : Return Display Status (CoCo)"; break;
-    case 0x13: s = "SS.Joy    : Return Joystick Value (CoCo)"; break;
-    case 0x14: s = "SS.BlkRd  : Block Read"; break;
-    case 0x15: s = "SS.BlkWr  : Block Write"; break;
-    case 0x16: s = "SS.Reten  : Retension cycle"; break;
-    case 0x17: s = "SS.WFM    : Write File Mark"; break;
-    case 0x18: s = "SS.RFM    : Read past File Mark"; break;
-    case 0x19: s = "SS.ELog   : Read Error Log"; break;
-    case 0x1A: s = "SS.SSig   : Send signal on data ready"; break;
-    case 0x1B: s = "SS.Relea  : Release device"; break;
-    case 0x1C: s = "SS.AlfaS  : Return Alfa Display Status (CoCo, SCF/GetStat)"; break;
-    case 0x1D: s = "SS.Break  : Send break signal out acia"; break;
-    case 0x1E: s = "SS.RsBit  : Reserve bitmap sector (do not allocate in) LSB(X)=sct#"; break;
-    case 0x20: s = "SS.DirEnt : Reserve bitmap sector (do not allocate in) LSB(X)=sct#"; break;
-    case 0x24: s = "SS.SetMF  : Reserve $24 for Gimix G68 (Flex compatability?)"; break;
-    case 0x25: s = "SS.Cursr  : Cursor information for COCO"; break;
-    case 0x26: s = "SS.ScSiz  : Return screen size for COCO"; break;
-    case 0x27: s = "SS.KySns  : Getstat/SetStat for COCO keyboard"; break;
-    case 0x28: s = "SS.ComSt  : Getstat/SetStat for Baud/Parity"; break;
-    case 0x29: s = "SS.Open   : SetStat to tell driver a path was opened"; break;
-    case 0x2A: s = "SS.Close  : SetStat to tell driver a path was closed"; break;
-    case 0x2B: s = "SS.HngUp  : SetStat to tell driver to hangup phone"; break;
-    case 0x2C: s = "SS.FSig   : New signal for temp locked files"; break;
-  }
-  return s;
-}
-char* Os9WritLnWhat() {
-  static char buf[1025];
-  int i;
-  memset(buf, 0, sizeof buf);
-  for (i=0; i<yreg && i<1024; i++) {
-    buf[i] = mem[(Word)(xreg + i)];
-    if (buf[i] == '\r') { break; }
-  }
-  return buf;
-}
-char* ModuleName(Word a) {
-  Word s = a + GETWORD(a+4);
-  return Os9String(s);
-}
-DecodeOs9Opcode(Byte b) {
-  Os9AllMemoryModules();
-  char* s = "???";
-  switch(b) {
-    case 0x00: s = "F$Link   : Link to Module";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... module='%s'\n", b, s, Os9String(xreg));
-      return;
-    case 0x01: s = "F$Load   : Load Module from File";
-      break;
-    case 0x02: s = "F$UnLink : Unlink Module";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... u=%04x magic=%04x module='%s'\n", b, s, ureg, GETWORD(ureg), ModuleName(ureg));
-      return;
-      break;
-    case 0x03: s = "F$Fork   : Start New Process";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
-      return;
-      break;
-    case 0x04: s = "F$Wait   : Wait for Child Process to Die";
-      break;
-    case 0x05: s = "F$Chain  : Chain Process to New Module";
-      break;
-    case 0x06: s = "F$Exit   : Terminate Process";
-      break;
-    case 0x07: s = "F$Mem    : Set Memory Size";
-      break;
-    case 0x08: s = "F$Send   : Send Signal to Process";
-      break;
-    case 0x09: s = "F$Icpt   : Set Signal Intercept";
-      break;
-    case 0x0A: s = "F$Sleep  : Suspend Process";
-      break;
-    case 0x0B: s = "F$SSpd   : Suspend Process";
-      break;
-    case 0x0C: s = "F$ID     : Return Process ID";
-      break;
-    case 0x0D: s = "F$SPrior : Set Process Priority";
-      break;
-    case 0x0E: s = "F$SSWI   : Set Software Interrupt";
-      break;
-    case 0x0F: s = "F$PErr   : Print Error";
-      break;
-    case 0x10: s = "F$PrsNam : Parse Pathlist Name";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... path='%s'\n", b, s, Os9String(xreg));
-      return;
-    case 0x11: s = "F$CmpNam : Compare Two Names";
-      break;
-    case 0x12: s = "F$SchBit : Search Bit Map";
-      break;
-    case 0x13: s = "F$AllBit : Allocate in Bit Map";
-      break;
-    case 0x14: s = "F$DelBit : Deallocate in Bit Map";
-      break;
-    case 0x15: s = "F$Time   : Get Current Time";
-      break;
-    case 0x16: s = "F$STime  : Set Current Time";
-      break;
-    case 0x17: s = "F$CRC    : Generate CRC ($1";
-      break;
-
-    // NitrOS9:
-
-    case 0x27: s = "F$VIRQ   : Install/Delete Virtual IRQ";
-      break;
-    case 0x28: s = "F$SRqMem : System Memory Request";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... size=%02x%02x\n", b, s, *areg, *breg);
-      return;
-    case 0x29: s = "F$SRtMem : System Memory Return";
-      break;
-    case 0x2A: s = "F$IRQ    : Enter IRQ Polling Table";
-      break;
-    case 0x2B: s = "F$IOQu   : Enter I/O Queue";
-      break;
-    case 0x2C: s = "F$AProc  : Enter Active Process Queue";
-      break;
-    case 0x2D: s = "F$NProc  : Start Next Process";
-      break;
-    case 0x2E: s = "F$VModul : Validate Module";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... D=%04x X=%04x\n", b, s, *dreg, xreg);
-      return;
-    case 0x2F: s = "F$Find64 : Find Process/Path Descriptor";
-      break;
-    case 0x30: s = "F$All64  : Allocate Process/Path Descriptor";
-      break;
-    case 0x31: s = "F$Ret64  : Return Process/Path Descriptor";
-      break;
-    case 0x32: s = "F$SSvc   : Service Request Table Initialization";
-      break;
-    case 0x33: s = "F$IODel  : Delete I/O Module";
-      break;
-
-    // IOMan:
-
-    case 0x80: s = "I$Attach : Attach I/O Device";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... u=%04x magic=%04x module='%s'\n", b, s, ureg, GETWORD(ureg), Os9String(ureg+GETWORD(ureg+4)));
-      return;
-      break;
-    case 0x81: s = "I$Detach : Detach I/O Device";
-      break;
-    case 0x82: s = "I$Dup    : Duplicate Path";
-      break;
-    case 0x83: s = "I$Create : Create New File";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
-      return;
-      break;
-    case 0x84: s = "I$Open   : Open Existing File";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
-      return;
-      break;
-    case 0x85: s = "I$MakDir : Make Directory File";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
-      return;
-      break;
-    case 0x86: s = "I$ChgDir : Change Default Directory";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
-      return;
-    case 0x87: s = "I$Delete : Delete File";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... X='%s'\n", b, s, Os9String(xreg));
-      return;
-      break;
-    case 0x88: s = "I$Seek   : Change Current Position";
-      break;
-    case 0x89: s = "I$Read   : Read Data";
-      break;
-    case 0x8A: s = "I$Write  : Write Data";
-      break;
-    case 0x8B: s = "I$ReadLn : Read Line of ASCII Data";
-      break;
-    case 0x8C: s = "I$WritLn : Write Line of ASCII Data";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... {{{%s}}}\n", b, s, Os9WritLnWhat());
-      printf("{%s}\n", Os9WritLnWhat());
-      fflush(stdout);
-      break;
-    case 0x8D: s = "I$GetStt : Get Path Status";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... %s\n", b, s, DecodeOs9GetStat(*areg));
-      return;
-      break;
-    case 0x8E: s = "I$SetStt : Set Path Status";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... %s\n", b, s, DecodeOs9GetStat(*areg));
-      return;
-      break;
-    case 0x8F: s = "I$Close  : Close Path";
-      break;
-    case 0x90: s = "I$DeletX : Delete from current exec dir";
-      break;
-  }
-  fprintf(stderr, "HEY, Kernel 0x%02x: %s\n", b, s);
-}
-
-typedef void Callback(int, int, int);
-Byte Os9SysCallReturnAddr[0x10000];
-//Callback Os9SysCallReturnCallback[0x10000];
-//int Os9SysCallReturnArgs[0x10000][3];
 
 swi()
 {
@@ -1917,7 +1944,7 @@ swi()
     // assert(GETBYTE(pcreg+0) == 0x3F);
     // fprintf(stderr, "pcreg=%x\n", pcreg);
     DecodeOs9Opcode(GETBYTE(pcreg));
-    Os9SysCallReturnAddr[pcreg+1] = GETBYTE(pcreg)+1;
+
     tmp=GETWORD(0xfff4);
     break;
    case 3:  /* SWI3 */
@@ -2617,13 +2644,10 @@ main(int argc,char *argv[])
  pcreg_prev = pcreg;
 
  for(steps = 0; !maxsteps || steps < maxsteps; ((pcreg_prev=pcreg), steps++)){
-   if (Os9SysCallReturnAddr[pcreg]) {
-     if (ccreg&1) {
-       fprintf(stderr, "HEY, Kernel 0x%02x -> ERROR [%02x] %s\n", Os9SysCallReturnAddr[pcreg]-1, *breg, DecodeOs9Error(*breg));
-     } else {
-       fprintf(stderr, "HEY, Kernel 0x%02x -> okay\n", Os9SysCallReturnAddr[pcreg]-1);
-     }
-     Os9SysCallReturnAddr[pcreg] = 0;
+   struct Completion* cp = &Os9SysCallCompletion[pcreg];
+   if (cp->f) {
+     cp->f(cp);
+     cp->f = NULL;
    }
 
    if (steps % IRQ_FREQ == IRQ_FREQ - 1) {
@@ -2663,9 +2687,9 @@ main(int argc,char *argv[])
   }
 #endif
 
- pcreg_prev = pcreg;
+  pcreg_prev = pcreg;
 
- } /* for */
+ } /* next step */
  fprintf(stderr,"FINISHED %d STEPS\n", steps);
  finish();
 }
