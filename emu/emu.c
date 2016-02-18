@@ -2398,7 +2398,7 @@ read_image(char* name)
 {
  FILE *image;
  if((image=fopen(name,"rb"))!=NULL) {
-  fread(mem+0x100,0xff00,1,image);
+  fread(mem+0x100,1,0xff00,image);
   fclose(image);
  } else {
   fprintf(stderr,"ERROR: Cannot read image file\n");
