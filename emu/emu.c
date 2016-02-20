@@ -1,57 +1,3 @@
-/*
-./v09st -Lff00 -H10000  -0 -i0 -o0 -t -d /tmp/boot_serial   -f /home/strick/6809/hg.code.sf.net/nitros9/level1/coco1_yak/nos96809l1coco1_yak_80d.dsk  -Z 1222333
-
-Floppy Level1 coco1_yak BOOT:
-
-PUTBYTE ff48 00 <- d0
-GETBYTE ff48 -> d0
-PUTBYTE ff40 00 <- 09   Motor on ($08), with drive select #0 ($01).
-PUTBYTE ff40 09 <- 00   "Turn of all drive motors (BGP)"
-PUTBYTE ff4a 00 <- 01  Sector 1
-PUTBYTE ff49 00 <- ff  Track 255
-PUTBYTE ff4b 00 <- 00  Data <- 0
-PUTBYTE ff40 00 <- 09     select drive #0 ($01).
-PUTBYTE ff48 d0 <- 10  Like Seek is $17.
-GETBYTE ff48 -> 10       { wait for lowest bit 0 }
-PUTBYTE ff48 10 <- 80  Command $80: Read Sector
-PUTBYTE ff40 09 <- 39  Drive select #0, motor on, double density, write precompensataion.
-PUTBYTE ff40 39 <- b9      ...also halt enabled
-GETBYTE ff4b -> 00       Read Data
-GETBYTE ff4b -> 00       Read Data
-
-? o a293 aac4     ora   ,u                [04] x=ae74 y=ae33 u=04d4 s=04d2 a=88 b=80 cc=EfHiNzvc, s: a268 80c1, #31393
-? o a295 a7c4     sta   ,u                [04] x=ae74 y=ae33 u=04d4 s=04d2 a=88 b=80 cc=EfHiNzvc, s: a268 88c1, #31394
-? o a297 39       rts                     [05] x=ae74 y=ae33 u=04d4 s=04d4 a=88 b=80 cc=EfHiNzvc, s: 88c1 8000, #31395
-? o a268 3b       rti                     [15] x=ae00 y=ae74 u=ae33 s=04e0 a=c1 b=80 cc=EfhiNzvc, s: adc5 ad2f, #31396
-KrnP2+4e3 N ad5d 2525     bcs   $ad84             [03] x=ae00 y=ae74 u=ae33 s=04e0 a=c1 b=80 cc=EfhiNzvc, s: adc5 ad2f, #31397
-KrnP2+4e5 N ad5f ada4     jsr   ,y                [07] x=ae00 y=ae74 u=ae33 s=04de a=c1 b=80 cc=EfhiNzvc, s: ad61 adc5, #31398
-Boot+ 41 N ae74 1a50     orcc  #$50              [03] x=ae00 y=ae74 u=ae33 s=04de a=c1 b=80 cc=EFhINzvc, s: ad61 adc5, #31399
-Boot+ 43 N ae76 3271     leas  -15,s             [05] x=ae00 y=ae74 u=ae33 s=04cf a=c1 b=80 cc=EFhINzvc, s: 8304 d4a2, #31400
-Boot+ 45 N ae78 1f43     tfr   s,u               [07] x=ae00 y=ae74 u=04cf s=04cf a=c1 b=80 cc=EFhINzvc, s: 8304 d4a2, #31401
-Boot+ 47 N ae7a 8e0500   ldx   #$0500            [03] x=0500 y=ae74 u=04cf s=04cf a=c1 b=80 cc=EFhInzvc, s: 8304 d4a2, #31402
-Boot+ 4a N ae7d 3440     pshs  u                 [07] x=0500 y=ae74 u=04cf s=04cd a=c1 b=80 cc=EFhInzvc, s: 04cf 8304, #31403
-Boot+ 4c N ae7f af42     stx   2,u               [06] x=0500 y=ae74 u=04cf s=04cd a=c1 b=80 cc=EFhInzvc, s: 04cf 8304, #31404
-Boot+ 4e N ae81 10ae8d01 ldy   $afd9,pcr         [11] x=0500 y=ff40 u=04cf s=04cd a=c1 b=80 cc=EFhINzvc, s: 04cf 8304, #31405
-Boot+ 53 N ae86 17ffbc   lbsr  $ae45             [09] x=0500 y=ff40 u=04cf s=04cb a=c1 b=80 cc=EFhINzvc, s: ae89 04cf, #31406
-Boot+ 12 N ae45 86d0     lda   #$d0              [02] x=0500 y=ff40 u=04cf s=04cb a=d0 b=80 cc=EFhINzvc, s: ae89 04cf, #31407
-PUTBYTE ff48 00 <- d0
-Boot+ 14 N ae47 a728     sta   8,y               [05] x=0500 y=ff40 u=04cf s=04cb a=d0 b=80 cc=EFhINzvc, s: ae89 04cf, #31408
-Boot+ 16 N ae49 17017f   lbsr  $afcb             [09] x=0500 y=ff40 u=04cf s=04c9 a=d0 b=80 cc=EFhINzvc, s: ae4c ae89, #31409
-Boot+198 N afcb 170000   lbsr  $afce             [09] x=0500 y=ff40 u=04cf s=04c7 a=d0 b=80 cc=EFhINzvc, s: afce ae4c, #31410
-Boot+19b N afce 170000   lbsr  $afd1             [09] x=0500 y=ff40 u=04cf s=04c5 a=d0 b=80 cc=EFhINzvc, s: afd1 afce, #31411
-Boot+19e N afd1 39       rts                     [05] x=0500 y=ff40 u=04cf s=04c7 a=d0 b=80 cc=EFhINzvc, s: afce ae4c, #31412
-Boot+19e o afd1 39       rts                     [05] x=0500 y=ff40 u=04cf s=04c9 a=d0 b=80 cc=EFhINzvc, s: ae4c ae89, #31413
-Boot+19b o afce 170000   lbsr  $afd1             [09] x=0500 y=ff40 u=04cf s=04c7 a=d0 b=80 cc=EFhINzvc, s: afd1 ae4c, #31414
-Boot+19e o afd1 39       rts                     [05] x=0500 y=ff40 u=04cf s=04c9 a=d0 b=80 cc=EFhINzvc, s: ae4c ae89, #31415
-Boot+19e o afd1 39       rts                     [05] x=0500 y=ff40 u=04cf s=04cb a=d0 b=80 cc=EFhINzvc, s: ae89 04cf, #31416
-GETBYTE ff48 -> d0
-Boot+ 19 N ae4c a628     lda   8,y               [05] x=0500 y=ff40 u=04cf s=04cb a=d0 b=80 cc=EFhINzvc, s: ae89 04cf, #31417
-Boot+ 1b N ae4e 86ff     lda   #$ff              [02] x=0500 y=ff40 u=04cf s=04cb a=ff b=80 cc=EFhINzvc, s: ae89 04cf, #31418
-
-*/
-
-
-
 /* 6809 Simulator V09,
 
    created 1994 by L.C. Benschop.
@@ -87,14 +33,6 @@ Boot+ 1b N ae4e 86ff     lda   #$ff              [02] x=0500 y=ff40 u=04cf s=04c
    The file name must be given on the command line.
 
    Revisions:
-        2016-02-06 Henry Strickland <strickyak>
-                Because OS/9 uses SWI2 for kernel calls, allow other SWIs for I/O.
-                -i={0,1,2,3} Input char on {none, SWI, SWI2, or SWI3}.
-                -o={0,1,2,3} Output char on {none, SWI, SWI2, or SWI3}
-                -0  Initialize mem to 00.
-                -F  Initialize mem to FF.
-                -t  Enable trace.  (Still requires -DTRACE).
-
         2012-06-05 johann AT klasek at
                 Fixed: com with C "NOT" operator ... 0^(value) did not work!
         2012-06-06
@@ -112,6 +50,14 @@ Boot+ 1b N ae4e 86ff     lda   #$ff              [02] x=0500 y=ff40 u=04cf s=04c
                 Fixed: undocumented tfr/exg register combinations.
                         http://www.6809.org.uk/dragon/illegal-opcodes.shtml
 
+        2016-02-06 Henry Strickland <strickyak>
+                Because OS/9 uses SWI2 for kernel calls, allow other SWIs for I/O.
+                -i={0,1,2,3} Input char on {none, SWI, SWI2, or SWI3}.
+                -o={0,1,2,3} Output char on {none, SWI, SWI2, or SWI3}
+                -0  Initialize mem to 00.
+                -F  Initialize mem to FF.
+                -t  Enable trace.  (Still requires -DTRACE).
+                And more.
 */
 
 /* Why not always TRACE? */
@@ -134,6 +80,28 @@ int tflags;
 #include <fcntl.h>
 
 
+#include <stdio.h>
+#include <sys/select.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+int MaybeGetChar() {
+  int n;
+  char c = 0;
+  static struct timeval tv = {0, 0};
+  fd_set set;
+  FD_ZERO(&set);
+  FD_SET(0, &set);
+  n = select(1, &set, NULL, NULL, &tv);
+  if (n==0) return 0;
+  read(0, &c, 1);
+  // printf("GOT {%c} %d\n", c, c);
+  return c;
+}
+
+
 typedef int bool;
 #define false 0
 #define true 1
@@ -148,7 +116,7 @@ typedef int bool;
 #define VECTOR_FIRQ 0xFFF6
 #define VECTOR_NMI 0xFFFC
 
-
+// Kernel Direct Page $00
 #define D_FMBM         0x0020 // RMB 4 Free memory bit map pointers
 #define D_MLIM         0x0024 // RMB 2 Memory limit $24
 #define D_ModDir       0x0026 // RMB 4 Module directory $26
@@ -201,6 +169,36 @@ typedef int bool;
 #define D_MDREG        0x0088 // RMB 1  6309 MD (mode) shadow register $88 (added in V2.01.00)
 #define D_CRC          0x0089 // RMB 1  CRC checking mode flag $89 (added in V2.01.00)
 #define D_Clock2       0x008a // RMB 2  CC Clock2 entry address
+
+// Process descriptor
+#define P_ID       0x0000 // Process ID
+#define P_PID      0x0001 // Parent's ID
+#define P_SID      0x0002 // Sibling's ID
+#define P_CID      0x0003 // Child's ID
+#define P_SP       0x0004 // Stack ptr
+#define P_CHAP     0x0006 // process chapter number
+#define P_ADDR     0x0007 // user address beginning page number
+#define P_PagCnt   0x0008 // Memory Page Count
+#define P_User     0x0009 // User Index $09
+#define P_Prior    0x000b // Priority $0B
+#define P_Age      0x000c // Age $0C
+#define P_State    0x000d // Status $0D
+#define P_Queue    0x000e // Queue Link (Process ptr) $0E
+#define P_IOQP     0x0010 // Previous I/O Queue Link (Process ID) $10
+#define P_IOQN     0x0011 // Next     I/O Queue Link (Process ID)
+#define P_PModul   0x0012 // Primary Module
+#define P_SWI      0x0014 // SWI Entry Point
+#define P_SWI2     0x0016 // SWI2 Entry Point
+#define P_SWI3     0x0018 // SWI3 Entry Point $18
+#define P_DIO      0x001a // default I/O ptrs $1A
+#define P_PATH     0x0026 // I/O path table $26
+#define P_Signal   0x0036 // Signal Code $36
+#define P_SigVec   0x0037 // Signal Intercept Vector
+#define P_SigDat   0x0039 // Signal Intercept Data Address
+#define P_NIO      0x003b // additional dio pointers for net
+
+#define B(i) (mem[a+i])
+#define W(i) (((Word)(mem[a+i])<<8)|(Word)(mem[a+i+1]))
 
 
 void finish();
@@ -316,6 +314,7 @@ struct Completion {
   Word a, b, c;
 } Os9SysCallCompletion[0x10000];
 
+void Os9AllMemoryModules();
 void DefaultCompleter(struct Completion* cp);
 Byte GETBYTE(Word a);
 
@@ -527,15 +526,35 @@ char* Os9String(Word w) {
   *p = 0;
   return buf;
 }
-char* Os9WritLnWhat() {
+char* PrintableStringThruCrOrMax(Word a, Word max) {
   static char buf[9999];
   int i;
   int j = 0;
   memset(buf, 0, sizeof buf);
   for (i=0; i<yreg && i<1024; i++) {
-    Byte ch = mem[(Word)(xreg + i)];
+    Byte ch = mem[(Word)(a + i)];
     if (32 <= ch && ch < 127) {
-      buf[j] = mem[(Word)(xreg + i)];
+      buf[j] = mem[(Word)(a + i)];
+      ++j;
+    } else if (ch=='\n' || ch=='\r') {
+      sprintf(buf+j, "\n");
+    } else {
+      sprintf(buf+j, "{%d}", ch);
+      j = strlen(buf);
+    }
+    if (ch == '\r') { break; }
+  }
+  return buf;
+}
+char* EscapeStringThruCrOrMax(Word a, Word max) {
+  static char buf[9999];
+  int i;
+  int j = 0;
+  memset(buf, 0, sizeof buf);
+  for (i=0; i<yreg && i<1024; i++) {
+    Byte ch = mem[(Word)(a + i)];
+    if (32 <= ch && ch < 127) {
+      buf[j] = mem[(Word)(a + i)];
       ++j;
     } else {
       sprintf(buf+j, "{%d}", ch);
@@ -681,8 +700,8 @@ void DecodeOs9Opcode(Byte b) {
     case 0x8B: s = "I$ReadLn : Read Line of ASCII Data";
       break;
     case 0x8C: s = "I$WritLn : Write Line of ASCII Data";
-      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... {{{%s}}}\n", b, s, Os9WritLnWhat());
-      printf("{%s}\n", Os9WritLnWhat());
+      fprintf(stderr, "HEY, Kernel 0x%02x: %s .... {{{%s}}}\n", b, s, EscapeStringThruCrOrMax(xreg, yreg));
+      printf("%s", PrintableStringThruCrOrMax(xreg, yreg));
       fflush(stdout);
       break;
     case 0x8D: s = "I$GetStt : Get Path Status";
@@ -770,7 +789,9 @@ interrupt(Word vector_addr) {
   pcreg = GETWORD(vector_addr);
 }
 
+Byte prev_disk_command;
 Byte disk_command;
+int disk_offset;
 Byte disk_drive;
 Byte disk_side;
 Byte disk_sector;
@@ -796,8 +817,10 @@ irq() {
   assert(!(ccreg&CC_INHIBIT_IRQ));
 
   if ((kbd_cycle&1) == 0) {
-    int ch = getchar();
-    if (0 < ch && ch < 127) {
+    int ch = MaybeGetChar();
+    if (ch == 10 || ch == 13) {
+          kbd_ch = 13;
+    } else if (0 < ch && ch < 127) {
           kbd_ch = ch;
     } else {
           kbd_ch = 0;
@@ -868,7 +891,7 @@ Byte GetIOByte(Word a) {
       }
       ++disk_i;
       if (disk_i==257) {
-        fprintf(stderr, "HEY, SET NMI_PENDING\n");
+        fprintf(stderr, "HEY, Read SET NMI_PENDING\n");
         irqs_pending |= NMI_PENDING;
         z = 0;
         disk_i = 0;
@@ -881,7 +904,6 @@ Byte GetIOByte(Word a) {
 }
 
 void PutIOByte(Word a, Byte b) {
-  int offset;
   switch (a) {
     default:
       fprintf(stderr, "HEY, UNKNOWN PutIOByte: 0x%04x\n", a);
@@ -906,22 +928,43 @@ void PutIOByte(Word a, Byte b) {
       disk_side = (b&0x40) ? 1 : 0;
       disk_drive = (b&1)? 1 : (b&2)? 2: (b&4)? 3: 0;
 
+      fprintf(stderr,"CONTROL: disk_command %x (control %x side %x drive %x)\n", disk_command, disk_control, disk_side, disk_drive);
+      if (!b) break;
+
       switch (disk_command) {
         case 0x80:
-          offset = 256 * (disk_sector - 1 + disk_side*18 + disk_track*36);
+          prev_disk_command = disk_command;
+          disk_offset = 256 * (disk_sector - 1 + disk_side*18 + disk_track*36);
           if (disk_drive != 1) {
-                  fprintf(stderr,"ERROR: Drive %d not supported\n", disk_drive);
+                  fprintf(stderr,"ERROR: R: Drive %d not supported\n", disk_drive);
                   exit(2);
           }
           if (!disk_fd) {
-                  fprintf(stderr,"ERROR: No file for Disk Read Sector\n");
+                  fprintf(stderr,"ERROR: R: No file for Disk Read Sector\n");
                   exit(2);
           }
           memset(disk_stuff, 0, 256);
-          fseek(disk_fd, offset, 0);
+          fseek(disk_fd, disk_offset, 0);
           fread(disk_stuff, 1, 256, disk_fd);
           disk_i = 0;
-          fprintf(stderr, "HEY, READ fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, offset>>8);
+          fprintf(stderr, "HEY, READ fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8);
+          break;
+        case 0xA0:
+          prev_disk_command = disk_command;
+          disk_offset = 256 * (disk_sector - 1 + disk_side*18 + disk_track*36);
+          if (disk_drive != 1) {
+                  fprintf(stderr,"ERROR: W: Drive %d not supported\n", disk_drive);
+                  exit(2);
+          }
+          if (!disk_fd) {
+                  fprintf(stderr,"ERROR: W: No file for Disk Read Sector\n");
+                  exit(2);
+          }
+          memset(disk_stuff, 0, 256);
+          fseek(disk_fd, disk_offset, 0);
+          disk_i = 0;
+          fprintf(stderr, "HEY, WRITE fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8);
+          break;
       }
       disk_command = 0;
       break;
@@ -958,19 +1001,45 @@ void PutIOByte(Word a, Byte b) {
       fprintf(stderr, "HEY, Sector-1 : %d\n", b-1);
       break;
     case 0xFF4B:  /* DATA */
-      disk_i = 0;
-      disk_data = b;
-      if (disk_i < 256) {
-        fprintf(stderr, "fnord %x <- %x\n", disk_i, b);
-        disk_stuff[disk_i] = b;
+      if ((prev_disk_command & 0xF0) != 0xA0) {
+        disk_i = 0;
+        disk_data = b;
+      } // else
+      if (1) {
+        if (disk_i < 256) {
+          fprintf(stderr, "fnord %x %x <- %x\n", prev_disk_command, disk_i, b);
+          disk_stuff[disk_i] = b;
+          ///++disk_i;
+        }
       }
+      if ((prev_disk_command & 0xF0) == 0xA0) {
+        if (disk_i < 256) {
+          ++disk_i;
+        }
+        // TODO -- fix writing.
+        if (disk_i >= 256) {
+          fprintf(stderr, "HEY, Write SET NMI_PENDING\n");
+          irqs_pending |= NMI_PENDING;
+          disk_i = 0;
+
+          // TODO -- fix writing.
+          fwrite(disk_stuff, 1, 256, disk_fd);
+          fflush(disk_fd);
+          fprintf(stderr, "HEY, DID_WRITE fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8);
+        }
+      }
+
       break;
 
     /* VDG */
     case 0xFFC0:
+    case 0xFFC1:
     case 0xFFC2:
+    case 0xFFC3:
     case 0xFFC4:
+    case 0xFFC5:
     case 0xFFC6:
+    case 0xFFC7:
     case 0xFFC8:
     case 0xFFC9:
     case 0xFFCA:
@@ -1299,6 +1368,8 @@ Word eaddr16() /* effective address for 16-bits ops. */
 
 ill() /* illegal opcode==noop */
 {
+ fprintf(stderr,"Illegal Opcode\n");
+ finish();
 }
 
 /* macros to set status flags */
@@ -1892,10 +1963,115 @@ rti()
  PULLWORD(pcreg)
 }
 
-Os9AllMemoryModules() {
+void DumpAllMemory() {
+  int i, j;
+  static char buf[200];
+  memset(buf, 0, sizeof buf);
+  for (i=0; i < 0x10000; i+=32) {
+    sprintf(buf, "%04x: ", (unsigned)i);
+    for (j=0; j<32; j+=8) {
+      sprintf(buf+strlen(buf),
+              "%02x%02x %02x%02x %02x%02x %02x%02x  ",
+              mem[i+j+0], mem[i+j+1], mem[i+j+2], mem[i+j+3],
+              mem[i+j+4], mem[i+j+5], mem[i+j+6], mem[i+j+7]);
+    }
+    fprintf(stderr, "%s\n", buf);
+  }
+}
+
+
+void DumpPageZero() {
+  Word a = 0;
+  fprintf(stderr, "PageZero: FreeBitMap=%x:%x MemoryLimit=%x ModDir=%x RomBase=%x\n",
+                  W(D_FMBM), W(D_FMBM+2), W(D_MLIM), W(D_ModDir), W(D_Init));
+  fprintf(stderr, "  D_SWI3=%x D_SWI2=%x FIRQ=%x IRQ=%x SWI=%x NMI=%x SvcIRQ=%x Poll=%x\n",
+                  W(D_SWI3), W(D_SWI2), W(D_FIRQ), W(D_IRQ), W(D_SWI), W(D_NMI), W(D_SvcIRQ), W(D_Poll)); 
+  fprintf(stderr, "  BTLO=%x BTHI=%x  IO Free Mem Lo=%x Hi=%x D_DevTbl=%x D_PolTbl=%x D_PthDBT=%x D_Proc=%x\n",
+                  W(D_BTLO), W(D_BTHI), W(D_IOML), W(D_IOMH), W(D_DevTbl), W(D_PolTbl), W(D_PthDBT), W(D_Proc)); 
+  fprintf(stderr, "  D_Slice=%x D_TSlice=%x\n",
+                  W(D_Slice), W(D_TSlice));
+}
+
+#define   PD_PD       0x00   // RMB 1    Path Number
+#define   PD_MOD      0x01   // RMB 1    Mode (Read/Write/Update)
+#define   PD_CNT      0x02   // RMB 1    Number of Open Images
+#define   PD_DEV      0x03   // RMB 2    Device Table Entry Address
+#define   PD_CPR      0x05   // RMB 1    Current Process
+#define   PD_RGS      0x06   // RMB 2    Caller's Register Stack
+#define   PD_BUF      0x08   // RMB 2    Buffer Address
+#define   PD_FST      0x0a   // RMB 32-. File Manager's Storage
+#define   PD_DTP      0x20   // RMB 1    Device Type
+
+void DumpPathDesc(Word a) {
+  if (!B(PD_PD)) return;
+  fprintf(stderr, "Path @%x: #=%x mode=%x count=%x dev=%x\n", a, B(PD_PD), B(PD_MOD), B(PD_CNT), W(PD_DEV));
+  fprintf(stderr, "   curr_process=%x caller_reg_stack=%x buffer=%x  dev_type=%x\n",
+                  B(PD_CPR), B(PD_RGS), B(PD_BUF), B(PD_DTP)); 
+}
+
+void DumpAllPathDescs() {
+  int i, j;
+  Word a = 0;
+  Word p = W(D_PthDBT);
+  for (i=0; i<32; i++) {
+    Word q = W(p + i*2);
+    if (q) {
+      for (j=0; j<4; j++) {
+        int k = i*4+j;
+        if (k==0) continue;
+        DumpPathDesc(q + j*64);
+      }
+    }
+  }
+}
+
+void DumpProcDesc(Word a) {
+  fprintf(stderr, "Process @%x: id=%x pid=%x sid=%x cid=%x\n", a, B(P_ID), B(P_PID), B(P_SID), B(P_CID));
+  fprintf(stderr, "   sp=%x chap=%x Addr=%x PagCnt=%x User=%x Pri=%x Age=%x State=%x\n",
+                  W(P_SP), B(P_CHAP), B(P_ADDR), B(P_PagCnt), W(P_User), B(P_Prior), B(P_Age), B(P_State));
+  Word mod = W(P_PModul);
+  Word name = mod + GETWORD(mod+4);
+  fprintf(stderr, "   Queue=%x IOQP=%x IOQN=%x PModul='%s' Signal=%x SigVec=%x SigDat=%x\n",
+                  W(P_Queue), B(P_IOQP), B(P_IOQN), Os9String(name), B(P_Signal), B(P_SigVec), B(P_SigDat)); 
+  fprintf(stderr, "   DIO %x %x %x PATH %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x\n",
+                  W(P_DIO), W(P_DIO+2), W(P_DIO+4),
+                  B(P_PATH+0), B(P_PATH+1), B(P_PATH+2), B(P_PATH+3),
+                  B(P_PATH+4), B(P_PATH+5), B(P_PATH+6), B(P_PATH+7),
+                  B(P_PATH+8), B(P_PATH+9), B(P_PATH+10), B(P_PATH+11),
+                  B(P_PATH+12), B(P_PATH+13), B(P_PATH+14), B(P_PATH+15));
+  if (W(P_Queue)) {
+    DumpProcDesc(W(P_Queue));
+  }
+}
+
+void DumpProcesses() {
+  Word a = 0;  // kernel direct page.
+  if (W(D_Proc)) {
+    fprintf(stderr, "D_Proc:\n");
+    DumpProcDesc(W(D_Proc));
+  }
+  if (W(D_AProcQ)) {
+    fprintf(stderr, "D_AProcQ: Active:\n");
+    DumpProcDesc(W(D_AProcQ));
+  }
+  if (W(D_WProcQ)) {
+    fprintf(stderr, "D_WProcQ: Wait:\n");
+    DumpProcDesc(W(D_WProcQ));
+  }
+  if (W(D_SProcQ)) {
+    fprintf(stderr, "D_SProcQ: Sleep\n");
+    DumpProcDesc(W(D_SProcQ));
+  }
+}
+
+void Os9AllMemoryModules() {
   Word start = GETWORD(0x26);
   Word limit = GETWORD(0x28);
   Word i = start;
+  DumpAllMemory();
+  DumpPageZero();
+  DumpProcesses();
+  DumpAllPathDescs();
   fprintf(stderr, "\nHEY, MODULES: ");
   for (; i < limit; i += 4) {
     Word mod = GETWORD(i);
@@ -2584,7 +2760,7 @@ main(int argc,char *argv[])
                 swi_for_putchar = atoi(optarg);
                 break;
           case 'f':
-                disk_fd = fopen(optarg, "r");
+                disk_fd = fopen(optarg, "r+");
                 if (!disk_fd) {
                   fprintf(stderr,"ERROR: Cannot open file: %s\n", optarg);
                   exit(2);
@@ -2629,9 +2805,6 @@ main(int argc,char *argv[])
      - if not, remove brkint and isig!
    */
   system("stty -echo nl raw brkint isig");
-
-  //close(0);
-  //open("/dev/tty", O_RDWR);
 
   tflags=fcntl(0,F_GETFL,0);
   fcntl(0,F_SETFL,tflags|O_NDELAY);
