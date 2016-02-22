@@ -730,35 +730,34 @@ void DefaultCompleter(struct Completion* cp) {
   }
 }
 
-char KB_NORMAL[] = "@abcdefghijklmnopqrstuvwxyz{}[] 0123456789:;,-./\r\b\0\0\0\0\0\0";
-char KB_SHIFT[] = "_ABCDEFGHIJKLMNOPQRSTUVWXYZ____ 0!\"#$%&'()*+<=>?\0\0\0\0\0\0\0\0";
+char KB_NORMAL[] = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ{}[] 0123456789:;,-./\r\b\0\0\0\0\0\0";
+char KB_SHIFT[] = "_abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?\0\0\0\0\0\0\0\0";
 
 Byte keypress(Byte a, char ch) {
   int i, j;
   bool shifted = false;
   Byte probe;
   Byte sense = 0;
-  //fprintf(stderr,"HEY, SENSE INPUT $%02x ~> $%02x\n", (Byte)a, (Byte)~a);
   a = ~a;
   for (j=0; j<8; j++) {
-    if ((1<<j) & a) {
       for (i=0; i<7; i++) {
         if (KB_NORMAL[i*8+j] == ch) {
-          Byte old_sense = sense;
-          sense |= 1<<i;
-          //fprintf(stderr,"HEY, SENSE {%c} (i=%d, j=%d) $%02x => $%02x\n", ch, i, j, old_sense, sense);
+          if ((1<<j) & a) {
+            Byte old_sense = sense;
+            sense |= 1<<i;
+          }
         }
         if (KB_SHIFT[i*8+j] == ch) {
-          Byte old_sense = sense;
-          sense |= 1<<i;
-          //fprintf(stderr,"HEY, SENSE {%c} (i=%d, j=%d) $%02x => $%02x\n", ch, i, j, old_sense, sense);
+          if ((1<<j) & a) {
+            Byte old_sense = sense;
+            sense |= 1<<i;
+          }
           shifted = true;
         }
       }
-    }
   }
-  if (shifted && (a & 0x40)) {
-    sense |= 0x80;  // Shift key.
+  if (shifted && (a & 0x80)) {
+    sense |= 0x40;  // Shift key.
   }
   return ~sense;
 }
