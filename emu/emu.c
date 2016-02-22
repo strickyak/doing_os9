@@ -96,7 +96,8 @@ int MaybeGetChar() {
   FD_SET(0, &set);
   n = select(1, &set, NULL, NULL, &tv);
   if (n==0) return 0;
-  read(0, &c, 1);
+  n = read(0, &c, 1);
+  assert(n==1);
   // printf("GOT {%c} %d\n", c, c);
   return c;
 }
@@ -945,7 +946,8 @@ void PutIOByte(Word a, Byte b) {
           }
           memset(disk_stuff, 0, 256);
           fseek(disk_fd, disk_offset, 0);
-          fread(disk_stuff, 1, 256, disk_fd);
+          int n = fread(disk_stuff, 1, 256, disk_fd);
+          assert(n==256);
           disk_i = 0;
           fprintf(stderr, "HEY, READ fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8);
           break;
@@ -1205,7 +1207,7 @@ Word plusb()
 Word plusn()
 {
  Byte b;
- char off[6];
+ static char off[33];
  IMMBYTE(b)
  /* negative offsets alway decimal, otherwise hex */
  if (b & 0x80) sprintf(off,"%d,", -(b ^ 0xff)-1);
@@ -1218,7 +1220,7 @@ Word plusnn()
 {
  Word w;
  IMMWORD(w)
- char off[6];
+ static char off[33];
  sprintf(off,"$%04x,",w);
  da_ops(off,dixreg[idx],4);
  return(*ixregs[idx])+w;
@@ -1234,7 +1236,7 @@ Word plusd()
 Word npcr()
 {
  Byte b;
- char off[11];
+ static char off[33];
 
  IMMBYTE(b)
  sprintf(off,"$%04x,pcr",(pcreg+SIGNED(b))&0xffff);
@@ -1245,7 +1247,7 @@ Word npcr()
 Word nnpcr()
 {
  Word w;
- char off[11];
+ static char off[33];
 
  IMMWORD(w)
  sprintf(off,"$%04x,pcr",(pcreg+w)&0xffff);
@@ -1256,7 +1258,7 @@ Word nnpcr()
 Word direct()
 {
  Word(w);
- char off[6];
+ static char off[33];
 
  IMMWORD(w)
  sprintf(off,"$%04x",w);
@@ -1267,7 +1269,7 @@ Word direct()
 Word zeropage()
 {
  Byte b;
- char off[6];
+ static char off[33];
 
  IMMBYTE(b)
  sprintf(off,"$%02x", b);
@@ -1278,7 +1280,7 @@ Word zeropage()
 
 Word immediate()
 {
- char off[6];
+ static char off[33];
 
  sprintf(off,"#$%02x", mem[pcreg]);
  da_ops(off,NULL,0);
@@ -1306,7 +1308,7 @@ Word postbyte()
 {
  Byte pb;
  Word temp;
- char off[6];
+ static char off[33];
 
  IMMBYTE(pb)
  idx=((pb & 0x60) >> 5);
@@ -1550,7 +1552,7 @@ jsr()
 bsr()
 {
  Byte b;
- char off[6];
+ static char off[33];
  
  IMMBYTE(b)
  da_inst("bsr",NULL,7);
@@ -1852,7 +1854,7 @@ cwai()
 lbra()
 {
  Word w;
- char off[6];
+ static char off[33];
 
  IMMWORD(w)
  pcreg+=w;
@@ -1865,7 +1867,7 @@ lbra()
 lbsr()
 {
  Word w;
- char off[6];
+ static char off[33];
 
  da_len = 3;
  da_inst("lbsr",NULL,9);
@@ -1903,7 +1905,7 @@ orcc()
 andcc()
 {
  Byte b;
- char off[6];
+ static char off[33];
  IMMBYTE(b)
  sprintf(off,"#$%02x", b);
  da_inst("andcc",NULL,3);
@@ -2601,7 +2603,8 @@ read_image(char* name)
 {
  FILE *image;
  if((image=fopen(name,"rb"))!=NULL) {
-  fread(mem+0x100,1,0xff00,image);
+  int n = fread(mem+0x100,1,0xff00,image);
+  assert ( n > 1 );
   fclose(image);
  } else {
   fprintf(stderr,"ERROR: Cannot read image file\n");
