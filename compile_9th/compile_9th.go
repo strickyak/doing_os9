@@ -4,6 +4,7 @@ import "io"
 import "io/ioutil"
 import "fmt"
 import "os"
+import "strconv"
 import "strings"
 
 var F = fmt.Sprintf
@@ -63,10 +64,11 @@ func EncodeFunnyChars(s string) string {
 	for _, ch := range s {
 		if '0' <= ch && ch <= '9' ||
 			'A' <= ch && ch <= 'Z' ||
-			'a' <= ch && ch <= 'z' {
+			'a' <= ch && ch <= 'z' ||
+			ch == '_' {
 			bb = append(bb, byte(ch))
 		} else {
-			bb = append(bb, []byte(F("$%02x", ch))...)
+			bb = append(bb, []byte(F("_%02x", ch))...)
 		}
 	}
 	return string(bb)
@@ -81,8 +83,8 @@ func (o *Ninth) DoPrelude(name string, code string) {
 	if o.Latest == "" {
 		P("  fcb 0,0 ;link")
 	} else {
-		P("  fcb ($10000+%s-*)/256 ;link\n", elatest)
-		P("  fcb ($10000+%s-*)+1\n", elatest)
+		P("  fcb ($10000+l_%s-*)/256 ;link\n", elatest)
+		P("  fcb ($10000+l_%s-*)+1\n", elatest)
 	}
 	P("  fcb %d  ;len\n", len(name))
 	P("  fcc ~%s~\n", name)
@@ -91,7 +93,7 @@ func (o *Ninth) DoPrelude(name string, code string) {
 	P("c_%s\n", ename)
 	P("  fcb ($10000+%s-*)/256 ;codeword\n", ecode)
 	P("  fcb ($10000+%s-*)+1\n", ecode)
-	P("b_%s\n", ename)
+	P("d_%s\n", ename)
 
 	o.Latest = name
 }
@@ -110,20 +112,32 @@ func (o *Ninth) InsertCode() {
 func (o *Ninth) InsertColon() {
 	for {
 		s := o.NextWord()
-		if strings.Trim(s, " \t") == ";" {
+		if s == ";" {
 			break
 		}
-		P("  * TODO: %s\n", s)
+		if s[0] == '$' {
+			P("  fcb ($10000+c_lit-*)/256 ;; %s ;;\n", s)
+			P("  fcb ($10000+c_lit-*)+1\n")
+			x, err := strconv.ParseInt(s[1:], 16, 64)
+			if err != nil {
+				panic(s)
+			}
+			P("  fcb ($10000+(%d))/256\n", x)
+			P("  fcb (%d)\n", x)
+			continue
+		}
+		P("  ******  %s\n", s)
 		es := EncodeFunnyChars(s)
 		P("  fcb ($10000+c_%s-*)/256 ;; %s ;;\n", es, s)
 		P("  fcb ($10000+c_%s-*)+1\n", es)
 	}
-	P("  jmp Next,pcr\n")
+	P("  fcb ($10000+c_exit-*)/256 ;; exit ;;\n")
+	P("  fcb ($10000+c_exit-*)+1\n")
 }
 
 func (o *Ninth) DoCode() {
 	name := o.NextWord()
-	o.DoPrelude(name, "c_"+name)
+	o.DoPrelude(name, "d_"+name)
 	o.InsertCode()
 }
 func (o *Ninth) DoColon() {

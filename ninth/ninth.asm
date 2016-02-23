@@ -67,108 +67,6 @@ testing
   ldd 0,x
   jmp D,X
 
-l_dup
-  fcb 0,0   ; link
-  fcb 3     ; len
-  fcc /dup/ ; name
-  fcb 0     ; NUL term
-c_dup
-  fcb 0,2  ; Code Offset
-a_dup
-  ldd 0,u
-  std ,--u
-  jmp Next,pcr
-
-l_plus
-  fcb (l_plus-l_dup)/256
-  fcb (l_plus-l_dup)
-  fcb 1      ; len
-  fcc /+/    ; name
-  fdb 0      ; NUL
-c_plus
-  fcb 0,2   ; Code Offset
-a_plus
-  ldd ,u++
-  addd 0,u
-  std 0,u
-  jmp Next,pcr
-
-l_dot
-  fcb (l_dot-l_plus)/256
-  fcb (l_dot-l_plus)
-  fcb 1      ; len
-  fcc /./    ; name
-  fdb 0      ; NUL
-c_dot
-  fcb 0,2   ; Code Offset
-a_dot
-  ldb #13
-  jsr putchar,pcr
-  ldd ,u++
-  jsr PrintD,pcr
-  ldb #13
-  jsr putchar,pcr
-  jmp Next,pcr
-
-l_lit
-  fcb (l_lit-l_dot)/256
-  fcb (l_lit-l_dot)
-  fcb 3      ; len
-  fcc /lit/    ; name
-  fdb 0      ; NUL
-c_lit
-  fcb 0,2   ; Code Offset
-a_lit
-  ldd ,Y++  ; get next cell from IP
-  std ,--u  ; and stack it.
-  jmp Next,pcr
-
-
-l_run
-  fcb ($10000+l_run-l_lit)/256
-  fcb ($10000+l_run-l_lit)
-  fcb 1      ; len
-  fcc /./    ; name
-  fdb 0      ; NUL
-c_run
-  fcb ($10000+Enter-c_run)/256
-  fcb ($10000+Enter-c_run)
-a_run
-  fcb ($10000+c_lit-*)/256
-  fcb ($10000+c_lit-*+1)
-  fcb 0,3
-  fcb ($10000+c_dup-*)/256
-  fcb ($10000+c_dup-*+1)
-  fcb ($10000+c_plus-*)/256
-  fcb ($10000+c_plus-*+1)
-  fcb ($10000+c_dot-*)/256
-  fcb ($10000+c_dot-*+1)
-  fcb ($10000+c_bye-*)/256
-  fcb ($10000+c_bye-*+1)
-  fcb ($10000+Exit-*)/256
-  fcb ($10000+Exit-*+1)
-
-l_bye
-  fcb ($10000+l_bye-l_run)/256
-  fcb ($10000+l_bye-l_run)
-  fcb 3      ; len
-  fcc /bye/    ; name
-  fdb 0      ; NUL
-c_bye
-  fcb 0,2   ; Code Offset
-a_bye
-OsExit
-  ldb #13  ; CR
-  bsr putchar
-  ldb #35  ; #
-  bsr putchar
-  ldb #13  ; CR
-  bsr putchar
-  clrb
-  ldb #8
-  os9 F$Exit
-
-
 
 PrintD
   pshS A,B
@@ -202,7 +100,7 @@ PrintNyb
   addB #('A-$3a)  ; covert $3a -> 'A'
 
 Lpn001
-  bsr putchar
+  jsr putchar,pcr
   pulS B,PC
 
 * putchar(b)
@@ -228,8 +126,8 @@ Cold
 
   * DEAD
   ldb #10  ; LF
-  bsr putchar
-  bra OsExit
+  jsr putchar,pcr
+  jmp OsExit
 
 Execute
   pulU x       ; arg -> W
@@ -255,6 +153,8 @@ Next
 Exit
   pulU y       ; pop previous IP.
   bra Next     ; and keep going.
+
+  use prelude.asm
 
   emod
 eom equ *
