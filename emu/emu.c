@@ -2717,7 +2717,7 @@ void trace()
 #endif
 
 
-static char optstring[]="0Ftdi:o:H:L:Z:f:";
+static char optstring[]="0Ftdi:o:H:L:Z:f:T:";
 
 main(int argc,char *argv[])
 {
@@ -2725,6 +2725,7 @@ main(int argc,char *argv[])
  int a;
  int zmode = 0, Fmode = 0; // Init to 0, Init to F.
  int maxsteps= 0;
+ int tracetrigger= -1;
 
  while( (c=getopt(argc, argv, optstring)) >=0 ) {
         switch(c) {
@@ -2751,6 +2752,9 @@ main(int argc,char *argv[])
                 break;
           case 't':
                 tmode = 1;
+                break;
+          case 'T':
+                tracetrigger = atoi(optarg);
                 break;
           case 'd':
                 fdump = 1;
@@ -2819,6 +2823,10 @@ main(int argc,char *argv[])
  pcreg_prev = pcreg;
 
  for(steps = 0; !maxsteps || steps < maxsteps; ((pcreg_prev=pcreg), steps++)){
+   if (steps == tracetrigger) {
+     tmode = 1;
+   }
+
    struct Completion* cp = &Os9SysCallCompletion[pcreg];
    if (cp->f) {
      cp->f(cp);
