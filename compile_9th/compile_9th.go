@@ -89,7 +89,7 @@ func (o *Ninth) DoPrelude(name string, code string) {
 	P("  fcb 0\n")
 
 	P("c_%s\n", ename)
-	P("  fcb ($10000+%s-*)/256 ;link\n", ecode)
+	P("  fcb ($10000+%s-*)/256 ;codeword\n", ecode)
 	P("  fcb ($10000+%s-*)+1\n", ecode)
 	P("b_%s\n", ename)
 
@@ -107,6 +107,20 @@ func (o *Ninth) InsertCode() {
 	P("  jmp Next,pcr\n")
 }
 
+func (o *Ninth) InsertColon() {
+	for {
+		s := o.NextWord()
+		if strings.Trim(s, " \t") == ";" {
+			break
+		}
+		P("  * TODO: %s\n", s)
+		es := EncodeFunnyChars(s)
+		P("  fcb ($10000+c_%s-*)/256 ;; %s ;;\n", es, s)
+		P("  fcb ($10000+c_%s-*)+1\n", es)
+	}
+	P("  jmp Next,pcr\n")
+}
+
 func (o *Ninth) DoCode() {
 	name := o.NextWord()
 	o.DoPrelude(name, "c_"+name)
@@ -115,6 +129,7 @@ func (o *Ninth) DoCode() {
 func (o *Ninth) DoColon() {
 	name := o.NextWord()
 	o.DoPrelude(name, "Enter")
+	o.InsertColon()
 }
 
 func CompileFile(w io.Writer, r io.Reader) {
@@ -125,6 +140,8 @@ func CompileFile(w io.Writer, r io.Reader) {
 			break
 		}
 		switch w {
+		case "\\":
+			o.Words = nil
 		case ":":
 			o.DoColon()
 		case "code":

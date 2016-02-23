@@ -1,0 +1,54 @@
+\ Y: Instruction Pointer
+\ X: temporary W register
+\ U: Param Stack
+\ S: Return Stack
+
+code execute
+  pulU x       ; arg -> W
+  ldd 0,x      ; goto W+[W]
+  jmp D,X
+  ;
+ 
+code dup
+  ldd 0,u
+  std ,--u
+  ;
+
+code +
+  ldd ,u++
+  addd 0,u
+  std 0,u
+  ;
+
+code dot
+  ldb #32
+  jsr putchar,pcr
+  ldd ,u++
+  jsr PrintD,pcr
+  ldb #13
+  jsr putchar,pcr
+  ;
+
+code lit
+  ldd ,Y++  ; get next cell from IP
+  std ,--u  ; and stack it.
+  ;
+
+code bye
+OsExit
+  ldb #13  ; CR
+  bsr putchar
+  ldb #35  ; #
+  bsr putchar
+  ldb #13  ; CR
+  bsr putchar
+  clrb
+  ldb #8
+  os9 F$Exit
+  ;
+
+: double
+    dup + ;
+: run
+    $2 dup . double dup . double dup . double . ;
+
