@@ -8,7 +8,10 @@ import "strconv"
 import "strings"
 
 var F = fmt.Sprintf
-var P = fmt.Printf
+
+func P(format string, args ...interface{}) {
+	fmt.Printf(format+"\n", args...)
+}
 
 type Ninth struct {
 	Lines []string
@@ -84,32 +87,32 @@ func (o *Ninth) DoPrelude(name string, code string) {
 	ename := EncodeFunnyChars(name)
 	ecode := EncodeFunnyChars(code)
 	elatest := EncodeFunnyChars(o.Latest)
-	P("\n\n***  %s  ***\n\n", name)
-	P("l_%s\n", ename)
+	P("\n\n***  %s  ***\n", name)
+	P("l_%s", ename)
 	if o.Latest == "" {
 		P("  fcb 0,0 ;link")
 	} else {
-		P("  fcb ($10000+l_%s-*)/256 ;link\n", elatest)
-		P("  fcb ($10000+l_%s-*)+1\n", elatest)
+		P("  fcb ($10000+l_%s-*)/256 ;link", elatest)
+		P("  fcb ($10000+l_%s-*)+1", elatest)
 	}
-	P("  fcb %d  ;len\n", len(name))
-	P("  fcc ~%s~\n", name)
-	P("  fcb 0\n")
+	P("  fcb %d  ;len", len(name))
+	P("  fcc ~%s~", name)
+	P("  fcb 0")
 
-	P("c_%s\n", ename)
-	P("  fcb ($10000+%s-*)/256 ;codeword\n", ecode)
-	P("  fcb ($10000+%s-*)+1\n", ecode)
-	P("d_%s\n", ename)
+	P("c_%s", ename)
+	P("  fcb ($10000+%s-*)/256 ;codeword", ecode)
+	P("  fcb ($10000+%s-*)+1", ecode)
+	P("d_%s", ename)
 
 	o.Latest = name
 }
 
 func (o *Ninth) InsertAllot(offset int) {
-	P("  tfr dp,a\n")
-	P("  clrb\n")
-	P("  addd #%d\n", offset)
-	P("  pshU d\n")
-	P("  jmp Next,pcr\n")
+	P("  tfr dp,a")
+	P("  clrb")
+	P("  addd #%d", offset)
+	P("  pshU d")
+	P("  jmp Next,pcr")
 }
 
 func (o *Ninth) InsertCode() {
@@ -118,15 +121,15 @@ func (o *Ninth) InsertCode() {
 		if strings.Trim(s, " \t") == ";" {
 			break
 		}
-		P("%s\n", s)
+		P("%s", s)
 	}
-	P("  jmp Next,pcr\n")
+	P("  jmp Next,pcr")
 }
 
 func (o *Ninth) InsertColon() {
 	for {
 		s := o.NextWord()
-		P("  ******  %s\n", s)
+		P("  ******  %s", s)
 
 		// Stop at the ";"
 		if s == ";" {
@@ -137,36 +140,36 @@ func (o *Ninth) InsertColon() {
 		n, err := strconv.ParseInt(s, 10, 64)
 		if err == nil {
 			// Compile: lit
-			P("  fcb ($10000+c_lit-*)/256 ;; %s ;;\n", s)
-			P("  fcb ($10000+c_lit-*)+1\n")
+			P("  fcb ($10000+c_lit-*)/256 ;; %s ;;", s)
+			P("  fcb ($10000+c_lit-*)+1")
 			// Compile: the integer.
-			P("  fcb ($10000+(%d))/256\n", n)
-			P("  fcb (%d)\n", n)
+			P("  fcb ($10000+(%d))/256", n)
+			P("  fcb (%d)", n)
 			continue
 		}
 
 		// Special handling for "$" and hex integers.
 		if s[0] == '$' {
 			// Compile: lit
-			P("  fcb ($10000+c_lit-*)/256 ;; %s ;;\n", s)
-			P("  fcb ($10000+c_lit-*)+1\n")
+			P("  fcb ($10000+c_lit-*)/256 ;; %s ;;", s)
+			P("  fcb ($10000+c_lit-*)+1")
 			x, err := strconv.ParseInt(s[1:], 16, 64)
 			if err != nil {
 				panic(s)
 			}
 			// Compile: the integer.
-			P("  fcb ($10000+(%d))/256\n", x)
-			P("  fcb (%d)\n", x)
+			P("  fcb ($10000+(%d))/256", x)
+			P("  fcb (%d)", x)
 			continue
 		}
 
 		// Normal non-immediate words.
 		es := EncodeFunnyChars(s)
-		P("  fcb ($10000+c_%s-*)/256 ;; %s ;;\n", es, s)
-		P("  fcb ($10000+c_%s-*)+1\n", es)
+		P("  fcb ($10000+c_%s-*)/256 ;; %s ;;", es, s)
+		P("  fcb ($10000+c_%s-*)+1", es)
 	}
-	P("  fcb ($10000+c_exit-*)/256 ;; exit ;;\n")
-	P("  fcb ($10000+c_exit-*)+1\n")
+	P("  fcb ($10000+c_exit-*)/256 ;; exit ;;")
+	P("  fcb ($10000+c_exit-*)+1")
 }
 
 func (o *Ninth) DoCode() {
@@ -189,35 +192,35 @@ func (o *Ninth) DoAllot(n int) {
 }
 func (o *Ninth) DoInit() {
 	// Save our dynamic o.Here into the "here" variable in RAM.
-	P("Init\n")
+	P("Init")
 	// The location of the "here" variable into X.
-	P("  tfr dp,a\n")
-	P("  clrb\n")
-	P("  addd #%d\n", o.Allots["here"])
-	P("  tfr d,x\n")
+	P("  tfr dp,a")
+	P("  clrb")
+	P("  addd #%d", o.Allots["here"])
+	P("  tfr d,x")
 	// The current runtime o.Here in D.
-	P("  tfr dp,a\n")
-	P("  clrb\n")
-	P("  addd #%d\n", o.Here)
+	P("  tfr dp,a")
+	P("  clrb")
+	P("  addd #%d", o.Here)
 	// Save D at X.
-	P("  std ,x\n")
+	P("  std ,x")
 
 	// Save our dynamic o.Latest into the "latest" variable in RAM.
 	// The current runtime o.Latest's link address onto stack.
-	P("  leax l_%s,pcr\n", o.Latest)
-	P("  pshu x\n")
+	P("  leax l_%s,pcr", o.Latest)
+	P("  pshu x")
 
 	// The location of the "latest" variable into X.
-	P("  tfr dp,a\n")
-	P("  clrb\n")
-	P("  addd #%d\n", o.Allots["latest"])
-	P("  tfr d,x\n")
+	P("  tfr dp,a")
+	P("  clrb")
+	P("  addd #%d", o.Allots["latest"])
+	P("  tfr d,x")
 	// pop d & Save D at X.
-	P("  pulu d\n")
-	P("  std ,x\n")
+	P("  pulu d")
+	P("  std ,x")
 
 	// Return
-	P("  rts\n")
+	P("  rts")
 }
 
 func CompileFile(w io.Writer, r io.Reader) {
