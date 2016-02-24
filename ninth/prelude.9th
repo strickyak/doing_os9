@@ -3,10 +3,29 @@
 \ U: Param Stack
 \ S: Return Stack
 
+2 allot here
+80 allot inbuf
+80 allot tmpbuf
+
 code execute
   pulU x       ; arg -> W
   ldd 0,x      ; goto W+[W]
   jmp D,X
+  ;
+
+code swap
+  ldx 2,u
+  ldd 0,u
+  stx 0,u
+  std 2,u
+  ;
+code rot
+  ldx 4,u
+  ldd 2,u
+  std 4,u
+  ldd 0,u
+  std 2,u
+  stx 0,u
   ;
  
 code dup
@@ -21,11 +40,15 @@ code +
   ;
 
 code .
-  ldb #32
-  jsr putchar,pcr
+*** Currently prints only in HEX.
   ldd ,u++
   jsr PrintD,pcr
-  ldb #13
+  ldb #32
+  jsr putchar,pcr
+  ;
+
+code putchar
+  ldd ,u++
   jsr putchar,pcr
   ;
 
@@ -38,7 +61,6 @@ code exit
   pulS y       ; pop previous IP.
   jmp Next,pcr ; and keep going.
   ;
-  
 
 code bye
 OsExit
@@ -55,6 +77,6 @@ OsExit
 
 : double
     dup + ;
-: run
-    $2 dup . double dup . double dup . double . bye ;
-
+: main
+    $D putchar $2 dup . double dup . double dup . double . here . inbuf . tmpbuf . bye ;
+\ END.

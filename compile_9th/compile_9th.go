@@ -18,6 +18,7 @@ type Ninth struct {
 	W     int
 
 	Latest string
+	Here   int
 }
 
 func (o *Ninth) NextWord() string {
@@ -98,6 +99,14 @@ func (o *Ninth) DoPrelude(name string, code string) {
 	o.Latest = name
 }
 
+func (o *Ninth) InsertAllot(offset int) {
+	P("  tfr dp,a\n")
+	P("  clrb\n")
+	P("  addd #%d\n", offset)
+	P("  pshU d\n")
+	P("  jmp Next,pcr\n")
+}
+
 func (o *Ninth) InsertCode() {
 	for {
 		s := o.NextLine()
@@ -112,21 +121,41 @@ func (o *Ninth) InsertCode() {
 func (o *Ninth) InsertColon() {
 	for {
 		s := o.NextWord()
+		P("  ******  %s\n", s)
+
+    // Stop at the ";"
 		if s == ";" {
 			break
 		}
+
+    // Special handling for decimal integers.
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err == nil {
+      // Compile: lit
+			P("  fcb ($10000+c_lit-*)/256 ;; %s ;;\n", s)
+			P("  fcb ($10000+c_lit-*)+1\n")
+      // Compile: the integer.
+			P("  fcb ($10000+(%d))/256\n", n)
+			P("  fcb (%d)\n", n)
+			continue
+		}
+
+    // Special handling for "$" and hex integers.
 		if s[0] == '$' {
+      // Compile: lit
 			P("  fcb ($10000+c_lit-*)/256 ;; %s ;;\n", s)
 			P("  fcb ($10000+c_lit-*)+1\n")
 			x, err := strconv.ParseInt(s[1:], 16, 64)
 			if err != nil {
 				panic(s)
 			}
+      // Compile: the integer.
 			P("  fcb ($10000+(%d))/256\n", x)
 			P("  fcb (%d)\n", x)
 			continue
 		}
-		P("  ******  %s\n", s)
+
+    // Normal non-immediate words.
 		es := EncodeFunnyChars(s)
 		P("  fcb ($10000+c_%s-*)/256 ;; %s ;;\n", es, s)
 		P("  fcb ($10000+c_%s-*)+1\n", es)
@@ -145,13 +174,35 @@ func (o *Ninth) DoColon() {
 	o.DoPrelude(name, "Enter")
 	o.InsertColon()
 }
+func (o *Ninth) DoAllot(n int) {
+	name := o.NextWord()
+	offset := o.Here
+	o.Here += n
+	o.DoPrelude(name, "d_"+name)
+	o.InsertAllot(offset)
+}
+func (o *Ninth) DoInit() {
+	// Save our dynamic o.Here into the "here" variable in RAM.
+	P("  tfr dp,a\n")
+	P("  clrb\n")
+	P("  addd #%d\n", o.Here)
+	P("  std <%d\n", o.Here)
+	// Return
+	P("  rts\n")
+}
 
 func CompileFile(w io.Writer, r io.Reader) {
+	var hold int
 	o := NewNinth(r)
 	for {
 		w := o.NextWord()
 		if w == ">EOF<" {
 			break
+		}
+		n, err := strconv.ParseInt(w, 10, 64)
+		if err == nil {
+			hold = int(n)
+			continue
 		}
 		switch w {
 		case "\\":
@@ -160,10 +211,13 @@ func CompileFile(w io.Writer, r io.Reader) {
 			o.DoColon()
 		case "code":
 			o.DoCode()
+		case "allot":
+			o.DoAllot(hold)
 		default:
 			panic(F("Unknown Command: %q", w))
 		}
 	}
+	o.DoInit()
 }
 
 func main() {

@@ -120,7 +120,7 @@ Cold
   pshs d,x,y
   pshu d,x,y
 
-  leax c_run,pcr
+  leax c_main,pcr
   pshu x
   jmp Execute,pcr
 
