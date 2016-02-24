@@ -4,6 +4,7 @@
 \ S: Return Stack
 
 2 allot here
+2 allot latest
 80 allot inbuf
 80 allot tmpbuf
 
@@ -19,6 +20,7 @@ code swap
   stx 0,u
   std 2,u
   ;
+
 code rot
   ldx 4,u
   ldd 2,u
@@ -57,6 +59,71 @@ code lit
   std ,--u  ; and stack it.
   ;
 
+code branch
+  ldd ,Y++  ; get next cell from IP
+  leay d,y  ; add that offset to the IP.
+  jmp Next,pcr
+  ;
+
+code 0branch
+  ldd ,u++  ; pop a cell from the param stack
+  bne b0001 ; only change IP if that was zero.
+  ldd ,Y++  ; get next cell from IP
+  leay d,y  ; add that offset to the IP.
+b0001
+  jmp Next,pcr
+  ;
+
+code not0branch
+  ldd ,u++  ; pop a cell from the param stack
+  beq b0002 ; only change IP if that was not zero.
+  ldd ,Y++  ; get next cell from IP
+  leay d,y  ; add that offset to the IP.
+b0002
+  jmp Next,pcr
+  ;
+
+code >r
+  ldd ,u++    ; pop from u, push to s.
+  std ,--s
+  jmp Next,pcr
+  ;
+
+code r>
+  ldd ,s++    ; pop from s, push to u.
+  std ,--u
+  jmp Next,pcr
+  ;
+
+code !
+  ldx ,u++    ; pop address
+  ldd ,u++    ; pop value
+  std ,x      ; poke
+  jmp Next,pcr
+  ;
+
+code @
+  ldx ,u      ; the address from the stack
+  ldd ,x      ; what was at the address
+  std ,u      ; value onto stack
+  jmp Next,pcr
+  ;
+
+code C!
+  ldx ,u++    ; pop address
+  ldd ,u++    ; pop value
+  stb ,x      ; poke just the low byte.
+  jmp Next,pcr
+  ;
+
+code C@
+  ldx ,u      ; the address from the stack
+  ldb ,x      ; what byte was at the address
+  clra
+  std ,u      ; value onto stack
+  jmp Next,pcr
+  ;
+
 code exit
   pulS y       ; pop previous IP.
   jmp Next,pcr ; and keep going.
@@ -78,5 +145,8 @@ OsExit
 : double
     dup + ;
 : main
-    $D putchar $2 dup . double dup . double dup . double . here . inbuf . tmpbuf . bye ;
+    $D putchar $2 dup . double dup . double dup . double .
+    here . here @ . 
+    latest . latest @ . 
+    inbuf . tmpbuf . bye ;
 \ END.

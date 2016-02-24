@@ -19,6 +19,8 @@ type Ninth struct {
 
 	Latest string
 	Here   int
+
+	Allots map[string]int
 }
 
 func (o *Ninth) NextWord() string {
@@ -57,7 +59,10 @@ func NewNinth(r io.Reader) *Ninth {
 		panic("can't ioutil.ReadAll")
 	}
 	lines := strings.Split(string(all), "\n")
-	return &Ninth{Lines: lines}
+	return &Ninth{
+		Lines:  lines,
+		Allots: make(map[string]int),
+	}
 }
 
 func EncodeFunnyChars(s string) string {
@@ -123,39 +128,39 @@ func (o *Ninth) InsertColon() {
 		s := o.NextWord()
 		P("  ******  %s\n", s)
 
-    // Stop at the ";"
+		// Stop at the ";"
 		if s == ";" {
 			break
 		}
 
-    // Special handling for decimal integers.
+		// Special handling for decimal integers.
 		n, err := strconv.ParseInt(s, 10, 64)
 		if err == nil {
-      // Compile: lit
+			// Compile: lit
 			P("  fcb ($10000+c_lit-*)/256 ;; %s ;;\n", s)
 			P("  fcb ($10000+c_lit-*)+1\n")
-      // Compile: the integer.
+			// Compile: the integer.
 			P("  fcb ($10000+(%d))/256\n", n)
 			P("  fcb (%d)\n", n)
 			continue
 		}
 
-    // Special handling for "$" and hex integers.
+		// Special handling for "$" and hex integers.
 		if s[0] == '$' {
-      // Compile: lit
+			// Compile: lit
 			P("  fcb ($10000+c_lit-*)/256 ;; %s ;;\n", s)
 			P("  fcb ($10000+c_lit-*)+1\n")
 			x, err := strconv.ParseInt(s[1:], 16, 64)
 			if err != nil {
 				panic(s)
 			}
-      // Compile: the integer.
+			// Compile: the integer.
 			P("  fcb ($10000+(%d))/256\n", x)
 			P("  fcb (%d)\n", x)
 			continue
 		}
 
-    // Normal non-immediate words.
+		// Normal non-immediate words.
 		es := EncodeFunnyChars(s)
 		P("  fcb ($10000+c_%s-*)/256 ;; %s ;;\n", es, s)
 		P("  fcb ($10000+c_%s-*)+1\n", es)
@@ -180,13 +185,37 @@ func (o *Ninth) DoAllot(n int) {
 	o.Here += n
 	o.DoPrelude(name, "d_"+name)
 	o.InsertAllot(offset)
+	o.Allots[name] = offset
 }
 func (o *Ninth) DoInit() {
 	// Save our dynamic o.Here into the "here" variable in RAM.
+	P("Init\n")
+	// The location of the "here" variable into X.
+	P("  tfr dp,a\n")
+	P("  clrb\n")
+	P("  addd #%d\n", o.Allots["here"])
+	P("  tfr d,x\n")
+	// The current runtime o.Here in D.
 	P("  tfr dp,a\n")
 	P("  clrb\n")
 	P("  addd #%d\n", o.Here)
-	P("  std <%d\n", o.Here)
+	// Save D at X.
+	P("  std ,x\n")
+
+	// Save our dynamic o.Latest into the "latest" variable in RAM.
+	// The current runtime o.Latest's link address onto stack.
+	P("  leax l_%s,pcr\n", o.Latest)
+	P("  pshu x\n")
+
+	// The location of the "latest" variable into X.
+	P("  tfr dp,a\n")
+	P("  clrb\n")
+	P("  addd #%d\n", o.Allots["latest"])
+	P("  tfr d,x\n")
+	// pop d & Save D at X.
+	P("  pulu d\n")
+	P("  std ,x\n")
+
 	// Return
 	P("  rts\n")
 }

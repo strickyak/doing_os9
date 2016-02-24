@@ -49,23 +49,9 @@ start
   jsr PrintD,pcr
   ldd #$cdef
   jsr PrintD,pcr
+
   jmp Cold,pcr
   jmp OsExit,pcr
-
-preamble
-  leax Execute,pcr
-  stx >D_Execute
-  leax Enter,pcr
-  stx >D_Enter
-  leax Next,pcr
-  stx >D_Next
-  leax Exit,pcr
-  stx >D_Exit
-
-testing
-  ldx ,y++
-  ldd 0,x
-  jmp D,X
 
 
 PrintD
@@ -117,17 +103,12 @@ Cold
   clrD          ;
   tfr d,y       ; Y is IP
   tfr d,x       ; X is W or Temp
-  pshs d,x,y
-  pshu d,x,y
-
+  pshs d,x,y    ; push some zeroes for fun.
+  pshu d,x,y    ; push some zeroes for fun.
+  jsr Init,pcr
   leax c_main,pcr
   pshu x
   jmp Execute,pcr
-
-  * DEAD
-  ldb #10  ; LF
-  jsr putchar,pcr
-  jmp OsExit
 
 Execute
   pulU x       ; arg -> W
