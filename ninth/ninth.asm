@@ -42,25 +42,26 @@ start
   os9 I$WritLn
 
   ldd #$0123
-  jsr PrintD,pcr
+  jsr PrintDsp,pcr
   ldd #$4567
-  jsr PrintD,pcr
+  jsr PrintDsp,pcr
   ldd #$89ab
-  jsr PrintD,pcr
+  jsr PrintDsp,pcr
   ldd #$cdef
-  jsr PrintD,pcr
+  jsr PrintDsp,pcr
 
   jmp Cold,pcr
   jmp OsExit,pcr
 
+PrintDsp
+  pshS D
+  bsr PrintD
+  ldb #32
+  bsr putchar
+  pulS D,PC
 
 PrintD
   pshS A,B
-
-  pshS B
-  ldb #$28       "("
-  bsr putchar
-  pulS B
 
   pshS B
   tfr A,B
@@ -68,10 +69,8 @@ PrintD
   pulS b
   bsr PrintB
 
-  ldb #$29       ")"
-  bsr putchar
-  ldb #$20       "0"
-  bsr putchar
+  *ldb #$20       " "
+  *bsr putchar
 
   puls a,b,pc
 
@@ -171,8 +170,20 @@ Next
   leax d,y
 
   pshs d,x,y
+  ldb #$28       "("
+  bsr putchar
+
   tfr y,d
+  leax 0,pcr        ; absolute addr of module
+  pshs x            ; put it in mem (on S stack)
+  subd 0,s          ; subtract begin of module
+  leas 2,s          ; drop it from S stack
   jsr PrintD,pcr
+
+  ldb #$29       ")"
+  bsr putchar
+  ldb #$20       " "
+  bsr putchar
   puls d,x,y
 
   leay 2,y

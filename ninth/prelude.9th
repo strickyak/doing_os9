@@ -302,6 +302,8 @@ code bomb
 : main_getline  getline . . cr cr ;
 \ : main_getchar  getchar . getchar . getchar . getchar . cr cr ;
 
+2 allot tmp
+
 : main
     cr
     64 putchar
@@ -311,6 +313,14 @@ code bomb
     0 if 33 else 126 then putchar
     5 if 53 else 126 then putchar
     cr
+    1 tmp !
+    begin
+      99 putchar
+      tmp @
+    while
+      100 putchar
+      0 tmp !
+    repeat
 
     bye
   ;

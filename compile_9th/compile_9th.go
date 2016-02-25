@@ -196,6 +196,38 @@ func (o *Ninth) InsertColon() {
 			continue
 		}
 
+		// begin ... while ... repeat
+
+		if s == "begin" {
+			o.Serial++
+			label := F("begin%d", o.Serial)
+			o.Stack = append(o.Stack, label)
+			P("%s", label)
+			continue
+		}
+
+		if s == "while" {
+			o.Serial++
+			new_label := F("while%d", o.Serial)
+			o.Stack = append(o.Stack, new_label)
+			o.Comma("c_0branch", "0branch")
+			o.Comma(F("%s-2", new_label), new_label)
+			continue
+		}
+
+		if s == "repeat" {
+			new_label := o.Stack[len(o.Stack)-1]
+			o.Stack = append(o.Stack, new_label)
+
+			old_label := o.Stack[len(o.Stack)-1]
+			o.Stack = append(o.Stack, old_label)
+			o.Comma("c_branch", "branch")
+			o.Comma(F("%s-2", old_label), old_label)
+
+			P("%s", new_label)
+			continue
+		}
+
 		// Normal non-immediate words.
 		es := EncodeFunnyChars(s)
 		P("  fcb ($10000+c_%s-*)/256 ;; %s ;;", es, s)
