@@ -97,9 +97,10 @@ func (o *Ninth) DoPrelude(name string, code string) {
 		P("  fcb ($10000+l_%s-*)/256 ;link", elatest)
 		P("  fcb ($10000+l_%s-*)+1", elatest)
 	}
-	P("  fcb %d  ;len", len(name))
+	P("  fcb %d ;len", len(name))  // For going forwards >CFA
 	P("  fcc ~%s~", name)
-	P("  fcb 0")
+	P("  fcb 0")        // NUL terminate C-style.
+	P("  fcb %d ;len", len(name))  // For going backwards
 
 	P("c_%s", ename)
 	P("  fcb ($10000+%s-*)/256 ;codeword", ecode)
