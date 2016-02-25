@@ -866,8 +866,8 @@ Byte GetIOByte(Word a) {
       }
       return z;
 
-    //case 0xFF01:
-    //  return 0;
+    case 0xFF01:
+      return 0;
     case 0xFF02:
       return kbd_probe;    /* Reset IRQ when this is read. TODO: multiple sources of IRQ. */
     case 0xFF03:
@@ -899,7 +899,8 @@ Byte GetIOByte(Word a) {
       return z;
     default:
       fprintf(stderr, "HEY, UNKNOWN GetIOByte: 0x%04x\n", a);
-      finish();
+      // finish();
+      return 0;
   }
 }
 

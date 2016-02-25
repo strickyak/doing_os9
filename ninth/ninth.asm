@@ -18,7 +18,7 @@ D_Next rmb 2
 D_Exit rmb 2
 D_SIZE equ .
 
-tylg     set   Prgrm+Objct   
+tylg     set   Prgrm+Objct
 atrv     set   ReEnt+rev
 rev      set   $00
 edition  set   9
@@ -56,11 +56,23 @@ start
 
 PrintD
   pshS A,B
+
+  pshS B
+  ldb #$28       "("
+  bsr putchar
+  pulS B
+
   pshS B
   tfr A,B
   bsr PrintB
   pulS b
   bsr PrintB
+
+  ldb #$29       ")"
+  bsr putchar
+  ldb #$20       "0"
+  bsr putchar
+
   puls a,b,pc
 
 PrintB
@@ -89,6 +101,40 @@ Lpn001
   jsr putchar,pcr
   pulS B,PC
 
+
+** getchar() or 0 -> a; err -> b
+*getchar
+*  pshS X,Y,U
+*
+*retry_getchar
+*  *clra
+*  *ldb #SS.Ready
+*  *os9 I$GetStt
+*  *bcs retry_getchar
+*
+*  lda #2  # read from stderr (!?)
+*  clrb
+*  pshs b
+*  leax ,s  # Make a one-char buffer.
+*  ldy #1   # Only one char!
+*  os9 I$ReadLn
+*  puls a   # copied from buffer to A
+*  bcc ok_getchar
+*  cmpb #211
+*  beq retry_getchar
+*  clra
+*  bra ret_getchar
+*
+*ok_getchar
+*  leay -1,y  # was it 1, as in 1 char?
+*  beq ret_getchar
+*
+*  ldb #255   # Error 255 -- no char.
+*
+*ret_getchar
+*  pulS X,Y,U,PC
+
+
 * putchar(b)
 putchar
   pshS A,B,X,Y,U
@@ -97,7 +143,7 @@ putchar
   lda #1       ; a = path 1
   os9 I$WritLn ; putchar, trust it works.
   pulS A,B,X,Y,U,PC
-  
+
 Cold
   leaU $-200,s  ; U is Parameter Stack.
   clrD          ;
@@ -123,13 +169,16 @@ Enter
 Next
   ldd 0,y
   leax d,y
+
+  pshs d,x,y
+  tfr y,d
+  jsr PrintD,pcr
+  puls d,x,y
+
   leay 2,y
   ldd 0,x
   jmp d,x
 
-  *ldx ,y++     ; [IP]->W; IP++
-  *ldd 0,x      ; goto W+[W]
-  *jmp D,X
 
 Exit
   pulU y       ; pop previous IP.

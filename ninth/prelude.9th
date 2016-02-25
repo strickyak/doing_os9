@@ -6,6 +6,7 @@
 2 allot here
 2 allot latest
 80 allot inbuf
+32 allot wordbuf
 80 allot tmpbuf
 
 code execute
@@ -29,16 +30,60 @@ code rot
   std 2,u
   stx 0,u
   ;
- 
+
 code dup
   ldd 0,u
   std ,--u
   ;
 
+code c*     ; only multiplies two bytes.
+  ldd ,u++  ; really we want b.
+  lda 1,u   ; low byte into a.
+  mul       ; D := A * B
+  std 0,u
+  ;
 code +
   ldd ,u++
   addd 0,u
   std 0,u
+  ;
+code -
+  ldd ,u++
+  subd 0,u
+  std 0,u
+  ;
+code 1+
+  ldd ,u
+  addd #1
+  std ,u
+  ;
+code 1-
+  ldd ,u
+  subd #1
+  std ,u
+  ;
+code bitand
+  ldd ,u++
+  anda 0,u
+  andb 1,u
+  std 0,u
+  ;
+code bitor
+  ldd ,u++
+  ora 0,u
+  orb 1,u
+  std 0,u
+  ;
+code bitxor
+  ldd ,u++
+  eora 0,u
+  eorb 1,u
+  std 0,u
+  ;
+code sex
+  ldd ,u
+  sex
+  std ,u
   ;
 
 code .
@@ -49,8 +94,46 @@ code .
   jsr putchar,pcr
   ;
 
+code getline
+  pshs x,y
+retry_getline
+  lda #2
+  leax d_inbuf,pcr
+  ldy #80
+
+  os9 I$ReadLn
+  bcc l1_getline
+
+  *bcs retry_getline
+  bcs l2_getline
+
+  cmpb #$D3
+  beq retry_getline
+  bra l2_getline
+
+l1_getline
+  clra
+  clrb
+l2_getline
+  sty ,--u  ; push length
+  std ,--u  ; push error number, or 0.
+  puls x,y
+  ;
+
+\ code getchar
+\   jsr getchar,pcr
+\   *tfr a,b
+\   *sex
+\   std ,--u
+\   ;
+
 code putchar
   ldd ,u++
+  jsr putchar,pcr
+  ;
+
+code cr
+  ldb #13  ; CR
   jsr putchar,pcr
   ;
 
@@ -66,9 +149,9 @@ code branch
   ;
 
 code 0branch
-  ldd ,u++  ; pop a cell from the param stack
-  bne b0001 ; only change IP if that was zero.
   ldd ,Y++  ; get next cell from IP
+  ldx ,u++  ; pop a cell from the param stack
+  bne b0001 ; only change IP if that was zero.
   leay d,y  ; add that offset to the IP.
 b0001
   jmp Next,pcr
@@ -83,6 +166,54 @@ b0002
   jmp Next,pcr
   ;
 
+code =
+  ldd ,u++
+  cmpd ,u
+  beq SetTrue
+  bra SetFalse
+  ;
+code <>
+  ldd ,u++
+  cmpd ,u
+  bne SetTrue
+  bra SetFalse
+  ;
+code <
+  ldd ,u++
+  cmpd ,u
+  blt SetTrue
+  bra SetFalse
+  ;
+code <=
+  ldd ,u++
+  cmpd ,u
+  ble SetTrue
+  bra SetFalse
+  ;
+code >
+  ldd ,u++
+  cmpd ,u
+  bgt SetTrue
+  bra SetFalse
+  ;
+code >=
+  ldd ,u++
+  cmpd ,u
+  bge SetTrue
+  bra SetFalse
+SetTrue
+  clra  ; replace TOS with 1.
+  clrb
+  incb
+  std ,u
+  jmp Next,pcr
+SetFalse
+  clra  ; replace TOS with 0.
+  clrb
+  std ,u
+  jmp Next,pcr
+  ;
+
 code >r
   ldd ,u++    ; pop from u, push to s.
   std ,--s
@@ -92,6 +223,11 @@ code >r
 code r>
   ldd ,s++    ; pop from s, push to u.
   std ,--u
+  jmp Next,pcr
+  ;
+
+code rdrop
+  leas 2,s    ; pop from s and discard.
   jmp Next,pcr
   ;
 
@@ -109,14 +245,14 @@ code @
   jmp Next,pcr
   ;
 
-code C!
+code c!
   ldx ,u++    ; pop address
   ldd ,u++    ; pop value
   stb ,x      ; poke just the low byte.
   jmp Next,pcr
   ;
 
-code C@
+code c@
   ldx ,u      ; the address from the stack
   ldb ,x      ; what byte was at the address
   clra
@@ -133,8 +269,19 @@ code bye
 OsExit
   ldb #13  ; CR
   jsr putchar,pcr
+  clrb
+  os9 F$Exit
+  ;
+
+code bomb
+  ldb #13  ; CR
+  jsr putchar,pcr
   ldb #35  ; #
   jsr putchar,pcr
+
+  pulu D
+  jsr PrintD,pcr
+
   ldb #13  ; CR
   jsr putchar,pcr
   clrb
@@ -144,9 +291,26 @@ OsExit
 
 : double
     dup + ;
-: main
+: main1
     $D putchar $2 dup . double dup . double dup . double .
-    here . here @ . 
-    latest . latest @ . 
-    inbuf . tmpbuf . bye ;
-\ END.
+    here . here @ .
+    latest . latest @ .
+    inbuf . tmpbuf .
+    cr getline cr . cr
+    ;
+
+: main_getline  getline . . cr cr ;
+\ : main_getchar  getchar . getchar . getchar . getchar . cr cr ;
+
+: main
+    cr
+    64 putchar
+    0 if 33 putchar then
+    5 if 53 putchar then
+    cr
+    0 if 33 else 126 then putchar
+    5 if 53 else 126 then putchar
+    cr
+
+    bye
+  ;

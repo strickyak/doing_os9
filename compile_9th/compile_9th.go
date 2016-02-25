@@ -24,6 +24,8 @@ type Ninth struct {
 	Here   int
 
 	Allots map[string]int
+	Stack  []string
+	Serial int
 }
 
 func (o *Ninth) NextWord() string {
@@ -163,6 +165,37 @@ func (o *Ninth) InsertColon() {
 			continue
 		}
 
+		// if, else, then.
+		if s == "if" {
+			o.Serial++
+			label := F("if%d", o.Serial)
+			o.Stack = append(o.Stack, label)
+			o.Comma("c_0branch", "0branch")
+			o.Comma(F("%s-2", label), label)
+			continue
+		}
+
+		if s == "else" {
+			o.Serial++
+			new_label := F("if%d", o.Serial)
+			o.Comma("c_branch", "branch")
+			o.Comma(F("%s-2", new_label), new_label)
+
+			old_label := o.Stack[len(o.Stack)-1]
+			o.Stack = append(o.Stack, old_label)
+			P("%s", old_label)
+
+			o.Stack = append(o.Stack, new_label)
+			continue
+		}
+
+		if s == "then" {
+			label := o.Stack[len(o.Stack)-1]
+			o.Stack = append(o.Stack, label)
+			P("%s", label)
+			continue
+		}
+
 		// Normal non-immediate words.
 		es := EncodeFunnyChars(s)
 		P("  fcb ($10000+c_%s-*)/256 ;; %s ;;", es, s)
@@ -170,6 +203,11 @@ func (o *Ninth) InsertColon() {
 	}
 	P("  fcb ($10000+c_exit-*)/256 ;; exit ;;")
 	P("  fcb ($10000+c_exit-*)+1")
+}
+
+func (o *Ninth) Comma(s string, rem string) {
+	P("  fcb ($10000+%s-*)/256 ;; %s ;;", s, rem)
+	P("  fcb ($10000+%s-*)+1", s)
 }
 
 func (o *Ninth) DoCode() {
