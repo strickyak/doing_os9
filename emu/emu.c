@@ -2070,7 +2070,7 @@ void Os9AllMemoryModules() {
   Word start = GETWORD(0x26);
   Word limit = GETWORD(0x28);
   Word i = start;
-  DumpAllMemory();
+  // DumpAllMemory();
   DumpPageZero();
   DumpProcesses();
   DumpAllPathDescs();
