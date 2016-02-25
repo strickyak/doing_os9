@@ -181,25 +181,25 @@ code <>
 code <
   ldd ,u++
   cmpd ,u
-  blt SetTrue
+  bgt SetTrue
   bra SetFalse
   ;
 code <=
   ldd ,u++
   cmpd ,u
-  ble SetTrue
+  bge SetTrue
   bra SetFalse
   ;
 code >
   ldd ,u++
   cmpd ,u
-  bgt SetTrue
+  blt SetTrue
   bra SetFalse
   ;
 code >=
   ldd ,u++
   cmpd ,u
-  bge SetTrue
+  ble SetTrue
   bra SetFalse
 SetTrue
   clra  ; replace TOS with 1.
@@ -211,6 +211,32 @@ SetFalse
   clra  ; replace TOS with 0.
   clrb
   std ,u
+  jmp Next,pcr
+  ;
+
+code r0
+  ldd ,s
+  std ,--u
+  jmp Next,pcr
+  ;
+code r1
+  ldd 2,s
+  std ,--u
+  jmp Next,pcr
+  ;
+code i
+  ldd 2,s
+  std ,--u
+  jmp Next,pcr
+  ;
+code r1!
+  ldd ,u++
+  std 2,s
+  jmp Next,pcr
+  ;
+code i!
+  ldd 2,s
+  std ,--u
   jmp Next,pcr
   ;
 
@@ -321,6 +347,7 @@ code bomb
       100 putchar
       0 tmp !
     repeat
+    10 0 do i . loop
 
     bye
   ;

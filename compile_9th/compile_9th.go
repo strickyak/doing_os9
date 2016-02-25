@@ -97,10 +97,10 @@ func (o *Ninth) DoPrelude(name string, code string) {
 		P("  fcb ($10000+l_%s-*)/256 ;link", elatest)
 		P("  fcb ($10000+l_%s-*)+1", elatest)
 	}
-	P("  fcb %d ;len", len(name))  // For going forwards >CFA
+	P("  fcb %d ;len", len(name)) // For going forwards >CFA
 	P("  fcc ~%s~", name)
-	P("  fcb 0")        // NUL terminate C-style.
-	P("  fcb %d ;len", len(name))  // For going backwards
+	P("  fcb 0")                  // NUL terminate C-style.
+	P("  fcb %d ;len", len(name)) // For going backwards
 
 	P("c_%s", ename)
 	P("  fcb ($10000+%s-*)/256 ;codeword", ecode)
@@ -130,30 +130,50 @@ func (o *Ninth) InsertCode() {
 }
 
 func (o *Ninth) InsertBegin() {
-			o.Serial++
-			label := F("begin%d", o.Serial)
-			o.Stack = append(o.Stack, label)
-			P("%s", label)
+	o.Serial++
+	label := F("begin%d", o.Serial)
+	o.Stack = append(o.Stack, label)
+	P("%s", label)
 }
 
 func (o *Ninth) InsertWhile() {
-			o.Serial++
-			new_label := F("while%d", o.Serial)
-			o.Stack = append(o.Stack, new_label)
-			o.Comma("c_0branch", "0branch")
-			o.Comma(F("%s-2", new_label), new_label)
+	o.Serial++
+	new_label := F("while%d", o.Serial)
+	o.Stack = append(o.Stack, new_label)
+	o.Comma("c_0branch", "0branch")
+	o.Comma(F("%s-2", new_label), new_label)
 }
 
 func (o *Ninth) InsertRepeat() {
-			new_label := o.Stack[len(o.Stack)-1]
-			o.Stack = append(o.Stack, new_label)
+	new_label := o.Stack[len(o.Stack)-1]
+	o.Stack = o.Stack[:len(o.Stack)-1]
 
-			old_label := o.Stack[len(o.Stack)-1]
-			o.Stack = append(o.Stack, old_label)
-			o.Comma("c_branch", "branch")
-			o.Comma(F("%s-2", old_label), old_label)
+	old_label := o.Stack[len(o.Stack)-1]
+	o.Stack = o.Stack[:len(o.Stack)-1]
+	o.Comma("c_branch", "branch")
+	o.Comma(F("%s-2", old_label), old_label)
 
-			P("%s", new_label)
+	P("%s", new_label)
+}
+func (o *Ninth) InsertDo() {
+	o.CommaEncode("c_>r", "save starting current")
+	o.CommaEncode("c_>r", "save limit")
+	o.InsertBegin()
+	o.CommaEncode("c_r0", "limit")
+	// o.CommaEncode("c_dup", "---"); o.CommaEncode("c_.", "---");
+	o.CommaEncode("c_r1", "current")
+	// o.CommaEncode("c_dup", "---"); o.CommaEncode("c_.", "---");
+	o.CommaEncode("c_>", "not finished?")
+	// o.CommaEncode("c_dup", "---"); o.CommaEncode("c_.", "---");
+	o.InsertWhile()
+}
+func (o *Ninth) InsertLoop() {
+	o.CommaEncode("c_r1", "current")
+	o.CommaEncode("c_1+", "incr current")
+	o.CommaEncode("c_r1!", "save current")
+	o.InsertRepeat()
+	o.CommaEncode("c_rdrop", "drop limit")
+	o.CommaEncode("c_rdrop", "drop current")
 }
 
 func (o *Ninth) InsertColon() {
@@ -226,18 +246,21 @@ func (o *Ninth) InsertColon() {
 
 		// begin ... while ... repeat
 
-		if s == "begin" {
+		switch s {
+		case "begin":
 			o.InsertBegin()
-      continue
-		}
-
-		if s == "while" {
+			continue
+		case "while":
 			o.InsertWhile()
 			continue
-		}
-
-		if s == "repeat" {
+		case "repeat":
 			o.InsertRepeat()
+			continue
+		case "do":
+			o.InsertDo()
+			continue
+		case "loop":
+			o.InsertLoop()
 			continue
 		}
 
@@ -253,6 +276,10 @@ func (o *Ninth) InsertColon() {
 func (o *Ninth) Comma(s string, rem string) {
 	P("  fcb ($10000+%s-*)/256 ;; %s ;;", s, rem)
 	P("  fcb ($10000+%s-*)+1", s)
+}
+func (o *Ninth) CommaEncode(s string, rem string) {
+	P("  fcb ($10000+%s-*)/256 ;; %s ;;", EncodeFunnyChars(s), rem)
+	P("  fcb ($10000+%s-*)+1", EncodeFunnyChars(s))
 }
 
 func (o *Ninth) DoCode() {
