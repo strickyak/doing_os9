@@ -207,7 +207,7 @@ void trace();
 
 static int fdump=0;
 static int tmode = 0;  // Trace enabled?
-static int steps = 0;
+static long steps = 0;
 
 /* Defaults for backwards compatability. */
 static int swi_for_putchar = 2;  /* 1, 2, or 3, for SWI, SWI2, SWI3. */
@@ -2705,7 +2705,7 @@ void trace()
    // fprintf(stderr,"%02x ",mem[pcreg]);else fprintf(stderr,"   ");
    fprintf(stderr,"x=%04x y=%04x u=%04x s=%04x a=%02x b=%02x cc=%s dp=%02x",
                    xreg,yreg,ureg,sreg,*areg,*breg,to_bin(ccreg), dpreg);
-   fprintf(stderr,", s: %04x %04x, #%d",
+   fprintf(stderr,", s: %04x %04x, #%ld",
         mem[sreg]<<8|mem[sreg+1],
         mem[sreg+2]<<8|mem[sreg+3],
         steps
@@ -2725,8 +2725,8 @@ main(int argc,char *argv[])
  char c;
  int a;
  int zmode = 0, Fmode = 0; // Init to 0, Init to F.
- int maxsteps= 0;
- int tracetrigger= -1;
+ long maxsteps= 0;
+ long tracetrigger= -1;
 
  while( (c=getopt(argc, argv, optstring)) >=0 ) {
         switch(c) {
@@ -2874,7 +2874,7 @@ main(int argc,char *argv[])
   pcreg_prev = pcreg;
 
  } /* next step */
- fprintf(stderr,"FINISHED %d STEPS\n", steps);
+ fprintf(stderr,"FINISHED %ld STEPS\n", steps);
  finish();
 }
 
