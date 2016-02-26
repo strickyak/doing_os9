@@ -24,7 +24,8 @@ type Ninth struct {
 	Here   int
 
 	Allots map[string]int
-	Stack  []string
+	IfStack  []string
+	LoopStack  []string
 	Serial int
 }
 
@@ -132,24 +133,24 @@ func (o *Ninth) InsertCode() {
 func (o *Ninth) InsertBegin() {
 	o.Serial++
 	label := F("begin%d", o.Serial)
-	o.Stack = append(o.Stack, label)
+	o.LoopStack = append(o.LoopStack, label)
 	P("%s", label)
 }
 
 func (o *Ninth) InsertWhile() {
 	o.Serial++
 	new_label := F("while%d", o.Serial)
-	o.Stack = append(o.Stack, new_label)
+	o.LoopStack = append(o.LoopStack, new_label)
 	o.Comma("c_0branch", "0branch")
 	o.Comma(F("%s-2", new_label), new_label)
 }
 
 func (o *Ninth) InsertRepeat() {
-	new_label := o.Stack[len(o.Stack)-1]
-	o.Stack = o.Stack[:len(o.Stack)-1]
+	new_label := o.LoopStack[len(o.LoopStack)-1]
+	o.LoopStack = o.LoopStack[:len(o.LoopStack)-1]
 
-	old_label := o.Stack[len(o.Stack)-1]
-	o.Stack = o.Stack[:len(o.Stack)-1]
+	old_label := o.LoopStack[len(o.LoopStack)-1]
+	o.LoopStack = o.LoopStack[:len(o.LoopStack)-1]
 	o.Comma("c_branch", "branch")
 	o.Comma(F("%s-2", old_label), old_label)
 
@@ -217,7 +218,7 @@ func (o *Ninth) InsertColon() {
 		if s == "if" {
 			o.Serial++
 			label := F("if%d", o.Serial)
-			o.Stack = append(o.Stack, label)
+			o.IfStack = append(o.IfStack, label)
 			o.Comma("c_0branch", "0branch")
 			o.Comma(F("%s-2", label), label)
 			continue
@@ -229,17 +230,17 @@ func (o *Ninth) InsertColon() {
 			o.Comma("c_branch", "branch")
 			o.Comma(F("%s-2", new_label), new_label)
 
-			old_label := o.Stack[len(o.Stack)-1]
-			o.Stack = append(o.Stack, old_label)
+			old_label := o.IfStack[len(o.IfStack)-1]
+			o.IfStack = append(o.IfStack, old_label)
 			P("%s", old_label)
 
-			o.Stack = append(o.Stack, new_label)
+			o.IfStack = append(o.IfStack, new_label)
 			continue
 		}
 
 		if s == "then" {
-			label := o.Stack[len(o.Stack)-1]
-			o.Stack = append(o.Stack, label)
+			label := o.IfStack[len(o.IfStack)-1]
+			o.IfStack = append(o.IfStack, label)
 			P("%s", label)
 			continue
 		}
