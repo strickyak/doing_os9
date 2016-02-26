@@ -36,6 +36,10 @@ code dup
   std ,--u
   ;
 
+code drop
+  leau 2,u
+  ;
+
 code c*     ; only multiplies two bytes.
   ldd ,u++  ; really we want b.
   lda 1,u   ; low byte into a.
@@ -299,21 +303,41 @@ OsExit
   os9 F$Exit
   ;
 
-code bomb
-  ldb #13  ; CR
+code must
+  ldx ,u++      tag
+  ldd ,u++      value
+  bne ret_must
+  ldb #$3F  '?'
   jsr putchar,pcr
-  ldb #35  ; #
-  jsr putchar,pcr
-
-  pulu D
+  tfr x,d
   jsr PrintD,pcr
-
-  ldb #13  ; CR
+  ldb #$3F  '?'
   jsr putchar,pcr
-  clrb
-  ldb #8
+  ldb #$0D  CR
+  jsr putchar,pcr
+  ldb #255
   os9 F$Exit
+ret_must
+  jmp Next,pcr
   ;
+
+: bl 32 ;
+
+: words
+  latest @
+  begin
+    dup
+  while
+    dup
+    2 + c@  0  do
+      dup 3 + i + c@ putchar
+      loop
+    bl putchar
+    dup @  dup if  +  else  drop 0  then \ add offset to base, unless offset is 0.
+  repeat
+  ;
+
+
 
 : double
     dup + ;
@@ -331,6 +355,8 @@ code bomb
 2 allot tmp
 
 : main
+    1 $888 must
+    \ 0 $666 must
     cr
     64 putchar
     0 if 33 putchar then
@@ -346,8 +372,11 @@ code bomb
     while
       100 putchar
       0 tmp !
-    repeat
-    10 0 do i . loop
+    repeat cr
+
+    10 0 do i . loop  cr
+
+    words cr
 
     bye
   ;
