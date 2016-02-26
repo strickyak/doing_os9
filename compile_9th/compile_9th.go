@@ -263,6 +263,9 @@ func (o *Ninth) InsertColon() {
 		case "loop":
 			o.InsertLoop()
 			continue
+		case "\\":
+			o.Words = nil
+      continue
 		}
 
 		// Normal non-immediate words.
