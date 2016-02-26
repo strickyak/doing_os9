@@ -2015,6 +2015,7 @@ void DumpAllPathDescs() {
   int i, j;
   Word a = 0;
   Word p = W(D_PthDBT);
+  if (!p) return;
   for (i=0; i<32; i++) {
     Word q = W(p + i*2);
     if (q) {
