@@ -111,23 +111,27 @@ func (o *Ninth) DoPrelude(name string, code string) {
 	o.Latest = name
 }
 
-func (o *Ninth) InsertAllot(offset int) {
-	P("  tfr dp,a")
-	P("  clrb")
-	P("  addd #%d", offset)
-	P("  pshU d")
-	P("  jmp Next,pcr")
+func (o *Ninth) InsertAllot(offset int, w string) {
+	P("  tfr dp,a   ==%s==", w)
+	P("  clrb   ==%s==", w)
+	P("  addd #%d   ==%s==", offset, w)
+	P("  pshU d   ==%s==", w)
+	P("  jmp Next,pcr   ==%s==", w)
 }
 
-func (o *Ninth) InsertCode() {
+func (o *Ninth) InsertCode(w string) {
 	for {
 		s := o.NextLine()
 		if strings.Trim(s, " \t") == ";" {
 			break
 		}
-		P("%s", s)
+    if len(s)>1 && s[0]==' ' {
+		  P("%s   *==%s==", s, w)
+    } else {
+		  P("%s", s)
+    }
 	}
-	P("  jmp Next,pcr")
+	P("  jmp Next,pcr  *,,%s,,", w)
 }
 
 func (o *Ninth) InsertBegin() {
@@ -266,6 +270,13 @@ func (o *Ninth) InsertColon() {
 		case "\\":
 			o.Words = nil
       continue
+		case "(":  // Limitations: not nested; requires ')' as a separate word.
+			for s != ")" {
+        s = o.NextWord()
+      }
+      continue
+		case ")":
+      continue
 		}
 
 		// Normal non-immediate words.
@@ -289,7 +300,7 @@ func (o *Ninth) CommaEncode(s string, rem string) {
 func (o *Ninth) DoCode() {
 	name := o.NextWord()
 	o.DoPrelude(name, "d_"+name)
-	o.InsertCode()
+	o.InsertCode(name)
 }
 func (o *Ninth) DoColon() {
 	name := o.NextWord()
@@ -301,7 +312,7 @@ func (o *Ninth) DoAllot(n int) {
 	offset := o.Here
 	o.Here += n
 	o.DoPrelude(name, "d_"+name)
-	o.InsertAllot(offset)
+	o.InsertAllot(offset, name)
 	o.Allots[name] = offset
 }
 func (o *Ninth) DoInit() {
@@ -353,6 +364,11 @@ func CompileFile(w io.Writer, r io.Reader) {
 		switch w {
 		case "\\":
 			o.Words = nil
+		case "(":  // Limitations: not nested; requires ')' as a separate word.
+			for w != ")" {
+        w = o.NextWord()
+      }
+      continue
 		case ":":
 			o.DoColon()
 		case "code":
