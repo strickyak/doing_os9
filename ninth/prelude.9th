@@ -5,9 +5,137 @@
 
 2 allot here
 2 allot latest
-80 allot inbuf
+2 allot inlen
+2 allot inptr
+81 allot inbuf
+2 allot wordlen
 32 allot wordbuf
-80 allot tmpbuf
+81 allot tmpbuf
+
+: wordinit
+  inlen 0 !
+  inptr 0 !
+  wordlen 0 !
+  ;
+
+\ sets inlen, inptr, & inbuf
+: getline ( -- ) 
+    0 i$readln inlen !
+    0 inptr !
+  ;
+
+\ sets wordlen & wordbuf
+: getword ( -- )
+    begin  inbuf inptr @ + c@ 32 <=   inptr @ inlen @ <  and  while $1100 . inptr @ 1 + inptr ! repeat
+
+    inptr @ inlen @ >=  if
+      $1101 . getline getword $1102 .
+    else
+      $1103 .
+      0 wordlen !
+      begin  inbuf inptr @ + c@ 32 >  inptr @ inlen @ <  and  while $1105 .
+        inbuf inptr @ + c@  wordbuf wordlen @ +  c!
+        inptr @ 1 + inptr !
+        wordlen @ 1 + wordlen !
+      repeat
+      $1109 .
+    then
+;
+
+
+: i$readln ( pathNum -- bytesRead )
+    >r                             \ save pathNum
+    81 0 do inbuf i + 0 c! loop    \ clear buffer
+    0 80 inbuf r> $8B os9 dup      \ os9 I$ReadLn
+      if . $9999 . bye else drop   \ if error
+        drop drop swap drop then ; \ return bytesRead from Y
+
+: show5stack
+  dup . >r
+  dup . >r
+  dup . >r
+  dup . >r
+  dup .
+  r> r> r> r>
+  ;
+
+\ Stacking Order: PC U Y X D CC
+: os9      ( U Y X D syscallNum -- U Y X D zeroOrError )
+  $9001 . show5stack cr
+  swibuf os9' dup drop
+  $9002 . show5stack cr
+  ;
+
+4 allot swibuf  \ Will compose 4 bytes  of machine code here.
+
+code os9'  ( U Y X D syscallNum swibufLoc -- U Y X D zeroOrError )
+  pshs Y,U    ; save Forth state
+
+  * leax c_swibuf,pcr  ; Gonna call word swibuf, to get buffer address.
+  * pshu x             ; param to execute
+  * jsr Execute,pcr
+  pulu y   ; Y := swibuf location.
+
+
+  * Push syscall in registers onto S.
+  leax rts_os9,pcr  # Where the swibuf rts will return to.
+  pshs x   ; PC: swibuf location, to be jumped to by "puls ...PC...".
+
+  pshs y   ; will pull PC to jump into swibuf.
+  ldx 8,u  ; users's U param
+  pshs x   ; will pull U
+  ldx 6,u  ; users's Y param
+  pshs x   ; will pull Y
+  ldx 4,u  ; users's X param
+  pshs x   ; will pull X
+  ldx 2,u  ; users's D param
+  pshs x   ; will pull D
+
+  * Fill in the swibuf.
+  ldd 0,u  ; users's syscallNum param
+  stb 2,y  ; opcode will follow 2-byte SWI2
+  ldd #$103F ; opcode for swi2
+  std 0,y
+  ldb #$39  ; opcode for rts
+  stb 3,y
+
+  * Make the call.
+  puls D,X,Y,U,PC
+
+  * Pulling PC executes SWI2 and RTS to next label.
+rts_os9
+  * Save all the results.
+  pshs U,Y,X,B,A  ; note saving 8 bytes.
+  bcc good_os9
+  * If Carry bit says Error
+  clra
+  ldb 1,s
+  bra z_os9
+good_os9
+  clra
+  clrb
+z_os9
+  ldu 10,s  ; we need our forth U now.
+
+  std 0,u  ; Return error num or zero.
+
+  lda 0,s  ; grab A from the stack.
+  clrb     ; supress B now.
+  std 2,u  ; Return D with error still in B.
+
+  ldd 2,s
+  std 4,u  ; return X
+
+  ldd 4,s
+  std 6,u  ; return Y
+
+  ldd 6,s
+  std 8,u  ; return U
+
+  leas 8,s  ; Remove all that returned stuff from S stack.
+
+  puls Y,U  ; Recover forth state (even though we already got U).
+  ;
 
 code execute
   pulU x       ; arg -> W
@@ -66,19 +194,19 @@ code 1-
   subd #1
   std ,u
   ;
-code bitand
+code and
   ldd ,u++
   anda 0,u
   andb 1,u
   std 0,u
   ;
-code bitor
+code or
   ldd ,u++
   ora 0,u
   orb 1,u
   std 0,u
   ;
-code bitxor
+code xor
   ldd ,u++
   eora 0,u
   eorb 1,u
@@ -97,39 +225,6 @@ code .
   ldb #32
   jsr putchar,pcr
   ;
-
-code getline
-  pshs x,y
-retry_getline
-  lda #2
-  leax d_inbuf,pcr
-  ldy #80
-
-  os9 I$ReadLn
-  bcc l1_getline
-
-  *bcs retry_getline
-  bcs l2_getline
-
-  cmpb #$D3
-  beq retry_getline
-  bra l2_getline
-
-l1_getline
-  clra
-  clrb
-l2_getline
-  sty ,--u  ; push length
-  std ,--u  ; push error number, or 0.
-  puls x,y
-  ;
-
-\ code getchar
-\   jsr getchar,pcr
-\   *tfr a,b
-\   *sex
-\   std ,--u
-\   ;
 
 code putchar
   ldd ,u++
@@ -376,7 +471,16 @@ ret_must
 
     10 0 do i . loop  cr
 
-    words cr
+    words cr cr
+    wordinit
+    0 0 0 0 12 os9 . . . . . cr
 
-    bye
+    $8000 . 0 i$readln dup .
+      dup 0 do inbuf i + c@ . loop
+      dup 0 do inbuf i + c@ putchar loop cr
+      drop cr
+
+    $8001 . getword wordlen @ . $8002 . getword wordlen @ .
+
+    $8888 . bye
   ;
