@@ -315,6 +315,7 @@ struct Completion {
   Word a, b, c;
 } Os9SysCallCompletion[0x10000];
 
+void DumpAllMemory();
 void Os9AllMemoryModules();
 void DefaultCompleter(struct Completion* cp);
 Byte GETBYTE(Word a);
@@ -1370,6 +1371,8 @@ Word eaddr16() /* effective address for 16-bits ops. */
 
 ill() /* illegal opcode==noop */
 {
+ fprintf(stderr,"Illegal Opcode\n");
+ DumpAllMemory();
  fprintf(stderr,"Illegal Opcode\n");
  finish();
 }

@@ -36,11 +36,20 @@ start
   os9 I$WritLn
 
   leaU $-200,s  ; U is Parameter Stack.
-  clrD          ;
+  tfr u,d
+  orb #$FE      ; even align looks better :)
+  tfr d,u
+
+  clra
+  clrb
   tfr d,y       ; Y is IP
   tfr d,x       ; X is W or Temp
   pshs d,x,y    ; push some zeroes for fun.
   pshu d,x,y    ; push some zeroes for fun.
+
+  sts <u_return0   ; remember initial stacks.
+  stu <u_param0
+
   jsr Init,pcr
   leax c_main,pcr
   pshu x
@@ -148,8 +157,35 @@ Next
   ldd 0,y
   leax d,y
 
-  IFNE 0
+  tst <u_traceEnable+1  ; just check the low byte.
+  ble skip_trace
+  *** BEGIN printing word.
+  pshs d,x,y
+
+  leax -1,x  ; Back to EOS
+  ldb #32
+  bsr putchar
+  ldb #126
+  bsr putchar
+  ldb #32
+LoopBackwards
+  leax -1,x  ; Back to final letter of word.
+  lda 0,x
+  cmpb 0,x
+  ble LoopBackwards
+
+  clra
+  ldb 0,x
+  tfr d,y   ; number bytes to write
+  leax 1,x  ; addr of bytes
+  lda #2    ; stderr
+  os9 I$WritLn
+  ldb #32
+  bsr putchar
+
+  puls d,x,y
   *** BEGIN printing IP.
+  IFNE 0
   pshs d,x,y
   ldb #$28       "("
   bsr putchar
@@ -166,8 +202,10 @@ Next
   ldb #$20       " "
   bsr putchar
   puls d,x,y
-  *** END printing IP.
   ENDC
+  *** END printing IP.
+  *** END printing IP.
+skip_trace
 
   leay 2,y
   ldd 0,x

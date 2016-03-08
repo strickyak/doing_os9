@@ -86,7 +86,7 @@ func EncodeFunnyChars(s string) string {
 	return string(bb)
 }
 
-func (o *Ninth) DoPrelude(name string, code string) {
+func (o *Ninth) DoWordHeader(name string, code string) {
 	ename := EncodeFunnyChars(name)
 	ecode := EncodeFunnyChars(code)
 	elatest := EncodeFunnyChars(o.Latest)
@@ -101,7 +101,6 @@ func (o *Ninth) DoPrelude(name string, code string) {
 	P("  fcb %d ;len", len(name)) // For going forwards >CFA
 	P("  fcc ~%s~", name)
 	P("  fcb 0")                  // NUL terminate C-style.
-	P("  fcb %d ;len", len(name)) // For going backwards
 
 	P("c_%s", ename)
 	P("  fcb ($10000+%s-*)/256 ;codeword", ecode)
@@ -117,6 +116,7 @@ func (o *Ninth) InsertAllot(offset int, w string) {
 	P("  addd #%d   ==%s==", offset, w)
 	P("  pshU d   ==%s==", w)
 	P("  jmp Next,pcr   ==%s==", w)
+	P("u_%s equ %d", EncodeFunnyChars(w), offset)
 }
 
 func (o *Ninth) InsertCode(w string) {
@@ -179,6 +179,20 @@ func (o *Ninth) InsertLoop() {
 	o.InsertRepeat()
 	o.CommaEncode("c_rdrop", "drop limit")
 	o.CommaEncode("c_rdrop", "drop current")
+}
+func (o *Ninth) InsertLiteralString(op string) {
+	P(`  fcb ($10000+c_%s-*)/256  ; ."`, EncodeFunnyChars(op))
+	P("  fcb ($10000+c_%s-*)+1", EncodeFunnyChars(op))
+  x := ""
+  for {
+    // TODO
+    s := o.NextWord()
+    if s == `"` { break }
+    // TODO
+    P("  fcc ~%s%s~", x, s)
+    x = " "
+  }
+  P("  fcb 0  ; EOS")
 }
 
 func (o *Ninth) InsertColon() {
@@ -267,7 +281,13 @@ func (o *Ninth) InsertColon() {
 		case "loop":
 			o.InsertLoop()
 			continue
-		case "\\":
+		case `"`:
+			o.InsertLiteralString("addr_litstr")
+			continue
+		case `."`:
+			o.InsertLiteralString("emit_litstr")
+			continue
+		case `\`:
 			o.Words = nil
       continue
 		case "(":  // Limitations: not nested; requires ')' as a separate word.
@@ -299,19 +319,19 @@ func (o *Ninth) CommaEncode(s string, rem string) {
 
 func (o *Ninth) DoCode() {
 	name := o.NextWord()
-	o.DoPrelude(name, "d_"+name)
+	o.DoWordHeader(name, "d_"+name)
 	o.InsertCode(name)
 }
 func (o *Ninth) DoColon() {
 	name := o.NextWord()
-	o.DoPrelude(name, "Enter")
+	o.DoWordHeader(name, "Enter")
 	o.InsertColon()
 }
 func (o *Ninth) DoAllot(n int) {
 	name := o.NextWord()
 	offset := o.Here
 	o.Here += n
-	o.DoPrelude(name, "d_"+name)
+	o.DoWordHeader(name, "d_"+name)
 	o.InsertAllot(offset, name)
 	o.Allots[name] = offset
 }
@@ -362,7 +382,7 @@ func CompileFile(w io.Writer, r io.Reader) {
 			continue
 		}
 		switch w {
-		case "\\":
+		case `\`:
 			o.Words = nil
 		case "(":  // Limitations: not nested; requires ')' as a separate word.
 			for w != ")" {

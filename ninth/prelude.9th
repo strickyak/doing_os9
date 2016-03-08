@@ -3,14 +3,76 @@
 \ U: Param Stack
 \ S: Return Stack
 
+2 allot return0
+2 allot param0
+2 allot octothorpe
 2 allot here
 2 allot latest
 2 allot inlen
 2 allot inptr
-81 allot inbuf
 2 allot wordlen
-32 allot wordbuf
+
+2 allot traceEnable
+
+33 allot wordbuf
+81 allot inbuf
 81 allot tmpbuf
+
+: sp bl putchar ;
+
+: interpret \ REPL loop
+  begin 1 while
+    sp ." ok " cr \ Prompt.
+
+    getword find
+    dup if
+      ." >>>>> " dup putstr ." >>> " sp >cfa execute
+    then
+    
+  repeat
+  ;
+
+: show-buf \ ( ptr len -- )
+  91 putchar
+  0 do
+    dup i + c@ putchar
+  loop
+  93 putchar
+  ;
+
+: emit_litstr  \ Internal word for `."`, followed by nul-terminated string data.
+  r>  \ take what would be the return IP, but is the addr of the string.
+  begin
+    dup c@  \ until EOS
+  while
+    dup c@ putchar
+    1 +     \ advance ptr
+  repeat
+  1 +  \ advance pointer past EOS
+  >r  \ and that's where we execute next.
+  ;
+: addr_litstr  \ Internal word for `"`, followed by nul-terminated string data.
+  r>  \ take what would be the return IP, but is the addr of the string.
+  dup  \ save a copy to return.
+  begin
+    dup c@  \ until EOS
+  while
+    1 +     \ advance ptr
+  repeat
+  1 +  \ advance pointer past EOS
+  >r  \ and that's where we execute next.
+  \ return addr of string.
+  ;
+: putstr \ ( addr -- )
+  begin
+    dup c@  \ until EOS
+  while
+    dup c@ putchar
+    1 +     \ advance ptr
+  repeat
+  drop
+  ;
+  
 
 : wordinit
   inlen 0 !
@@ -26,26 +88,27 @@
 
 \ sets wordlen & wordbuf
 : getword ( -- )
-    begin  inbuf inptr @ + c@ 32 <=   inptr @ inlen @ <  and  while $1100 . inptr @ 1 + inptr ! repeat
+    33 0 do   0  wordbuf i +  c!   loop    \ clear buffer
+    begin  inbuf inptr @ + c@ 32 <=   inptr @ inlen @ <  and  while inptr @ 1 + inptr ! repeat
 
     inptr @ inlen @ >=  if
-      $1101 . getline getword $1102 .
+      getline getword 
     else
-      $1103 .
+      
       0 wordlen !
-      begin  inbuf inptr @ + c@ 32 >  inptr @ inlen @ <  and  while $1105 .
+      begin  inbuf inptr @ + c@ 32 >  inptr @ inlen @ <  and  while 
         inbuf inptr @ + c@  wordbuf wordlen @ +  c!
         inptr @ 1 + inptr !
         wordlen @ 1 + wordlen !
       repeat
-      $1109 .
+      
     then
 ;
 
 
 : i$readln ( pathNum -- bytesRead )
     >r                             \ save pathNum
-    81 0 do inbuf i + 0 c! loop    \ clear buffer
+    81 0 do 0 inbuf i + c! loop    \ clear buffer
     0 80 inbuf r> $8B os9 dup      \ os9 I$ReadLn
       if . $9999 . bye else drop   \ if error
         drop drop swap drop then ; \ return bytesRead from Y
@@ -137,10 +200,96 @@ z_os9
   puls Y,U  ; Recover forth state (even though we already got U).
   ;
 
+: double
+  <#
+      0 #  dup  1 #  +  0 #
+   #>
+  ;
+
+code <#
+octomagic equ $7FED
+  ldx <u_octothorpe
+  sts <u_octothorpe
+  ldd #octomagic
+  pshs u,x,d
+  ; 
+
+code #>
+  ldd #octomagic
+  cmpd ,s++  ; check magic
+  beq L_7fed
+  fcb 1        ; illegal opcode halts emulator.
+
+L_7fed
+  ldx ,s++
+  stx <u_octothorpe   ; unlink the frame.
+
+  leas 2,s  ; drop stored U
+  nop
+  ;
+
+code #
+  ldd ,u++
+  negb           ; assume range -127..127
+  lslb           ; times 2
+  sex
+
+  ldx <u_octothorpe
+  ldx -2,x        ; original U PSP
+  leax d,x       ; add D to it.
+  pshs x         ; stack it.
+  cmpu 0,s       ; compare current U to stack.
+  puls x
+  beq L_1fed
+  fcb 1        ; illegal opcode halts emulator.
+
+L_1fed
+  ldx <u_octothorpe
+  ldd #octomagic
+  cmpd -6,x
+  beq L_2fed
+  fcb 1
+
+L_2fed
+  nop            ; ok good.
+  ;
+
+code ###
+  ldd #octomagic
+  cmpd 0,s       ; check magic
+  beq L_9fed
+  fcb 1
+L_9fed
+  ldd ,u++
+  negb           ; assume range -127..127
+  lslb           ; times 2
+  sex
+  ldx 4,s        ; original U PSP
+  leax d,x       ; add D to it.
+  pshs x         ; stack it.
+  cmpu 0,s       ; compare current U to stack.
+  beq L_3fed
+  puls x
+  fcb 1        ; illegal opcode halts emulator.
+L_3fed
+  puls x
+  nop            ; ok good.
+  ;
+
+
+
 code execute
   pulU x       ; arg -> W
   ldd 0,x      ; goto W+[W]
   jmp D,X
+  ;
+
+code rsp
+  pshu s
+  ;
+code psp
+  tfr u,d
+  pshu d
   ;
 
 code swap
@@ -157,6 +306,11 @@ code rot
   ldd 0,u
   std 2,u
   stx 0,u
+  ;
+
+code over
+  ldd 2,u
+  std ,--u
   ;
 
 code dup
@@ -180,8 +334,9 @@ code +
   std 0,u
   ;
 code -
-  ldd ,u++
-  subd 0,u
+  ldd #0
+  subd ,u++
+  addd 0,u
   std 0,u
   ;
 code 1+
@@ -215,6 +370,12 @@ code xor
 code sex
   ldd ,u
   sex
+  std ,u
+  ;
+code lsr
+  ldd ,u
+  lsra
+  rorb
   std ,u
   ;
 
@@ -398,6 +559,16 @@ OsExit
   os9 F$Exit
   ;
 
+: .s \ print stack
+  ." [=[ "
+  psp param0 @ swap - lsr dup .
+  ." # "
+  0 do
+    param0 @  i i + 2 +  -  @ .
+  loop
+  ." ]=] "
+  ;
+
 code must
   ldx ,u++      tag
   ldd ,u++      value
@@ -418,6 +589,72 @@ ret_must
 
 : bl 32 ;
 
+: strlen \ ( ptr -- len )
+  <#
+  0 swap
+  1 #
+  begin
+    dup c@    2 #
+  while       1 #
+    1 + \ on the pointer
+    swap 1 + \ on the counter
+    swap
+  repeat
+  1 #
+  drop    \ return just the count.
+  #>
+  ;
+
+: streq \ ( ptr1 ptr2 -- bool )
+<#
+  begin
+    $4441 .   0 #
+    dup c@   dup putchar 0 <> >r  over c@  dup putchar 0 <>   r> or  \ break when either terminates.
+  while
+    $4442 .
+    \ if not the same, then exit false.
+    dup c@  >r  over c@  r>  <> if  drop drop 0     -1 # #> exit  then
+    1 + swap 1 + swap  \ advance both pointers
+    0 #
+  repeat
+  $4443 .
+    0 #
+
+  c@ 0 =  swap c@ 0 =  and  \ true of both terminate here.
+  $4444 . dup .
+  -1 #
+#>
+  ;
+    
+: find
+<#  
+  >r    \ save sought word in R
+  latest @  \ traverse dictionary
+  0 #
+  begin      0 #
+    $5550 .
+    dup
+  while      0 #
+    dup      1 #
+    3 +   1 #     r> dup >r  2 #  dup putstr     ." ( "  2 #  over putstr   2 #  ." | " dup putstr ." ) "  2 #   streq   1 #
+    if
+      $5555 .
+      0 #  rdrop #> exit
+    then
+    0 #
+    dup @  dup   if 1 #   + else 1 #   drop drop 0  then      \ add offset to base, unless offset is 0.
+  repeat     0 #
+  $5559 .
+  drop
+  0
+  rdrop
+0 # #>
+  ;
+
+: >cfa
+  2 + dup c@ \ skip to the length byte & fetch it.
+  + 1 + \ advance length and null term.
+  ;
 : words
   latest @
   begin
@@ -428,14 +665,14 @@ ret_must
       dup 3 + i + c@ putchar
       loop
     bl putchar
-    dup @  dup if  +  else  drop 0  then \ add offset to base, unless offset is 0.
+    dup @  dup if  +  else  then \ add offset to base, unless offset is 0.
   repeat
   ;
 
 
 
-: double
-    dup + ;
+\ : double
+\     dup + ;
 : main1
     $D putchar $2 dup . double dup . double dup . double .
     here . here @ .
@@ -450,9 +687,16 @@ ret_must
 2 allot tmp
 
 : main
+    ." Hello FORTH World " ." ! " cr
+
+    20 double . cr
+
+1 traceEnable !
+    100 . 100 8 - . cr
+    8 . 8 100 - . cr
+    " Hello FORTH World: " dup putstr putstr cr
     1 $888 must
     \ 0 $666 must
-    cr
     64 putchar
     0 if 33 putchar then
     5 if 53 putchar then
@@ -471,16 +715,29 @@ ret_must
 
     10 0 do i . loop  cr
 
+    \ wordinit
+    0 0 0 0 12 os9 . . . . . cr  \ process id, user id
+
+    ." WORDS: "
     words cr cr
-    wordinit
-    0 0 0 0 12 os9 . . . . . cr
+    ." Trying abc "   sp   " abc " " abc " streq . cr
+    ." Trying abx "    sp  " abc " " abx " streq . cr
+    ." Trying ab "    sp  " abc " " ab " streq . cr
+    ." Trying abcdefg "  sp    " abc " " abcdefg " streq . cr
+    cr cr
+1 traceEnable !
+    ." FIND+ " " + " find .  cr
+0 traceEnable !
+    ." FIND% " " % " find .  cr
+    cr cr
 
-    $8000 . 0 i$readln dup .
-      dup 0 do inbuf i + c@ . loop
-      dup 0 do inbuf i + c@ putchar loop cr
-      drop cr
+    \ $8000 . 0 i$readln dup .
+      \ dup 0 do inbuf i + c@ . loop
+      \ dup 0 do inbuf i + c@ putchar loop cr
+      \ drop cr
 
-    $8001 . getword wordlen @ . $8002 . getword wordlen @ .
+    \ $8001 . getword wordlen @ . wordbuf strlen . wordbuf 33 show-buf
+    \ $8002 . getword wordlen @ . wordbuf strlen . wordbuf 33 show-buf
 
     $8888 . bye
   ;
