@@ -24,9 +24,13 @@
   begin 1 while
     sp ." ok " cr \ Prompt.
 
-    getword find
-    dup if
-      ." >>>>> " dup putstr ." >>> " sp >cfa execute
+    getword wordbuf find dup
+    if
+      cr .s
+      ." >>> " sp >cfa execute
+      cr .s
+    else
+      ." ? Not Found. "
     then
     
   repeat
@@ -82,8 +86,11 @@
 
 \ sets inlen, inptr, & inbuf
 : getline ( -- ) 
+.s
     0 i$readln inlen !
+.s
     0 inptr !
+.s
   ;
 
 \ sets wordlen & wordbuf
@@ -253,30 +260,6 @@ L_1fed
 L_2fed
   nop            ; ok good.
   ;
-
-code ###
-  ldd #octomagic
-  cmpd 0,s       ; check magic
-  beq L_9fed
-  fcb 1
-L_9fed
-  ldd ,u++
-  negb           ; assume range -127..127
-  lslb           ; times 2
-  sex
-  ldx 4,s        ; original U PSP
-  leax d,x       ; add D to it.
-  pshs x         ; stack it.
-  cmpu 0,s       ; compare current U to stack.
-  beq L_3fed
-  puls x
-  fcb 1        ; illegal opcode halts emulator.
-L_3fed
-  puls x
-  nop            ; ok good.
-  ;
-
-
 
 code execute
   pulU x       ; arg -> W
@@ -559,6 +542,8 @@ OsExit
   os9 F$Exit
   ;
 
+: not 0 = ;
+
 : .s \ print stack
   ." [=[ "
   psp param0 @ swap - lsr dup .
@@ -569,6 +554,7 @@ OsExit
   ." ]=] "
   ;
 
+: cant swap not swap must ;
 code must
   ldx ,u++      tag
   ldd ,u++      value
@@ -606,55 +592,40 @@ ret_must
   ;
 
 : streq \ ( ptr1 ptr2 -- bool )
-<#
   begin
-    $4441 .   0 #
-    dup c@   dup putchar 0 <> >r  over c@  dup putchar 0 <>   r> or  \ break when either terminates.
+    dup c@   0 <> >r  over c@  0 <>   r> or  \ break when either terminates.
   while
-    $4442 .
     \ if not the same, then exit false.
-    dup c@  >r  over c@  r>  <> if  drop drop 0     -1 # #> exit  then
+    dup c@  >r  over c@  r>  <> if  drop drop 0     exit  then
     1 + swap 1 + swap  \ advance both pointers
-    0 #
   repeat
-  $4443 .
-    0 #
 
   c@ 0 =  swap c@ 0 =  and  \ true of both terminate here.
-  $4444 . dup .
-  -1 #
-#>
   ;
     
 : find
-<#  
   >r    \ save sought word in R
   latest @  \ traverse dictionary
-  0 #
-  begin      0 #
-    $5550 .
+  begin  \ loop invarient: current dictionary link on P stack, sought word on R stack.
     dup
-  while      0 #
-    dup      1 #
-    3 +   1 #     r> dup >r  2 #  dup putstr     ." ( "  2 #  over putstr   2 #  ." | " dup putstr ." ) "  2 #   streq   1 #
-    if
-      $5555 .
-      0 #  rdrop #> exit
+  while
+    dup 3 +   r> dup >r  streq   if
+      rdrop exit
     then
-    0 #
-    dup @  dup   if 1 #   + else 1 #   drop drop 0  then      \ add offset to base, unless offset is 0.
-  repeat     0 #
-  $5559 .
+    dup @  dup  if
+      + else drop drop 0  
+    then      \ add offset to base, unless offset is 0.
+  repeat
   drop
   0
   rdrop
-0 # #>
   ;
 
 : >cfa
   2 + dup c@ \ skip to the length byte & fetch it.
-  + 1 + \ advance length and null term.
+  + 2 + \ advance length and over length and EOS.
   ;
+
 : words
   latest @
   begin
@@ -691,7 +662,7 @@ ret_must
 
     20 double . cr
 
-1 traceEnable !
+0 traceEnable !
     100 . 100 8 - . cr
     8 . 8 100 - . cr
     " Hello FORTH World: " dup putstr putstr cr
@@ -720,15 +691,14 @@ ret_must
 
     ." WORDS: "
     words cr cr
-    ." Trying abc "   sp   " abc " " abc " streq . cr
-    ." Trying abx "    sp  " abc " " abx " streq . cr
-    ." Trying ab "    sp  " abc " " ab " streq . cr
-    ." Trying abcdefg "  sp    " abc " " abcdefg " streq . cr
-    cr cr
-1 traceEnable !
-    ." FIND+ " " + " find .  cr
-0 traceEnable !
-    ." FIND% " " % " find .  cr
+    ." Trying abc "   sp   " abc " " abc " streq dup . $3101 must
+    ." Trying abx "    sp  " abc " " abx " streq dup . $3102 cant
+    ." Trying ab "    sp  " abc " " ab " streq dup . $3103 cant
+    ." Trying abcdefg "  sp    " abc " " abcdefg " streq dup . $3104 cant
+    ." FIND " 
+    " words " find dup .  $3001 must
+    " getword " find dup .  $3002 must
+    " getxxyyzzzzyy " find dup .  $3003 cant
     cr cr
 
     \ $8000 . 0 i$readln dup .
@@ -738,6 +708,8 @@ ret_must
 
     \ $8001 . getword wordlen @ . wordbuf strlen . wordbuf 33 show-buf
     \ $8002 . getword wordlen @ . wordbuf strlen . wordbuf 33 show-buf
+
+    interpret
 
     $8888 . bye
   ;
