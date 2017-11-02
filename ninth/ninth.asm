@@ -28,8 +28,25 @@ HelloNinth
   fcb 0
 endHelloNinth
 
+intro
+  pshs d,x,y,u
+  bsr PrintDsp
+  ldd 0,s
+  bsr PrintDsp
+  ldd 2,s
+  bsr PrintDsp
+  ldd 4,s
+  bsr PrintDsp
+  ldd 6,s
+  bsr PrintDsp
+  tfr s,d
+  bsr PrintDsp
+  puls d,x,y,u
+  rts
+
 
 start
+  bsr intro
   lda #1  ; stdout
   leax HelloNinth,pcr
   ldy #endHelloNinth-HelloNinth
