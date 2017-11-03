@@ -23,10 +23,10 @@ type Ninth struct {
 	Latest string
 	Here   int
 
-	Allots map[string]int
-	IfStack  []string
-	LoopStack  []string
-	Serial int
+	Allots    map[string]int
+	IfStack   []string
+	LoopStack []string
+	Serial    int
 }
 
 func (o *Ninth) NextWord() string {
@@ -100,7 +100,7 @@ func (o *Ninth) DoWordHeader(name string, code string) {
 	}
 	P("  fcb %d ;len", len(name)) // For going forwards >CFA
 	P("  fcc ~%s~", name)
-	P("  fcb 0")                  // NUL terminate C-style.
+	P("  fcb 0") // NUL terminate C-style.
 
 	P("c_%s", ename)
 	P("  fcb ($10000+%s-*)/256 ;codeword", ecode)
@@ -125,11 +125,11 @@ func (o *Ninth) InsertCode(w string) {
 		if strings.Trim(s, " \t") == ";" {
 			break
 		}
-    if len(s)>1 && s[0]==' ' {
-		  P("%s   *==%s==", s, w)
-    } else {
-		  P("%s", s)
-    }
+		if len(s) > 1 && s[0] == ' ' {
+			P("%s   *==%s==", s, w)
+		} else {
+			P("%s", s)
+		}
 	}
 	P("  jmp Next,pcr  *,,%s,,", w)
 }
@@ -183,16 +183,18 @@ func (o *Ninth) InsertLoop() {
 func (o *Ninth) InsertLiteralString(op string) {
 	P(`  fcb ($10000+c_%s-*)/256  ; ."`, EncodeFunnyChars(op))
 	P("  fcb ($10000+c_%s-*)+1", EncodeFunnyChars(op))
-  x := ""
-  for {
-    // TODO
-    s := o.NextWord()
-    if s == `"` { break }
-    // TODO
-    P("  fcc ~%s%s~", x, s)
-    x = " "
-  }
-  P("  fcb 0  ; EOS")
+	x := ""
+	for {
+		// TODO
+		s := o.NextWord()
+		if s == `"` {
+			break
+		}
+		// TODO
+		P("  fcc ~%s%s~", x, s)
+		x = " "
+	}
+	P("  fcb 0  ; EOS")
 }
 
 func (o *Ninth) InsertColon() {
@@ -289,14 +291,14 @@ func (o *Ninth) InsertColon() {
 			continue
 		case `\`:
 			o.Words = nil
-      continue
-		case "(":  // Limitations: not nested; requires ')' as a separate word.
+			continue
+		case "(": // Limitations: not nested; requires ')' as a separate word.
 			for s != ")" {
-        s = o.NextWord()
-      }
-      continue
+				s = o.NextWord()
+			}
+			continue
 		case ")":
-      continue
+			continue
 		}
 
 		// Normal non-immediate words.
@@ -384,11 +386,11 @@ func CompileFile(w io.Writer, r io.Reader) {
 		switch w {
 		case `\`:
 			o.Words = nil
-		case "(":  // Limitations: not nested; requires ')' as a separate word.
+		case "(": // Limitations: not nested; requires ')' as a separate word.
 			for w != ")" {
-        w = o.NextWord()
-      }
-      continue
+				w = o.NextWord()
+			}
+			continue
 		case ":":
 			o.DoColon()
 		case "code":
