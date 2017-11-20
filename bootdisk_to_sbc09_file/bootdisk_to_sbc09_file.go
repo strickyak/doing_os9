@@ -23,8 +23,9 @@ func main() {
 	Mem = make([]byte, 0x10000)
 
 	// Emit "JMP $2602" at $100.
-	PutByte(0x0100, 0x7E) // JMP
-	PutWord(0x0101, 0x2602)
+	PutWord(0x0100, 0x1A50) // Disable FIRQ & IRQ.
+	PutByte(0x0102, 0x7E)   // JMP ...
+	PutWord(0x0103, 0x2602) // ... $2602
 
   // Set COCO Interrupt Vectors.
 	PutWord(0xFFF2, 0x0100) // SWI3
