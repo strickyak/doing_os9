@@ -23,7 +23,7 @@ type Ninth struct {
 	Latest string
 	Here   int
 
-	Allots    map[string]int
+	Arrays    map[string]int
 	IfStack   []string
 	LoopStack []string
 	Serial    int
@@ -67,7 +67,7 @@ func NewNinth(r io.Reader) *Ninth {
 	lines := strings.Split(string(all), "\n")
 	return &Ninth{
 		Lines:  lines,
-		Allots: make(map[string]int),
+		Arrays: make(map[string]int),
 	}
 }
 
@@ -110,7 +110,7 @@ func (o *Ninth) DoWordHeader(name string, code string) {
 	o.Latest = name
 }
 
-func (o *Ninth) InsertAllot(offset int, w string) {
+func (o *Ninth) InsertArray(offset int, w string) {
 	P("  tfr dp,a   ==%s==", w)
 	P("  clrb   ==%s==", w)
 	P("  addd #%d   ==%s==", offset, w)
@@ -180,14 +180,14 @@ func (o *Ninth) InsertLoop() {
 	o.CommaEncode("c_rdrop", "drop limit")
 	o.CommaEncode("c_rdrop", "drop current")
 }
-func (o *Ninth) InsertLiteralString(op string) {
+func (o *Ninth) InsertLiteralString(op string, final string) {
 	P(`  fcb ($10000+c_%s-*)/256  ; ."`, EncodeFunnyChars(op))
 	P("  fcb ($10000+c_%s-*)+1", EncodeFunnyChars(op))
 	x := ""
 	for {
-		// TODO
+		// TODO -- slurp chars, not words.
 		s := o.NextWord()
-		if s == `"` {
+		if s == final {
 			break
 		}
 		// TODO
@@ -284,10 +284,10 @@ func (o *Ninth) InsertColon() {
 			o.InsertLoop()
 			continue
 		case `"`:
-			o.InsertLiteralString("addr_litstr")
+			o.InsertLiteralString("addr_litstr", `"`)
 			continue
 		case `."`:
-			o.InsertLiteralString("emit_litstr")
+			o.InsertLiteralString("emit_litstr", `"`)
 			continue
 		case `\`:
 			o.Words = nil
@@ -329,13 +329,13 @@ func (o *Ninth) DoColon() {
 	o.DoWordHeader(name, "Enter")
 	o.InsertColon()
 }
-func (o *Ninth) DoAllot(n int) {
+func (o *Ninth) DoArray(n int) {
 	name := o.NextWord()
 	offset := o.Here
 	o.Here += n
 	o.DoWordHeader(name, "d_"+name)
-	o.InsertAllot(offset, name)
-	o.Allots[name] = offset
+	o.InsertArray(offset, name)
+	o.Arrays[name] = offset
 }
 func (o *Ninth) DoInit() {
 	// Save our dynamic o.Here into the "here" variable in RAM.
@@ -343,7 +343,7 @@ func (o *Ninth) DoInit() {
 	// The location of the "here" variable into X.
 	P("  tfr dp,a")
 	P("  clrb")
-	P("  addd #%d", o.Allots["here"])
+	P("  addd #%d", o.Arrays["here"])
 	P("  tfr d,x")
 	// The current runtime o.Here in D.
 	P("  tfr dp,a")
@@ -360,7 +360,7 @@ func (o *Ninth) DoInit() {
 	// The location of the "latest" variable into X.
 	P("  tfr dp,a")
 	P("  clrb")
-	P("  addd #%d", o.Allots["latest"])
+	P("  addd #%d", o.Arrays["latest"])
 	P("  tfr d,x")
 	// pop d & Save D at X.
 	P("  pulu d")
@@ -395,8 +395,10 @@ func CompileFile(w io.Writer, r io.Reader) {
 			o.DoColon()
 		case "code":
 			o.DoCode()
-		case "allot":
-			o.DoAllot(hold)
+		case "array":
+			o.DoArray(hold)
+		case "variable":
+			o.DoArray(2)
 		default:
 			panic(F("Unknown Command: %q", w))
 		}
