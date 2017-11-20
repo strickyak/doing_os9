@@ -22,31 +22,96 @@ name
   fcb edition
 
 HelloNinth
-  fcc /Hello Ninth!/
+  fcc /{Ninth Forth}/
   fcb 10
   fcb 13
   fcb 0
 endHelloNinth
 
-intro
+show_regs
   pshs d,x,y,u
-  bsr PrintDsp
+
+  ldb #'<'
+  lbsr putchar
+
+  ldb #'d'
+  lbsr putchar
   ldd 0,s
-  bsr PrintDsp
+  lbsr PrintDsp
+
+  ldb #'x'
+  lbsr putchar
   ldd 2,s
-  bsr PrintDsp
+  lbsr PrintDsp
+
+  ldb #'y'
+  lbsr putchar
   ldd 4,s
-  bsr PrintDsp
+  lbsr PrintDsp
+
+  ldb #'u'
+  lbsr putchar
   ldd 6,s
-  bsr PrintDsp
-  tfr s,d
-  bsr PrintDsp
+  lbsr PrintDsp
+
+  ldb #'^'
+  lbsr putchar
+  ldx 6,s
+  ldd 0,x
+  lbsr PrintDsp
+
+  ldb #'^'
+  lbsr putchar
+  ldx 6,s
+  ldd 2,x
+  lbsr PrintDsp
+
+  ldb #'^'
+  lbsr putchar
+  ldx 6,s
+  ldd 4,x
+  lbsr PrintDsp
+
+  ldb #'s'
+  lbsr putchar
+  tfr s,d      ; Now print s
+  addd #8       ; but correct it; we pushed 8.
+  lbsr PrintDsp
+
+  ldb #'^'
+  lbsr putchar
+  tfr s,x
+  ldd 8,x
+  lbsr PrintDsp
+
+  ldb #'^'
+  lbsr putchar
+  tfr s,x
+  ldd 10,x
+  lbsr PrintDsp
+
+  ldb #'^'
+  lbsr putchar
+  tfr s,x
+  ldd 12,x
+  lbsr PrintDsp
+
+  ldb #'>'
+  lbsr putchar
+
+  ldb #10
+  lbsr putchar
   puls d,x,y,u
   rts
 
 
 start
-  bsr intro
+  * At beginning of process:
+  * Y is end of parameter, end of process memory.
+  * X, SP are begin of parameter
+  * U, DP are begin of process memory.
+  lbsr show_regs
+
   lda #1  ; stdout
   leax HelloNinth,pcr
   ldy #endHelloNinth-HelloNinth
@@ -54,15 +119,8 @@ start
 
   leaU $-200,s  ; U is Parameter Stack.
   tfr u,d
-  orb #$FE      ; even align looks better :)
+  andb #$F0      ; nicely aligned looks better :)
   tfr d,u
-
-  clra
-  clrb
-  tfr d,y       ; Y is IP
-  tfr d,x       ; X is W or Temp
-  pshs d,x,y    ; push some zeroes for fun.
-  pshu d,x,y    ; push some zeroes for fun.
 
   sts <u_return0   ; remember initial stacks.
   stu <u_param0
@@ -71,6 +129,15 @@ start
   leax c_main,pcr
   pshu x
   jmp Execute,pcr
+
+* putchar(b)
+putchar
+  pshS A,B,X,Y,U
+  leaX 1,S     ; where B was stored
+  ldy #1       ; y = just 1 char
+  lda #1       ; a = path 1
+  os9 I$WritLn ; putchar, trust it works.
+  pulS A,B,X,Y,U,PC
 
 * Print D (currently in %04x) and a space.
 PrintDsp
@@ -151,15 +218,6 @@ Lpn001
 *  pulS X,Y,U,PC
 
 
-* putchar(b)
-putchar
-  pshS A,B,X,Y,U
-  leaX 1,S     ; where B was stored
-  ldy #1       ; y = just 1 char
-  lda #1       ; a = path 1
-  os9 I$WritLn ; putchar, trust it works.
-  pulS A,B,X,Y,U,PC
-
 Execute
   pulU x       ; arg -> W
   ldd 0,x      ; goto W+[W]
@@ -198,7 +256,7 @@ LoopBackwards
   lda #2    ; stderr
   os9 I$WritLn
   ldb #32
-  bsr putchar
+  jsr putchar
 
   puls d,x,y
   *** BEGIN printing IP.
@@ -220,7 +278,6 @@ LoopBackwards
   bsr putchar
   puls d,x,y
   ENDC
-  *** END printing IP.
   *** END printing IP.
 skip_trace
 

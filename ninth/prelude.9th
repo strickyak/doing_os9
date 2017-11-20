@@ -3,45 +3,35 @@
 \ U: Param Stack
 \ S: Return Stack
 
-2 allot return0
-2 allot param0
-2 allot octothorpe
-2 allot here
-2 allot latest
-2 allot inlen
-2 allot inptr
-2 allot wordlen
+variable return0
+variable param0
+variable octothorpe
+variable here
+variable latest
+variable inlen
+variable inptr
+variable wordlen
+variable tmp
+variable traceEnable
+33 array wordbuf
+81 array inbuf
+81 array tmpbuf
 
-2 allot traceEnable
+: space bl emit ;
 
-33 allot wordbuf
-81 allot inbuf
-81 allot tmpbuf
-
-: sp bl putchar ;
-
-: interpret \ REPL loop
+: REPL
   begin 1 while
-    sp ." ok " cr \ Prompt.
-
     getword wordbuf find dup
     if
-      cr .s
-      ." >>> " sp >cfa execute
-      cr .s
+      space >cfa execute
     else
-      ." ? Not Found. "
+      drop ." ?NOT_FOUND? "
     then
-    
   repeat
   ;
 
-: show-buf \ ( ptr len -- )
-  91 putchar
-  0 do
-    dup i + c@ putchar
-  loop
-  93 putchar
+code regs
+  lbsr show_regs
   ;
 
 : emit_litstr  \ Internal word for `."`, followed by nul-terminated string data.
@@ -49,7 +39,7 @@
   begin
     dup c@  \ until EOS
   while
-    dup c@ putchar
+    dup c@ emit
     1 +     \ advance ptr
   repeat
   1 +  \ advance pointer past EOS
@@ -71,7 +61,7 @@
   begin
     dup c@  \ until EOS
   while
-    dup c@ putchar
+    dup c@ emit
     1 +     \ advance ptr
   repeat
   drop
@@ -86,19 +76,30 @@
 
 \ sets inlen, inptr, & inbuf
 : getline ( -- ) 
-.s
     0 i$readln inlen !
-.s
     0 inptr !
-.s
   ;
+
+: _clr_wb  \ clear wordbuf (with 0 bytes)
+    33 0 do   0  wordbuf i +  c!   loop
+    ;
+: _adv_in  \ Advance inptr to something greater than space, or to end of inbuf.
+    begin  
+        inbuf inptr @ + c@ 32 <=   
+        inptr @ inlen @ <  
+      and 
+    while  
+      inptr @ 1 + inptr !
+    repeat
+    ;
 
 \ sets wordlen & wordbuf
 : getword ( -- )
-    33 0 do   0  wordbuf i +  c!   loop    \ clear buffer
-    begin  inbuf inptr @ + c@ 32 <=   inptr @ inlen @ <  and  while inptr @ 1 + inptr ! repeat
+    _clr_wb
+    _adv_in
 
     inptr @ inlen @ >=  if
+      space ." ok " space
       getline getword 
     else
       
@@ -116,56 +117,57 @@
 : i$readln ( pathNum -- bytesRead )
     >r                             \ save pathNum
     81 0 do 0 inbuf i + c! loop    \ clear buffer
-    0 80 inbuf r> $8B os9 dup      \ os9 I$ReadLn
-      if . $9999 . bye else drop   \ if error
+    $beef 80 inbuf r> $8B
+           \ ." (/os9/ " .s cr
+           \ x: addr. y: numbytes. a: path num
+           os9
+	   \ y: numbytesRead.  cc: C if error.  b: error code.
+           \ ." /os9/) " .s cr
+	   dup      \ os9 I$ReadLn
+      if . ." *ReadLnErrorBye* " bye else drop   \ if error
         drop drop swap drop then ; \ return bytesRead from Y
 
-: show5stack
-  dup . >r
-  dup . >r
-  dup . >r
-  dup . >r
-  dup .
-  r> r> r> r>
-  ;
-
 \ Stacking Order: PC U Y X D CC
-: os9      ( U Y X D syscallNum -- U Y X D zeroOrError )
-  $9001 . show5stack cr
-  swibuf os9' dup drop
-  $9002 . show5stack cr
+: os9      ( U Y X D syscallNum -- U Y X A zeroOrError )
+  \ ." {{{{OS9: " .s
+  os9'
+  \ ."  ---- " .s ." }}}} " cr
   ;
 
-4 allot swibuf  \ Will compose 4 bytes  of machine code here.
+4 array swi2buf  \ Will compose 4 bytes  of machine code here.
 
-code os9'  ( U Y X D syscallNum swibufLoc -- U Y X D zeroOrError )
+code os9'  ( U' Y' X' D' syscallNum -- U'' Y'' X'' A'' zeroOrError'' )
   pshs Y,U    ; save Forth state
-
-  * leax c_swibuf,pcr  ; Gonna call word swibuf, to get buffer address.
-  * pshu x             ; param to execute
-  * jsr Execute,pcr
-  pulu y   ; Y := swibuf location.
-
 
   * Push syscall in registers onto S.
   leax rts_os9,pcr  # Where the swibuf rts will return to.
-  pshs x   ; PC: swibuf location, to be jumped to by "puls ...PC...".
+  pshs x   ; Push rts_os9 onto stack.   For the RTS after the SWI2.
 
-  pshs y   ; will pull PC to jump into swibuf.
+  tfr dp,a
+  clrb
+  addd #u_swi2buf
+  tfr d,y
+  pshs y   ; Push u_swi2buf onto stack.  Will become PC.
+
   ldx 8,u  ; users's U param
   pshs x   ; will pull U
+
   ldx 6,u  ; users's Y param
   pshs x   ; will pull Y
+
   ldx 4,u  ; users's X param
   pshs x   ; will pull X
+
   ldx 2,u  ; users's D param
   pshs x   ; will pull D
 
-  * Fill in the swibuf.
-  ldd 0,u  ; users's syscallNum param
-  stb 2,y  ; opcode will follow 2-byte SWI2
+  * Fill in the swi2buf.
   ldd #$103F ; opcode for swi2
   std 0,y
+
+  ldb 1,u  ; users's syscallNum param
+  stb 2,y  ; opcode will follow 2-byte SWI2
+
   ldb #$39  ; opcode for rts
   stb 3,y
 
@@ -175,35 +177,34 @@ code os9'  ( U Y X D syscallNum swibufLoc -- U Y X D zeroOrError )
   * Pulling PC executes SWI2 and RTS to next label.
 rts_os9
   * Save all the results.
-  pshs U,Y,X,B,A  ; note saving 8 bytes.
+  pshs U,Y,X,D  ; note saving 8 bytes.
   bcc good_os9
   * If Carry bit says Error
   clra
-  ldb 1,s
+  ldb 1,s   * error.
   bra z_os9
 good_os9
-  clra
+  clra      * zero error.
   clrb
 z_os9
   ldu 10,s  ; we need our forth U now.
 
   std 0,u  ; Return error num or zero.
 
-  lda 0,s  ; grab A from the stack.
-  clrb     ; supress B now.
-  std 2,u  ; Return D with error still in B.
+  ldb 0,s  ; grab A'' from the stack, into B.
+  clra     ; Upper byte is zero.
+  std 2,u  ; Save A'' in data stack.
 
   ldd 2,s
-  std 4,u  ; return X
+  std 4,u  ; return X''
 
   ldd 4,s
-  std 6,u  ; return Y
+  std 6,u  ; return Y''
 
   ldd 6,s
-  std 8,u  ; return U
+  std 8,u  ; return U''
 
-  leas 8,s  ; Remove all that returned stuff from S stack.
-
+  leas 8,s  ; Remove D'' X'' Y'' U'' from S stack.
   puls Y,U  ; Recover forth state (even though we already got U).
   ;
 
@@ -370,7 +371,7 @@ code .
   jsr putchar,pcr
   ;
 
-code putchar
+code emit
   ldd ,u++
   jsr putchar,pcr
   ;
@@ -388,7 +389,6 @@ code lit
 code branch
   ldd ,Y++  ; get next cell from IP
   leay d,y  ; add that offset to the IP.
-  jmp Next,pcr
   ;
 
 code 0branch
@@ -397,7 +397,6 @@ code 0branch
   bne b0001 ; only change IP if that was zero.
   leay d,y  ; add that offset to the IP.
 b0001
-  jmp Next,pcr
   ;
 
 code not0branch
@@ -406,7 +405,6 @@ code not0branch
   ldd ,Y++  ; get next cell from IP
   leay d,y  ; add that offset to the IP.
 b0002
-  jmp Next,pcr
   ;
 
 code =
@@ -454,71 +452,59 @@ SetFalse
   clra  ; replace TOS with 0.
   clrb
   std ,u
-  jmp Next,pcr
   ;
 
 code r0
   ldd ,s
   std ,--u
-  jmp Next,pcr
   ;
 code r1
   ldd 2,s
   std ,--u
-  jmp Next,pcr
   ;
 code i
   ldd 2,s
   std ,--u
-  jmp Next,pcr
   ;
 code r1!
   ldd ,u++
   std 2,s
-  jmp Next,pcr
   ;
 code i!
   ldd 2,s
   std ,--u
-  jmp Next,pcr
   ;
 
 code >r
   ldd ,u++    ; pop from u, push to s.
   std ,--s
-  jmp Next,pcr
   ;
 
 code r>
   ldd ,s++    ; pop from s, push to u.
   std ,--u
-  jmp Next,pcr
   ;
 
 code rdrop
   leas 2,s    ; pop from s and discard.
-  jmp Next,pcr
   ;
 
 code !
   ldx ,u++    ; pop address
   ldd ,u++    ; pop value
   std ,x      ; poke
-  jmp Next,pcr
   ;
 
 code @
   ldx ,u      ; the address from the stack
   ldd ,x      ; what was at the address
   std ,u      ; value onto stack
-  jmp Next,pcr
   ;
 
 code c!
   ldx ,u++    ; pop address
   ldd ,u++    ; pop value
   stb ,x      ; poke just the low byte.
-  jmp Next,pcr
   ;
 
 code c@
@@ -526,12 +512,10 @@ code c@
   ldb ,x      ; what byte was at the address
   clra
   std ,u      ; value onto stack
-  jmp Next,pcr
   ;
 
 code exit
   pulS y       ; pop previous IP.
-  jmp Next,pcr ; and keep going.
   ;
 
 code bye
@@ -545,13 +529,16 @@ OsExit
 : not 0 = ;
 
 : .s \ print stack
-  ." [=[ "
+  psp . param0 @ .
+  ." { "
   psp param0 @ swap - lsr dup .
   ." # "
   0 do
-    param0 @  i i + 2 +  -  @ .
+    param0 @  i i + 2 +  -  dup . @ . ." , "
+    \ param0 @  i i + -  @ .
   loop
-  ." ]=] "
+  ." } "
+  psp . param0 @ .
   ;
 
 : cant swap not swap must ;
@@ -559,18 +546,18 @@ code must
   ldx ,u++      tag
   ldd ,u++      value
   bne ret_must
-  ldb #$3F  '?'
-  jsr putchar,pcr
   tfr x,d
-  jsr PrintD,pcr
+abort
+  pshs d
   ldb #$3F  '?'
   jsr putchar,pcr
-  ldb #$0D  CR
+  ldb #$3F  '?'
   jsr putchar,pcr
+  puls d
+  jsr show_regs,pcr
   ldb #255
   os9 F$Exit
 ret_must
-  jmp Next,pcr
   ;
 
 : bl 32 ;
@@ -628,88 +615,63 @@ ret_must
 
 : words
   latest @
-  begin
+  begin dup while
     dup
-  while
-    dup
-    2 + c@  0  do
-      dup 3 + i + c@ putchar
-      loop
-    bl putchar
+    2 + c@   0   do   dup 3 +   i +   c@ emit   loop
+    bl emit
     dup @  dup if  +  else  then \ add offset to base, unless offset is 0.
   repeat
   ;
 
-
-
-\ : double
-\     dup + ;
-: main1
-    $D putchar $2 dup . double dup . double dup . double .
-    here . here @ .
-    latest . latest @ .
-    inbuf . tmpbuf .
-    cr getline cr . cr
-    ;
-
-: main_getline  getline . . cr cr ;
-\ : main_getchar  getchar . getchar . getchar . getchar . cr cr ;
-
-2 allot tmp
+: -1 -1 ; : 0 0 ; : 1 1 ; : 2 2 ; : 3 3 ; : 4 4 ; : 5 5 ;
 
 : main
-    ." Hello FORTH World " ." ! " cr
+    \ ." {NINTH FORTH} " cr
 
-    20 double . cr
+    \ 20 double . cr
 
-0 traceEnable !
-    100 . 100 8 - . cr
-    8 . 8 100 - . cr
-    " Hello FORTH World: " dup putstr putstr cr
-    1 $888 must
+  \ 0 traceEnable !
+    \ 100 . 100 8 - . cr
+    \ 8 . 8 100 - . cr
+    \ " Hello FORTH World: " dup putstr putstr cr
+    \ 1 $888 must
     \ 0 $666 must
-    64 putchar
-    0 if 33 putchar then
-    5 if 53 putchar then
-    cr
-    0 if 33 else 126 then putchar
-    5 if 53 else 126 then putchar
-    cr
-    1 tmp !
-    begin
-      99 putchar
-      tmp @
-    while
-      100 putchar
-      0 tmp !
-    repeat cr
+    \ 64 emit
+    \ 0 if 33 emit then
+    \ 5 if 53 emit then
+    \ cr
+    \ 0 if 33 else 126 then emit
+    \  5 if 53 else 126 then emit
+    \ cr
+    \ 1 tmp !
+    \ begin
+      \ 99 emit
+      \ tmp @
+    \ while
+      \ 100 emit
+      \ 0 tmp !
+    \ repeat cr
 
-    10 0 do i . loop  cr
+    \ 10 0 do i . loop  cr
 
     \ wordinit
-    0 0 0 0 12 os9 . . . . . cr  \ process id, user id
+    ." ids( "
+    $DEAD $BEEF $8888 $1111 12 os9 . . . . . \ process id, user id
+    ." ids) " cr
 
     ." WORDS: "
     words cr cr
-    ." Trying abc "   sp   " abc " " abc " streq dup . $3101 must
-    ." Trying abx "    sp  " abc " " abx " streq dup . $3102 cant
-    ." Trying ab "    sp  " abc " " ab " streq dup . $3103 cant
-    ." Trying abcdefg "  sp    " abc " " abcdefg " streq dup . $3104 cant
+    \ ." Trying abc "   space   " abc " " abc " streq dup . $3101 must
+    \ ." Trying abx "    space  " abc " " abx " streq dup . $3102 cant
+    \ ." Trying ab "    space  " abc " " ab " streq dup . $3103 cant
+    \ ." Trying abcdefg "  space    " abc " " abcdefg " streq dup . $3104 cant
     ." FIND " 
     " words " find dup .  $3001 must
-    " getword " find dup .  $3002 must
-    " getxxyyzzzzyy " find dup .  $3003 cant
+    \ " getword " find dup .  $3002 must
+    \ " getxxyyzzzzyy " find dup .  $3003 cant
     cr cr
 
-    \ $8000 . 0 i$readln dup .
-      \ dup 0 do inbuf i + c@ . loop
-      \ dup 0 do inbuf i + c@ putchar loop cr
-      \ drop cr
-
-    \ $8001 . getword wordlen @ . wordbuf strlen . wordbuf 33 show-buf
-    \ $8002 . getword wordlen @ . wordbuf strlen . wordbuf 33 show-buf
-
-    interpret
+    REPL
 
     $8888 . bye
   ;
