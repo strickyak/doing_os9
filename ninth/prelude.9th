@@ -88,11 +88,11 @@ code regs
   rdrop
   ;
 
-: clr_wb  \ clear wordbuf (with 0 bytes)
+: _clr_wb  \ clear wordbuf (with 0 bytes)
     wordbuf 33 bzero
     ;
 
-: adv_in  \ Advance inptr to something greater than space, or to end of inbuf.
+: _adv_in  \ Advance inptr to something greater than space, or to end of inbuf.
     begin  
         inbuf inptr @ + c@ 32 <=   
         inptr @ inlen @ <  
@@ -104,8 +104,8 @@ code regs
 
 \ sets wordlen & wordbuf
 : getword ( -- )
-    clr_wb
-    adv_in
+    _clr_wb
+    _adv_in
 
     inptr @ inlen @ >=  if
       space ." ok " space
