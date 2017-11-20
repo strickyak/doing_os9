@@ -80,10 +80,19 @@ code regs
     0 inptr !
   ;
 
-: _clr_wb  \ clear wordbuf (with 0 bytes)
-    33 0 do   0  wordbuf i +  c!   loop
+: bzero   ( addr n -- )  \ Sideffect: clear n bytes starting at addr.
+  swap r>
+  0 do
+    0   r@ i +   c!
+  loop
+  rdrop
+  ;
+
+: clr_wb  \ clear wordbuf (with 0 bytes)
+    wordbuf 33 bzero
     ;
-: _adv_in  \ Advance inptr to something greater than space, or to end of inbuf.
+
+: adv_in  \ Advance inptr to something greater than space, or to end of inbuf.
     begin  
         inbuf inptr @ + c@ 32 <=   
         inptr @ inlen @ <  
@@ -95,8 +104,8 @@ code regs
 
 \ sets wordlen & wordbuf
 : getword ( -- )
-    _clr_wb
-    _adv_in
+    clr_wb
+    adv_in
 
     inptr @ inlen @ >=  if
       space ." ok " space
@@ -482,6 +491,11 @@ code >r
 
 code r>
   ldd ,s++    ; pop from s, push to u.
+  std ,--u
+  ;
+
+code r@
+  ldd ,s      ; copy from s, push to u.
   std ,--u
   ;
 
