@@ -98,7 +98,7 @@ int MaybeGetChar() {
   if (n==0) return 0;
   n = read(0, &c, 1);
   assert(n==1);
-  // printf("GOT {%c} %d\n", c, c);
+// printf("GOT {%c} %d\n", c, c);
   return c;
 }
 
@@ -731,8 +731,10 @@ void DefaultCompleter(struct Completion* cp) {
   }
 }
 
+//char KB_NORMAL[] = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ{}[] 0123456789:;,-./\r\b\0\0\0\0\0\0";
+//char KB_SHIFT[] = "_abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?\0\0\0\0\0\0\0\0";
 char KB_NORMAL[] = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ{}[] 0123456789:;,-./\r\b\0\0\0\0\0\0";
-char KB_SHIFT[] = "_abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?\0\0\0\0\0\0\0\0";
+char KB_SHIFT[] = "@abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?\0\0\0\0\0\0\0\0";
 
 Byte keypress(Byte a, char ch) {
   int i, j;
