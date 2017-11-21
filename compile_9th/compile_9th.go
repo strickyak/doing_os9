@@ -116,7 +116,6 @@ func (o *Ninth) InsertArray(offset int, w string) {
 	P("  addd #%d   ==%s==", offset, w)
 	P("  pshU d   ==%s==", w)
 	P("  jmp Next,pcr   ==%s==", w)
-	P("u_%s equ %d", EncodeFunnyChars(w), offset)
 }
 
 func (o *Ninth) InsertCode(w string) {
@@ -338,12 +337,17 @@ func (o *Ninth) DoArray(n int) {
 	o.Arrays[name] = offset
 }
 func (o *Ninth) DoInit() {
+	for k, v := range o.Arrays {
+		P("v_%-12s EQU $%04x", k, v)
+	}
+
 	// Save our dynamic o.Here into the "here" variable in RAM.
 	P("Init")
 	// The location of the "here" variable into X.
 	P("  tfr dp,a")
 	P("  clrb")
-	P("  addd #%d", o.Arrays["here"])
+	//P("  addd #%d", o.Arrays["here"])
+	P("  addd #v_here")
 	P("  tfr d,x")
 	// The current runtime o.Here in D.
 	P("  tfr dp,a")
@@ -360,7 +364,8 @@ func (o *Ninth) DoInit() {
 	// The location of the "latest" variable into X.
 	P("  tfr dp,a")
 	P("  clrb")
-	P("  addd #%d", o.Arrays["latest"])
+	//P("  addd #%d", o.Arrays["latest"])
+	P("  addd #v_latest")
 	P("  tfr d,x")
 	// pop d & Save D at X.
 	P("  pulu d")
