@@ -54,23 +54,8 @@ show_regs
   ldd 6,s
   lbsr PrintDsp
 
-  ldb #'^'
-  lbsr putchar
   ldx 6,s
-  ldd 0,x
-  lbsr PrintDsp
-
-  ldb #'^'
-  lbsr putchar
-  ldx 6,s
-  ldd 2,x
-  lbsr PrintDsp
-
-  ldb #'^'
-  lbsr putchar
-  ldx 6,s
-  ldd 4,x
-  lbsr PrintDsp
+  bsr Print3DspAtX
 
   ldb #'s'
   lbsr putchar
@@ -78,23 +63,9 @@ show_regs
   addd #8       ; but correct it; we pushed 8.
   lbsr PrintDsp
 
-  ldb #'^'
-  lbsr putchar
   tfr s,x
-  ldd 8,x
-  lbsr PrintDsp
-
-  ldb #'^'
-  lbsr putchar
-  tfr s,x
-  ldd 10,x
-  lbsr PrintDsp
-
-  ldb #'^'
-  lbsr putchar
-  tfr s,x
-  ldd 12,x
-  lbsr PrintDsp
+  leax 8,x
+  bsr Print3DspAtX
 
   ldb #'>'
   lbsr putchar
@@ -104,12 +75,34 @@ show_regs
   puls d,x,y,u
   rts
 
+Print3DspAtX
+  ldb #'^'
+  lbsr putchar
+  ldd 0,x
+  lbsr PrintDsp
+
+  ldb #'^'
+  lbsr putchar
+  ldd 2,x
+  lbsr PrintDsp
+
+  ldb #'^'
+  lbsr putchar
+  ldd 4,x
+  lbsr PrintDsp
+  
+  rts
 
 start
   * At beginning of process:
   * Y is end of parameter, end of process memory.
   * X, SP are begin of parameter
   * U, DP are begin of process memory.
+
+  stu <v_page0
+  sts <v_return0   ; remember initial stacks.
+  stu <v_param0
+
   lbsr show_regs
 
   lda #1  ; stdout
@@ -121,9 +114,6 @@ start
   tfr u,d
   andb #$F0      ; nicely aligned looks better :)
   tfr d,u
-
-  sts <u_return0   ; remember initial stacks.
-  stu <u_param0
 
   jsr Init,pcr
   leax c_main,pcr
@@ -184,40 +174,6 @@ Lpn001
   jsr putchar,pcr
   pulS B,PC
 
-
-** getchar() or 0 -> a; err -> b
-*getchar
-*  pshS X,Y,U
-*
-*retry_getchar
-*  *clra
-*  *ldb #SS.Ready
-*  *os9 I$GetStt
-*  *bcs retry_getchar
-*
-*  lda #2  # read from stderr (!?)
-*  clrb
-*  pshs b
-*  leax ,s  # Make a one-char buffer.
-*  ldy #1   # Only one char!
-*  os9 I$ReadLn
-*  puls a   # copied from buffer to A
-*  bcc ok_getchar
-*  cmpb #211
-*  beq retry_getchar
-*  clra
-*  bra ret_getchar
-*
-*ok_getchar
-*  leay -1,y  # was it 1, as in 1 char?
-*  beq ret_getchar
-*
-*  ldb #255   # Error 255 -- no char.
-*
-*ret_getchar
-*  pulS X,Y,U,PC
-
-
 Execute
   pulU x       ; arg -> W
   ldd 0,x      ; goto W+[W]
@@ -232,7 +188,7 @@ Next
   ldd 0,y
   leax d,y
 
-  tst <u_traceEnable+1  ; just check the low byte.
+  tst <v_traceEnable+1  ; just check the low byte.
   ble skip_trace
   *** BEGIN printing word.
   pshs d,x,y

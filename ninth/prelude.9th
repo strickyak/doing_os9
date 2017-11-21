@@ -3,6 +3,7 @@
 \ U: Param Stack
 \ S: Return Stack
 
+variable page0
 variable return0
 variable param0
 variable octothorpe
@@ -81,15 +82,14 @@ code regs
   ;
 
 : bzero   ( addr n -- )  \ Sideffect: clear n bytes starting at addr.
-  swap r>
   0 do
-    0   r@ i +   c!
+    dup i +   0   swap c!
   loop
-  rdrop
   ;
 
 : _clr_wb  \ clear wordbuf (with 0 bytes)
-    wordbuf 33 bzero
+    \ \ \ wordbuf 33 bzero
+    33 0 do   0  wordbuf i +  c!   loop
     ;
 
 : _adv_in  \ Advance inptr to something greater than space, or to end of inbuf.
@@ -106,6 +106,8 @@ code regs
 : getword ( -- )
     _clr_wb
     _adv_in
+    \ \ ." [getword[ "
+    \ \ inptr @ . inlen @ .
 
     inptr @ inlen @ >=  if
       space ." ok " space
@@ -120,6 +122,7 @@ code regs
       repeat
       
     then
+    \ \ ." ]getword] "
 ;
 
 
@@ -154,9 +157,9 @@ code os9'  ( U' Y' X' D' syscallNum -- U'' Y'' X'' A'' zeroOrError'' )
 
   tfr dp,a
   clrb
-  addd #u_swi2buf
+  addd #v_swi2buf
   tfr d,y
-  pshs y   ; Push u_swi2buf onto stack.  Will become PC.
+  pshs y   ; Push v_swi2buf onto stack.  Will become PC.
 
   ldx 8,u  ; users's U param
   pshs x   ; will pull U
@@ -225,8 +228,8 @@ z_os9
 
 code <#
 octomagic equ $7FED
-  ldx <u_octothorpe
-  sts <u_octothorpe
+  ldx <v_octothorpe
+  sts <v_octothorpe
   ldd #octomagic
   pshs u,x,d
   ; 
@@ -239,7 +242,7 @@ code #>
 
 L_7fed
   ldx ,s++
-  stx <u_octothorpe   ; unlink the frame.
+  stx <v_octothorpe   ; unlink the frame.
 
   leas 2,s  ; drop stored U
   nop
@@ -251,7 +254,7 @@ code #
   lslb           ; times 2
   sex
 
-  ldx <u_octothorpe
+  ldx <v_octothorpe
   ldx -2,x        ; original U PSP
   leax d,x       ; add D to it.
   pshs x         ; stack it.
@@ -261,7 +264,7 @@ code #
   fcb 1        ; illegal opcode halts emulator.
 
 L_1fed
-  ldx <u_octothorpe
+  ldx <v_octothorpe
   ldd #octomagic
   cmpd -6,x
   beq L_2fed
@@ -496,7 +499,7 @@ code r>
 
 code r@
   ldd ,s      ; copy from s, push to u.
-  std ,--u
+  std ,--u    ; ?or pshU D?
   ;
 
 code rdrop
@@ -504,6 +507,17 @@ code rdrop
   ;
 
 code !
+*X*  ldd ,u    ; get address
+*X*  cmpd <v_page0
+*X*  lbge ok_bang1
+*X*  lbsr abort
+*X*
+*X*ok_bang1
+*X*  cmpd <v_return0
+*X*  lblt ok_bang2
+*X*  lbsr abort
+*X*
+*X*ok_bang2
   ldx ,u++    ; pop address
   ldd ,u++    ; pop value
   std ,x      ; poke
@@ -610,7 +624,10 @@ ret_must
   begin  \ loop invarient: current dictionary link on P stack, sought word on R stack.
     dup
   while
-    dup 3 +   r> dup >r  streq   if
+    \ \ \ r@ putstr ." , "
+    dup 3 +
+    \ \ \ dup putstr ." ,, "
+              r@  streq   if
       rdrop exit
     then
     dup @  dup  if
