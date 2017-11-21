@@ -99,6 +99,13 @@ start
   * X, SP are begin of parameter
   * U, DP are begin of process memory.
 
+  ldd #256
+  tfr u,x
+clr_page0
+  clr ,x++
+  subd #1
+  bne clr_page0
+
   stu <v_page0
   sts <v_return0   ; remember initial stacks.
   stu <v_param0
