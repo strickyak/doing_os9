@@ -507,17 +507,17 @@ code rdrop
   ;
 
 code !
-*X*  ldd ,u    ; get address
-*X*  cmpd <v_page0
-*X*  lbge ok_bang1
-*X*  lbsr abort
-*X*
-*X*ok_bang1
-*X*  cmpd <v_return0
-*X*  lblt ok_bang2
-*X*  lbsr abort
-*X*
-*X*ok_bang2
+  ldd ,u    ; get address
+  cmpd <v_page0
+  lbge ok_bang1
+  lbsr abort
+
+ok_bang1
+  cmpd <v_return0
+  lblt ok_bang2
+  lbsr abort
+
+ok_bang2
   ldx ,u++    ; pop address
   ldd ,u++    ; pop value
   std ,x      ; poke
@@ -624,9 +624,9 @@ ret_must
   begin  \ loop invarient: current dictionary link on P stack, sought word on R stack.
     dup
   while
-    \ \ \ r@ putstr ." , "
+r@ putstr ." , "
     dup 3 +
-    \ \ \ dup putstr ." ,, "
+dup putstr ." ,, "
               r@  streq   if
       rdrop exit
     then
