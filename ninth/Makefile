@@ -8,7 +8,7 @@ ninth: _force_
 	os9 del  ../_disk_,CMDS/ninth
 	os9 copy ninth  ../_disk_,CMDS/ninth
 	os9 attr  -e -r -w -pe -pr  ../_disk_,CMDS/ninth
-	(echo '*'; echo 'Ninth </Term') | tr '\n' '\r' > _startup
+	echo 'Ninth </Term' | tr '\n' '\r' > _startup
 	os9 del  ../_disk_,startup
 	os9 copy _startup ../_disk_,startup
 	os9 attr  -r -w -pr  ../_disk_,startup
