@@ -624,9 +624,9 @@ ret_must
   begin  \ loop invarient: current dictionary link on P stack, sought word on R stack.
     dup
   while
-r@ putstr ." , "
+\ r@ putstr ." , "
     dup 3 +
-dup putstr ." ,, "
+\ dup putstr ." ,, "
               r@  streq   if
       rdrop exit
     then
