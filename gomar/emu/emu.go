@@ -78,6 +78,7 @@ import (
 )
 
 const paranoid = true // Do paranoid checks.
+const hyp = true // Use hyperviser code.
 
 var F = fmt.Sprintf
 var L = log.Printf
@@ -1013,9 +1014,9 @@ func EscapeStringThruCrOrMax(a word, max word) string {
 	return buf.String()
 }
 
-func ModuleName(a word) string {
-	s := a + W(a+4)
-	return Os9String(s)
+func ModuleName(module_loc word) string {
+	name_loc := module_loc + W(module_loc+4)
+	return Os9String(name_loc)
 }
 
 type Callback func(*Completion)
@@ -1050,10 +1051,6 @@ func DecodeOs9Opcode(b byte) {
 	case 0x00:
 		s = "F$Link   : Link to Module"
 		Z(&buf, "type/lang=%02x module/file='%s'", GetAReg(), Os9String(xreg))
-
-		if Os9String(xreg) == "Dir" || Os9String(xreg) == "dir" {
-			tracing = true
-		}
 
 	case 0x01:
 		s = "F$Load   : Load Module from File"
@@ -1222,7 +1219,7 @@ func DecodeOs9Opcode(b byte) {
 
 	case 0x8A:
 		s = "I$Write  : Write Data"
-		{
+		if true || !hyp {
 			path_num := GetAReg()
 			proc := W(D_Proc)
 			path := B(proc + P_PATH + word(path_num))
@@ -1249,7 +1246,7 @@ func DecodeOs9Opcode(b byte) {
 	case 0x8C:
 		s = "I$WritLn : Write Line of ASCII Data"
 		Z(&buf, "HEY, Kernel 0x%02x: %s .... {{{%s}}}\n", b, s, EscapeStringThruCrOrMax(xreg, yreg))
-		{
+		if true || !hyp {
 			path_num := GetAReg()
 			proc := W(D_Proc)
 			path := B(proc + P_PATH + word(path_num))
@@ -2826,7 +2823,61 @@ func swi() {
 			log.Panicf("FATAL: Attempted SWI%d with large handler: 0x%04x", handler)
 		}
 	}
-	pcreg = handler
+	syscall := B(pcreg)
+	if hyp && swi_num == 2 {
+		Os9HypervisorCall(syscall)
+	}
+	pcreg = handler  // TODO
+}
+
+const (
+	AttachModeDev byte = iota
+	AttachModeRead
+	AttachModeWrite
+	AttachModeReadWrite
+)
+
+func Os9HypervisorCall(syscall byte) {
+	handled := false
+	L("Hyp::%x", syscall)
+	switch (word(syscall)) {
+	case I_Attach: {
+		access_mode := GetAReg()
+		dev_name := Os9String(xreg)
+		ureg = 0  // TODO: create device table entry?
+		L("Hyp I_Attach %q mode %d", dev_name, access_mode)
+		/*
+		ccreg &= ^1
+		SetBReg(0)
+		handled = true
+		*/
+		}
+	case I_ChgDir:
+	case I_Close:
+	case I_Create:
+	case I_Delete:
+	case I_DeletX:
+	case I_Detach: {
+		dev_table := ureg
+		L("Hyp I_Detach %04x", dev_table)
+		}
+	case I_Dup:
+		L("Hyp I_Dup %d.", GetAReg())
+	case I_GetStt:
+	case I_MakDir:
+	case I_Open:
+	case I_Read:
+	case I_ReadLn:
+	case I_Seek:
+	case I_SetStt:
+	case I_Write:
+	case I_WritLn:
+	}
+	if handled {
+		sreg += 10
+		PullWord(&pcreg)
+		pcreg++
+	}
 }
 
 /*
