@@ -68,6 +68,7 @@
 #include <fcntl.h>
 int tflags;
 #endif
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
@@ -87,7 +88,26 @@ int tflags;
 #include <sys/types.h>
 #include <unistd.h>
 
+typedef int bool;
+#define false 0
+#define true 1
+
+bool stress_test_with_dir_command;
+
+void DumpAllMemory();
+void Os9AllMemoryModules();
+
+int StressTestMaybeGetChar() {
+  static int i;
+  char c = "dir\r"[i];
+  i = (i+1) & 3;
+  return c;
+}
 int MaybeGetChar() {
+  if (stress_test_with_dir_command) {
+  	StressTestMaybeGetChar();
+  }
+
   int n;
   char c = 0;
   static struct timeval tv = {0, 0};
@@ -97,15 +117,23 @@ int MaybeGetChar() {
   n = select(1, &set, NULL, NULL, &tv);
   if (n==0) return 0;
   n = read(0, &c, 1);
+  if (n!=1) {
+    // On Cntrl-D
+    DumpAllMemory();
+  }
   assert(n==1);
-// printf("GOT {%c} %d\n", c, c);
+  fprintf(stderr, "#MaybeGetChar: GOT {%c} %d.\n", (' '<=c && c<='~') ? c : '?', c);
+
+  static int prev_char = 0;
+  if (prev_char == ')' && c == 'd') {
+    // On )d
+    DumpAllMemory();
+    Os9AllMemoryModules();
+  }
+  prev_char = c;
+
   return c;
 }
-
-
-typedef int bool;
-#define false 0
-#define true 1
 
 #define IRQ_FREQ (10*1000)
 
@@ -315,10 +343,26 @@ struct Completion {
   Word a, b, c;
 } Os9SysCallCompletion[0x10000];
 
-void DumpAllMemory();
 void Os9AllMemoryModules();
 void DefaultCompleter(struct Completion* cp);
 Byte GETBYTE(Word a);
+
+#define   PD_PD       0x00   // RMB 1    Path Number
+#define   PD_MOD      0x01   // RMB 1    Mode (Read/Write/Update)
+#define   PD_CNT      0x02   // RMB 1    Number of Open Images
+#define   PD_DEV      0x03   // RMB 2    Device Table Entry Address
+#define   PD_CPR      0x05   // RMB 1    Current Process
+#define   PD_RGS      0x06   // RMB 2    Caller's Register Stack
+#define   PD_BUF      0x08   // RMB 2    Buffer Address
+#define   PD_FST      0x0a   // RMB 32-. File Manager's Storage
+#define   PD_DTP      0x20   // RMB 1    Device Type
+
+
+#define   V_DRIV  0       // RMB   2   Device Driver module
+#define   V_STAT  2       // RMB   2   Device Driver Static storage
+#define   V_DESC  4       // RMB   2   Device Descriptor module
+#define   V_FMGR  6       // RMB   2   File Manager module
+#define   V_USRS  8       // RMB   1   use count
 
 char* DecodeOs9Error(Byte b) {
   char* s = "???";
@@ -703,8 +747,27 @@ void DecodeOs9Opcode(Byte b) {
       break;
     case 0x8C: s = "I$WritLn : Write Line of ASCII Data";
       fprintf(stderr, "HEY, Kernel 0x%02x: %s .... {{{%s}}}\n", b, s, EscapeStringThruCrOrMax(xreg, yreg));
-      printf("%s", PrintableStringThruCrOrMax(xreg, yreg));
-      fflush(stdout);
+      {
+      	Byte path_num = *areg;
+        Word a = 0;
+        Word proc = W(D_Proc);
+        Byte path = B(proc + P_PATH+path_num);
+        Word pathDBT = W(D_PthDBT);
+	Word q = W(pathDBT + (path>>2));
+        fprintf(stderr, "..writln..  path_num=%x proc=%x path=%x dbt=%x q=%x\n", path_num, proc, path, pathDBT, q);
+	if (q) {
+	  Word pd = q + 64*(path&3);
+	  Word dev = W(pd + PD_DEV);
+          fprintf(stderr, "..writln..  pd=%x dev=%x\n", pd, dev);
+	  Word desc = W(dev+V_DESC);
+	  char* name = ModuleName(W(dev+V_DESC));
+          fprintf(stderr, "..writln..  desc=%x=%s\n", desc, name);
+	  if (!strcasecmp(name, "Term")) {
+	    printf("%s", PrintableStringThruCrOrMax(xreg, yreg));
+	    fflush(stdout);
+	  }
+	}
+      }
       break;
     case 0x8D: s = "I$GetStt : Get Path Status";
       fprintf(stderr, "HEY, Kernel 0x%02x: %s .... %s\n", b, s, DecodeOs9GetStat(*areg));
@@ -723,7 +786,7 @@ void DecodeOs9Opcode(Byte b) {
 }
 
 void DefaultCompleter(struct Completion* cp) {
-  if (ccreg&1) {
+  if (ccreg&1 /* carry bit indicates error */) {
     Byte errcode = *breg;
     fprintf(stderr, "HEY, Kernel 0x%02x -> ERROR [%02x] %s\n", cp->service-1, errcode, DecodeOs9Error(errcode));
   } else {
@@ -765,14 +828,14 @@ Byte keypress(Byte a, char ch) {
   return ~sense;
 }
 
-interrupt(Word vector_addr) {
+void interrupt(Word vector_addr) {
   PUSHWORD(pcreg)
   if (vector_addr == VECTOR_FIRQ) {
     // Fast IRQ.
     ccreg &= ~CC_ENTIRE;
   } else {
-    PUSHWORD(ureg)
     // Other IRQs.
+    PUSHWORD(ureg)
     PUSHWORD(yreg)
     PUSHWORD(xreg)
     PUSHBYTE(dpreg)
@@ -809,12 +872,12 @@ int disk_i;
 Byte kbd_probe;
 int kbd_cycle;
 
-nmi() {
+void nmi() {
   fprintf(stderr,"HEY, INTERRUPTING with NMI\n");
   interrupt(VECTOR_NMI);
   irqs_pending &= ~NMI_PENDING;
 }
-irq() {
+void irq() {
   ++kbd_cycle;
   fprintf(stderr,"HEY, INTERRUPTING with IRQ (kbd_cycle = %d)\n", kbd_cycle);
   assert(!(ccreg&CC_INHIBIT_IRQ));
@@ -912,9 +975,11 @@ void PutIOByte(Word a, Byte b) {
     default:
       fprintf(stderr, "HEY, UNKNOWN PutIOByte: 0x%04x\n", a);
       finish();
+      return;
 
     case 0xFF02:
       kbd_probe = b;
+      return;
 
     case 0xFF00:
     case 0xFF01:
@@ -1059,7 +1124,7 @@ void PutIOByte(Word a, Byte b) {
     case 0xFFD2:
     case 0xFFD3:
     case 0xFFDF:
-      fprintf(stderr, "VDG PutByte OK: %x\n", a);
+      fprintf(stderr, "VDG PutByte OK: %x <- %x\n", a, b);
       break;
   }
 }
@@ -1096,9 +1161,11 @@ Byte GETBYTE_ea(Byte* ea) {
   assert(ea < mem+0x10000);
   Word a = ea - mem;
   Byte z = GETBYTE(a);
+  /*
   if (0xFF00 <= a && a <= 0xFFFF) {
     fprintf(stderr, "GETBYTE_ea %04x -> %02x : %c %c\n", (int)(ea-mem), z, H(z), T(z));
   }
+  */
   return z;
 }
 
@@ -1371,7 +1438,7 @@ Word eaddr16() /* effective address for 16-bits ops. */
  }
 }
 
-ill() /* illegal opcode==noop */
+void ill() /* illegal opcode==noop */
 {
  fprintf(stderr,"Illegal Opcode\n");
  DumpAllMemory();
@@ -1399,7 +1466,7 @@ ill() /* illegal opcode==noop */
                            if((a^b^res^(res>>1))&0x80)SEV else CLV \
                            if(res&0x100)SEC else CLC SETNZ8((Byte)res)
 
-add()
+void add()
 {
  Word aop,bop,res;
  Byte* aaop;
@@ -1412,7 +1479,7 @@ add()
  *aaop=res;
 }
 
-sbc()
+void sbc()
 {
  Word aop,bop,res;
  Byte* aaop;
@@ -1425,7 +1492,7 @@ sbc()
  *aaop=res;
 }
 
-sub()
+void sub()
 {
  Word aop,bop,res;
  Byte* aaop;
@@ -1438,7 +1505,7 @@ sub()
  *aaop=res;
 }
 
-adc()
+void adc()
 {
  Word aop,bop,res;
  Byte* aaop;
@@ -1451,7 +1518,7 @@ adc()
  *aaop=res;
 }
 
-cmp()
+void cmp()
 {
  Word aop,bop,res;
  Byte* aaop;
@@ -1463,7 +1530,7 @@ cmp()
  SETSTATUS(aop,bop,res)
 }
 
-and()
+void and()
 {
  Byte aop,bop,res;
  Byte* aaop;
@@ -1477,7 +1544,7 @@ and()
  *aaop=res;
 }
 
-or()
+void or()
 {
  Byte aop,bop,res;
  Byte* aaop;
@@ -1491,7 +1558,7 @@ or()
  *aaop=res;
 }
 
-eor()
+void eor()
 {
  Byte aop,bop,res;
  Byte* aaop;
@@ -1505,7 +1572,7 @@ eor()
  *aaop=res;
 }
 
-bit()
+void bit()
 {
  Byte aop,bop,res;
  Byte* aaop;
@@ -1518,7 +1585,7 @@ bit()
  CLV
 }
 
-ld()
+void ld()
 {
  Byte res;
  Byte* aaop;
@@ -1530,7 +1597,7 @@ ld()
  *aaop=res;
 }
 
-st()
+void st()
 {
  Byte res;
  Byte* aaop;
@@ -1542,7 +1609,7 @@ st()
  CLV
 }
 
-jsr()
+void jsr()
 {
  Word w;
 
@@ -1554,7 +1621,7 @@ jsr()
  pcreg=w;
 }
 
-bsr()
+void bsr()
 {
  Byte b;
  static char off[33];
@@ -1568,7 +1635,7 @@ bsr()
  da_ops(off,NULL,0);
 }
 
-neg()
+void neg()
 {
  Byte *ea;
  Word a,r;
@@ -1590,7 +1657,7 @@ neg()
  }
 }
 
-com()
+void com()
 {
  Byte *ea;
  Byte r;
@@ -1617,7 +1684,7 @@ com()
  }
 }
 
-lsr()
+void lsr()
 {
  Byte *ea;
  Byte r;
@@ -1640,7 +1707,7 @@ lsr()
  }
 }
 
-ror()
+void ror()
 {
  Byte *ea;
  Byte r,c;
@@ -1663,7 +1730,7 @@ ror()
  }
 }
 
-asr()
+void asr()
 {
  Byte *ea;
  Byte r;
@@ -1687,7 +1754,7 @@ asr()
  }
 }
 
-asl()
+void asl()
 {
  Byte *ea;
  Word a,r;
@@ -1708,7 +1775,7 @@ asl()
  }
 }
 
-rol()
+void rol()
 {
  Byte *ea;
  Byte r,c;
@@ -1732,7 +1799,7 @@ rol()
  }
 }
 
-inc()
+void inc()
 {
  Byte *ea;
  Byte r;
@@ -1746,7 +1813,7 @@ inc()
  *ea=r;
 }
 
-dec()
+void dec()
 {
  Byte *ea;
  Byte r;
@@ -1760,7 +1827,7 @@ dec()
  *ea=r;
 }
 
-tst()
+void tst()
 {
  Byte r;
  Byte *ea;
@@ -1772,7 +1839,7 @@ tst()
  CLV
 }
 
-jmp()
+void jmp()
 {
  Byte *ea;
 
@@ -1783,7 +1850,7 @@ jmp()
  pcreg=ea-mem;
 }
 
-clr()
+void clr()
 {
  Byte *ea;
 
@@ -1800,9 +1867,9 @@ clr()
  CLN CLV SEZ CLC
 }
 
-extern (*instrtable[])();
+extern void (*instrtable[])();
 
-flag0()
+void flag0()
 {
  if(iflag) /* in case flag already set by previous flag instr don't recurse */
  {
@@ -1816,7 +1883,7 @@ flag0()
  iflag=0;
 }
 
-flag1()
+void flag1()
 {
  if(iflag) /* in case flag already set by previous flag instr don't recurse */
  {
@@ -1830,18 +1897,18 @@ flag1()
  iflag=0;
 }
 
-nop()
+void nop()
 {
  da_inst("nop",NULL,2);
 }
 
-sync_inst()
+void sync_inst()
 {
  fprintf(stderr, "HEY, Waiting, sync_inst.\n");
  Waiting = true;
 }
 
-cwai()
+void cwai()
 {
  char off[8];
  Byte b = mem[pcreg];  /* Immediate operand */
@@ -1856,7 +1923,7 @@ cwai()
  da_ops(off,NULL,0);
 }
 
-lbra()
+void lbra()
 {
  Word w;
  static char off[33];
@@ -1869,7 +1936,7 @@ lbra()
  da_ops(off,NULL,0);
 }
 
-lbsr()
+void lbsr()
 {
  Word w;
  static char off[33];
@@ -1883,7 +1950,7 @@ lbsr()
  da_ops(off,NULL,0);
 }
 
-daa()
+void daa()
 {
  Word a;
  da_inst("daa",NULL,2);
@@ -1896,7 +1963,7 @@ daa()
  *areg=a;
 }
 
-orcc()
+void orcc()
 {
  Byte b;
  char off[7];
@@ -1907,7 +1974,7 @@ orcc()
  ccreg|=b;
 }
 
-andcc()
+void andcc()
 {
  Byte b;
  static char off[33];
@@ -1919,7 +1986,7 @@ andcc()
  ccreg&=b;
 }
 
-mul()
+void mul()
 {
  Word w;
  w=*areg * *breg;
@@ -1929,7 +1996,7 @@ mul()
  *dreg=w;
 }
 
-sex()
+void sex()
 {
  Word w;
  da_inst("sex",NULL,2);
@@ -1938,20 +2005,20 @@ sex()
  *dreg=w;
 }
 
-abx()
+void abx()
 {
  da_inst("abx",NULL,3);
  xreg += *breg;
 }
 
-rts()
+void rts()
 {
  da_inst("rts",NULL,5);
  da_len = 1;
  PULLWORD(pcreg)
 }
 
-rti()
+void rti()
 {
  Byte entire;
  entire = ccreg & CC_ENTIRE;
@@ -1974,6 +2041,7 @@ void DumpAllMemory() {
   int i, j;
   static char buf[200];
   memset(buf, 0, sizeof buf);
+  fprintf(stderr, "\n#DumpAllMemory(\n");
   for (i=0; i < 0x10000; i+=32) {
     sprintf(buf, "%04x: ", (unsigned)i);
     for (j=0; j<32; j+=8) {
@@ -1982,8 +2050,15 @@ void DumpAllMemory() {
               mem[i+j+0], mem[i+j+1], mem[i+j+2], mem[i+j+3],
               mem[i+j+4], mem[i+j+5], mem[i+j+6], mem[i+j+7]);
     }
+    fprintf(stderr, "%s ", buf);
+    for (j=0; j<32; j++) {
+      Byte ch = mem[i+j];
+      buf[j] = (' ' <= ch && ch <= '~') ? ch : '.';
+    }
+    buf[j] = '\0';
     fprintf(stderr, "%s\n", buf);
   }
+  fprintf(stderr, "#DumpAllMemory)\n");
 }
 
 
@@ -1999,21 +2074,23 @@ void DumpPageZero() {
                   W(D_Slice), W(D_TSlice));
 }
 
-#define   PD_PD       0x00   // RMB 1    Path Number
-#define   PD_MOD      0x01   // RMB 1    Mode (Read/Write/Update)
-#define   PD_CNT      0x02   // RMB 1    Number of Open Images
-#define   PD_DEV      0x03   // RMB 2    Device Table Entry Address
-#define   PD_CPR      0x05   // RMB 1    Current Process
-#define   PD_RGS      0x06   // RMB 2    Caller's Register Stack
-#define   PD_BUF      0x08   // RMB 2    Buffer Address
-#define   PD_FST      0x0a   // RMB 32-. File Manager's Storage
-#define   PD_DTP      0x20   // RMB 1    Device Type
-
 void DumpPathDesc(Word a) {
   if (!B(PD_PD)) return;
   fprintf(stderr, "Path @%x: #=%x mode=%x count=%x dev=%x\n", a, B(PD_PD), B(PD_MOD), B(PD_CNT), W(PD_DEV));
   fprintf(stderr, "   curr_process=%x caller_reg_stack=%x buffer=%x  dev_type=%x\n",
                   B(PD_CPR), B(PD_RGS), B(PD_BUF), B(PD_DTP)); 
+  // the Device Table Entry:
+  Word dev = W(PD_DEV);
+  {
+    Word a = dev;
+    // ModuleName returns static storage, so only use one of those per fprintf.
+    fprintf(stderr, "   dev: @%x driver_mod=%x=%s ",
+                    dev, W(V_DRIV), ModuleName(W(V_DRIV)));
+    fprintf(stderr, "driver_static_store=%x descriptor_mod=%x=%s ",
+                    W(V_STAT), W(V_DESC), ModuleName(W(V_DESC)));
+    fprintf(stderr, "file_man=%x=%s use=%d\n",
+                    W(V_FMGR), ModuleName(W(V_FMGR)), B(V_USRS));
+  }
 }
 
 void DumpAllPathDescs() {
@@ -2041,8 +2118,9 @@ void DumpProcDesc(Word a) {
   Word name = mod + GETWORD(mod+4);
   fprintf(stderr, "   Queue=%x IOQP=%x IOQN=%x PModul='%s' Signal=%x SigVec=%x SigDat=%x\n",
                   W(P_Queue), B(P_IOQP), B(P_IOQN), Os9String(name), B(P_Signal), B(P_SigVec), B(P_SigDat)); 
-  fprintf(stderr, "   DIO %x %x %x PATH %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x\n",
+  fprintf(stderr, "   DIO %x %x %x %x %x %x PATH %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x\n",
                   W(P_DIO), W(P_DIO+2), W(P_DIO+4),
+                  W(P_DIO+6), W(P_DIO+8), W(P_DIO+10),
                   B(P_PATH+0), B(P_PATH+1), B(P_PATH+2), B(P_PATH+3),
                   B(P_PATH+4), B(P_PATH+5), B(P_PATH+6), B(P_PATH+7),
                   B(P_PATH+8), B(P_PATH+9), B(P_PATH+10), B(P_PATH+11),
@@ -2080,7 +2158,7 @@ void Os9AllMemoryModules() {
   DumpPageZero();
   DumpProcesses();
   DumpAllPathDescs();
-  fprintf(stderr, "\nHEY, MODULES: ");
+  fprintf(stderr, "\n#Os9AllMemoryModules(\n");
   for (; i < limit; i += 4) {
     Word mod = GETWORD(i);
     if (mod) {
@@ -2089,10 +2167,10 @@ void Os9AllMemoryModules() {
       fprintf(stderr, "%x:%x:<%s> ", mod, end, Os9String(name));
     }
   }
-  fprintf(stderr, "\n\n");
+  fprintf(stderr, "\n#Os9AllMemoryModules)\n");
 }
 
-swi()
+void swi()
 {
  int w;
  int swi_num = iflag + 1; // 1, 2, or 3 for SWI, SWI2, or SWI3.
@@ -2156,7 +2234,7 @@ Byte *byteregs[]={d_reg,d_reg+1,&ccreg,&dpreg,&fillreg,&fillreg,&fillreg,&fillre
 Byte *byteregs[]={d_reg+1,d_reg,&ccreg,&dpreg,&fillreg,&fillreg,&fillreg,&fillreg};
 #endif
 
-tfr()
+void tfr()
 {
  Byte b;
  da_inst("tfr",NULL,7);
@@ -2179,7 +2257,7 @@ tfr()
  }
 }
 
-exg()
+void exg()
 {
  Byte b;
  Word f;
@@ -2213,7 +2291,7 @@ exg()
  }
 }
 
-br(int f)
+void br(int f)
 {
  Byte b;
  Word w;
@@ -2237,103 +2315,103 @@ br(int f)
 
 #define NXORV  ((ccreg&0x08)^(ccreg&0x02))
 
-bra()
+void bra()
 {
  da_inst(iflag?"l":"","bra",iflag?5:3);
  br(1);
 }
 
-brn()
+void brn()
 {
  da_inst(iflag?"l":"","brn",iflag?5:3);
  br(0);
 }
 
-bhi()
+void bhi()
 {
  da_inst(iflag?"l":"","bhi",iflag?5:3);
  br(!(ccreg&0x05));
 }
 
-bls()
+void bls()
 {
  da_inst(iflag?"l":"","bls",iflag?5:3);
  br(ccreg&0x05);
 }
 
-bcc()
+void bcc()
 {
  da_inst(iflag?"l":"","bcc",iflag?5:3);
  br(!(ccreg&0x01));
 }
 
-bcs()
+void bcs()
 {
  da_inst(iflag?"l":"","bcs",iflag?5:3);
  br(ccreg&0x01);
 }
 
-bne()
+void bne()
 {
  da_inst(iflag?"l":"","bne",iflag?5:3);
  br(!(ccreg&0x04));
 }
 
-beq()
+void beq()
 {
  da_inst(iflag?"l":"","beq",iflag?5:3);
  br(ccreg&0x04);
 }
 
-bvc()
+void bvc()
 {
  da_inst(iflag?"l":"","bvc",iflag?5:3);
  br(!(ccreg&0x02));
 }
 
-bvs()
+void bvs()
 {
  da_inst(iflag?"l":"","bvs",iflag?5:3);
  br(ccreg&0x02);
 }
 
-bpl()
+void bpl()
 {
  da_inst(iflag?"l":"","bpl",iflag?5:3);
  br(!(ccreg&0x08));
 }
 
-bmi()
+void bmi()
 {
  da_inst(iflag?"l":"","bmi",iflag?5:3);
  br(ccreg&0x08);
 }
 
-bge()
+void bge()
 {
  da_inst(iflag?"l":"","bge",iflag?5:3);
  br(!NXORV);
 }
 
-blt()
+void blt()
 {
  da_inst(iflag?"l":"","blt",iflag?5:3);
  br(NXORV);
 }
 
-bgt()
+void bgt()
 {
  da_inst(iflag?"l":"","bgt",iflag?5:3);
  br(!(NXORV||ccreg&0x04));
 }
 
-ble()
+void ble()
 {
  da_inst(iflag?"l":"","ble",iflag?5:3);
  br(NXORV||ccreg&0x04);
 }
 
-leax()
+void leax()
 {
  Word w;
  da_inst("leax",NULL,4);
@@ -2342,7 +2420,7 @@ leax()
  xreg=w;
 }
 
-leay()
+void leay()
 {
  Word w;
  da_inst("leay",NULL,4);
@@ -2351,13 +2429,13 @@ leay()
  yreg=w;
 }
 
-leau()
+void leau()
 {
  da_inst("leau",NULL,4);
  ureg=postbyte();
 }
 
-leas()
+void leas()
 {
  da_inst("leas",NULL,4);
  sreg=postbyte();
@@ -2382,7 +2460,7 @@ int bit_count(Byte b)
 }
 
 
-pshs()
+void pshs()
 {
  Byte b;
  IMMBYTE(b)
@@ -2398,7 +2476,7 @@ pshs()
  if(b&0x01)PUSHBYTE(ccreg)
 }
 
-puls()
+void puls()
 {
  Byte b;
  IMMBYTE(b)
@@ -2415,7 +2493,7 @@ puls()
  if(b&0x80)PULLWORD(pcreg)
 }
 
-pshu()
+void pshu()
 {
  Byte b;
  IMMBYTE(b)
@@ -2431,7 +2509,7 @@ pshu()
  if(b&0x01)PUSHUBYTE(ccreg)
 }
 
-pulu()
+void pulu()
 {
  Byte b;
  IMMBYTE(b)
@@ -2452,7 +2530,7 @@ pulu()
                             if(((res>>1)^a^b^res)&0x8000) SEV else CLV \
                             SETNZ16((Word)res)}
 
-addd()
+void addd()
 {
  unsigned long aop,bop,res;
  Word ea;
@@ -2465,7 +2543,7 @@ addd()
  *dreg=res;
 }
 
-subd()
+void subd()
 {
  unsigned long aop,bop,res;
  Word ea;
@@ -2483,7 +2561,7 @@ subd()
  if(iflag==0) *dreg=res; /* subd result */
 }
 
-cmpx()
+void cmpx()
 {
  unsigned long aop,bop,res;
  Word ea;
@@ -2506,7 +2584,7 @@ cmpx()
  SETSTATUSD(aop,bop,res)
 }
 
-ldd()
+void ldd()
 {
  Word ea,w;
  da_inst("ldd",NULL,4);
@@ -2516,7 +2594,7 @@ ldd()
  *dreg=w;
 }
 
-ldx()
+void ldx()
 {
  Word ea,w;
  if (iflag) da_inst("ldy",NULL,4);
@@ -2527,7 +2605,7 @@ ldx()
  if (iflag==0) xreg=w; else yreg=w;
 }
 
-ldu()
+void ldu()
 {
  Word ea,w;
  if (iflag) da_inst("lds",NULL,4);
@@ -2538,7 +2616,7 @@ ldu()
  if (iflag==0) ureg=w; else sreg=w;
 }
 
-std()
+void std()
 {
  Word ea,w;
  da_inst("std",NULL,4);
@@ -2548,7 +2626,7 @@ std()
  SETWORD(ea,w)
 }
 
-stx()
+void stx()
 {
  Word ea,w;
  if (iflag) da_inst("sty",NULL,4);
@@ -2559,7 +2637,7 @@ stx()
  SETWORD(ea,w)
 }
 
-stu()
+void stu()
 {
  Word ea,w;
  if (iflag) da_inst("sts",NULL,4);
@@ -2570,7 +2648,7 @@ stu()
  SETWORD(ea,w)
 }
 
-int (*instrtable[])() = {
+void (*instrtable[])() = {
  neg , ill , ill , com , lsr , ill , ror , asr ,
  asl , rol , dec , ill , inc , tst , jmp , clr ,
  flag0 , flag1 , nop , sync_inst , ill , ill , lbra , lbsr ,
@@ -2605,7 +2683,7 @@ sub , cmp , sbc , addd , and , bit , ld , st ,
 eor , adc ,  or , add , ldd , std , ldu , stu ,
 };
 
-read_image(char* name)
+void read_image(char* name)
 {
  FILE *image;
  if((image=fopen(name,"rb"))!=NULL) {
@@ -2618,7 +2696,7 @@ read_image(char* name)
  }
 }
 
-dump()
+void dump()
 {
  FILE *image;
  if((image=fopen("dump.v09","wb"))!=NULL) {
@@ -2724,9 +2802,9 @@ void trace()
 #endif
 
 
-static char optstring[]="0Ftdi:o:H:L:Z:f:T:";
+static char optstring[]="0Ftdi:o:H:L:Z:f:T:X";
 
-main(int argc,char *argv[])
+int main(int argc,char *argv[])
 {
  char c;
  int a;
@@ -2747,6 +2825,9 @@ main(int argc,char *argv[])
                 sscanf(optarg, "%x", &tmp);
                 low_reg = tmp;
                 }
+                break;
+          case 'X':
+                stress_test_with_dir_command = true;
                 break;
           case 'Z':
                 maxsteps = atoi(optarg);
@@ -2882,6 +2963,7 @@ main(int argc,char *argv[])
  } /* next step */
  fprintf(stderr,"FINISHED %ld STEPS\n", steps);
  finish();
+ return 0;
 }
 
 
