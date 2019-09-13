@@ -1,0 +1,1850 @@
+package emu
+
+func InitLevel1() {
+	PD_PD = 0x00  // RMB 1    Path Number
+	PD_MOD = 0x01 // RMB 1    Mode (Read/Write/Update)
+	PD_CNT = 0x02 // RMB 1    Number of Open Images
+	PD_DEV = 0x03 // RMB 2    Device Table Entry Address
+	PD_CPR = 0x05 // RMB 1    Current Process
+	PD_RGS = 0x06 // RMB 2    Caller's Register Stack
+	PD_BUF = 0x08 // RMB 2    Buffer Address
+	PD_FST = 0x0a // RMB 32-. File Manager's Storage
+	PD_DTP = 0x20 // RMB 1    Device Type
+
+	V_DRIV = 0 // RMB   2   Device Driver module
+	V_STAT = 2 // RMB   2   Device Driver Static storage
+	V_DESC = 4 // RMB   2   Device Descriptor module
+	V_FMGR = 6 // RMB   2   File Manager module
+	V_USRS = 8 // RMB   1   use count
+
+	// Kernel Direct Page $00
+	D_FMBM = 0x0020   // RMB 4 Free memory bit map pointers
+	D_MLIM = 0x0024   // RMB 2 Memory limit $24
+	D_ModDir = 0x0026 // RMB 4 Module directory $26
+	D_Init = 0x002a   // RMB 2 Rom base address $2A
+	D_SWI3 = 0x002c   // RMB 2 Swi3 vector $2C
+	D_SWI2 = 0x002e   // RMB 2 Swi2 vector $2E
+	D_FIRQ = 0x0030   // RMB 2 Firq vector $30
+	D_IRQ = 0x0032    // RMB 2 Irq vector $32
+	D_SWI = 0x0034    // RMB 2 Swi vector $34
+	D_NMI = 0x0036    // RMB 2 Nmi vector $36
+	D_SvcIRQ = 0x0038 // RMB 2 Interrupt service entry $38
+	D_Poll = 0x003a   // RMB 2 Interrupt polling routine $3A
+	D_UsrIRQ = 0x003c // RMB 2 User irq routine $3C
+	D_SysIRQ = 0x003e // RMB 2 System irq routine $3E
+	D_UsrSvc = 0x0040 // RMB 2 User service request routine $40
+	D_SysSvc = 0x0042 // RMB 2 System service request routine $42
+	D_UsrDis = 0x0044 // RMB 2 User service request dispatch table
+	D_SysDis = 0x0046 // RMB 2 System service reuest dispatch table
+	D_Slice = 0x0048  // RMB 1 Process time slice count $48
+	D_PrcDBT = 0x0049 // RMB 2 Process descriptor block address  $49
+	D_Proc = 0x004b   // RMB 2 Process descriptor address $4B
+	D_AProcQ = 0x004d // RMB 2 Active process queue $4D
+	D_WProcQ = 0x004f // RMB 2 Waiting process queue $4F
+	D_SProcQ = 0x0051 // RMB 2 Sleeping process queue $51
+	D_Year = 0x0053   // RMB 1 $53
+	D_Month = 0x0054  // RMB 1 $54
+	D_Day = 0x0055    // RMB 1 $55
+	D_Hour = 0x0056   // RMB 1 $56
+	D_Min = 0x0057    // RMB 1 $57
+	D_Sec = 0x0058    // RMB 1 $58
+	D_Tick = 0x0059   // RMB 1 $59
+	D_TSec = 0x005a   // RMB 1 Ticks / second $5A
+	D_TSlice = 0x005b // RMB 1 Ticks / time-slice $5B
+	D_IOML = 0x005c   // RMB 2 I/O mgr free memory low bound $5C
+	D_IOMH = 0x005e   // RMB 2 I/O mgr free memory hi  bound $5E
+	D_DevTbl = 0x0060 // RMB 2 Device driver table addr $60
+	D_PolTbl = 0x0062 // RMB 2 Irq polling table addr $62
+	D_PthDBT = 0x0064 // RMB 2 Path descriptor block table addr $64
+	D_BTLO = 0x0066   // RMB 2 Bootstrap low address $66
+	D_BTHI = 0x0068   // RMB 2 Bootstrap hi address $68
+	D_DMAReq = 0x006a // RMB 1 DMA in use flag $6A
+	D_AltIRQ = 0x006b // RMB 2  Alternate IRQ vector (CC) $6B
+	D_KbdSta = 0x006d // RMB 2  Keyboard scanner static storage (CC) $6D
+	D_DskTmr = 0x006f // RMB 2  Disk Motor Timer (CC) $6F
+	D_CBStrt = 0x0071 // RMB 16 reserved for CC warmstart ($71)
+	D_Clock = 0x0081  // RMB 2  Address of Clock Tick Routine (CC) $81
+	D_Boot = 0x0083   // RMB 1  Bootstrap attempted flag
+	D_URtoSs = 0x0084 // RMB 2  address of user to system routine (VIRQ) $84
+	D_CLTb = 0x0086   // RMB 2  Pointer to clock interrupt table (VIRQ) $86
+	D_MDREG = 0x0088  // RMB 1  6309 MD (mode) shadow register $88 (added in V2.01.00)
+	D_CRC = 0x0089    // RMB 1  CRC checking mode flag $89 (added in V2.01.00)
+	D_Clock2 = 0x008a // RMB 2  CC Clock2 entry address
+
+	// Process descriptor
+	P_ID = 0x0000     // Process ID
+	P_PID = 0x0001    // Parent's ID
+	P_SID = 0x0002    // Sibling's ID
+	P_CID = 0x0003    // Child's ID
+	P_SP = 0x0004     // Stack ptr
+	P_CHAP = 0x0006   // process chapter number
+	P_ADDR = 0x0007   // user address beginning page number
+	P_PagCnt = 0x0008 // Memory Page Count
+	P_User = 0x0009   // User Index $09
+	P_Prior = 0x000b  // Priority $0B
+	P_Age = 0x000c    // Age $0C
+	P_State = 0x000d  // Status $0D
+	P_Queue = 0x000e  // Queue Link (Process ptr) $0E
+	P_IOQP = 0x0010   // Previous I/O Queue Link (Process ID) $10
+	P_IOQN = 0x0011   // Next     I/O Queue Link (Process ID)
+	P_PModul = 0x0012 // Primary Module
+	P_SWI = 0x0014    // SWI Entry Point
+	P_SWI2 = 0x0016   // SWI2 Entry Point
+	P_SWI3 = 0x0018   // SWI3 Entry Point $18
+	P_DIO = 0x001a    // default I/O ptrs $1A
+	P_PATH = 0x0026   // I/O path table $26
+	P_Signal = 0x0036 // Signal Code $36
+	P_SigVec = 0x0037 // Signal Intercept Vector
+	P_SigDat = 0x0039 // Signal Intercept Data Address
+	P_NIO = 0x003b    // additional dio pointers for net
+}
+
+func InitLevel2() {
+	A_AciaP = 0xff68
+	A_ModP = 0xff6c
+	A_TermV = 0xffc0
+	A_V1 = 0xffc1
+	A_V2 = 0xffc2
+	A_V3 = 0xffc3
+	A_V4 = 0xffc4
+	A_V5 = 0xffc5
+	A_V6 = 0xffc6
+	A_V7 = 0xffc7
+	Bt_Block = 0x003b
+	Bt_Flag = 0x8a34
+	Bt_Offst = 0x0002
+	Bt_Sec = 0x0000
+	Bt_Size = 0x00ff
+	Bt_Start = 0xed00
+	Bt_Track = 0x0022
+	C_BELL = 0x0007
+	C_BSP = 0x0008
+	C_Clsall = 0x0016
+	C_Clsgr = 0x0015
+	C_COMA = 0x002c
+	C_CR = 0x000d
+	C_DEL = 0x0018
+	C_DELETE = 0x0010
+	C_DWN = 0x001f
+	C_EL = 0x0005
+	C_EOF = 0x001b
+	C_FORM = 0x000c
+	C_HOME = 0x000b
+	C_INSERT = 0x0011
+	C_INTR = 0x0003
+	C_LF = 0x000a
+	C_LFT = 0x001d
+	C_NULL = 0x0000
+	C_PAUS = 0x0017
+	C_PERD = 0x002e
+	C_PLINE = 0x0013
+	C_QUIT = 0x0005
+	C_RARR = 0x0009
+	C_RGT = 0x001c
+	C_RPET = 0x0001
+	C_RPRT = 0x0004
+	C_SHRARR = 0x0019
+	C_SI = 0x000f
+	C_SO = 0x000e
+	C_SPAC = 0x0020
+	C_UP = 0x001e
+	C_XOFF = 0x0013
+	C_XON = 0x0011
+	COCO_D = 0x0001
+	D_GSTA = 0x0009
+	D_INIT = 0x0000
+	D_PSTA = 0x000c
+	D_READ = 0x0003
+	D_TERM = 0x000f
+	D_WRIT = 0x0006
+	D_AltIRQ = 0x00b2
+	D_AProcQ = 0x0052
+	DAT_Addr = 0xffe0
+	DAT_BlCt = 0x0008
+	DAT_BlMx = 0x003f
+	DAT_BlSz = 0x2000
+	DAT_BMSz = 0x0040
+	DAT_Free = 0x333e
+	DAT_ImSz = 0x0010
+	DAT_Regs = 0xffa0
+	DAT_Task = 0xff91
+	DAT_TkCt = 0x0020
+	DAT_WrEn = 0x0000
+	DAT_WrPr = 0x0000
+	D_BlkMap = 0x0040
+	D_Boot = 0x0031
+	D_BORDR = 0x009a
+	D_BtBug = 0x005e
+	D_BtPtr = 0x0036
+	D_BtSz = 0x0038
+	D_CBStrt = 0x0071
+	D_CCMem = 0x00a5
+	D_CCStk = 0x00a7
+	D_CldRes = 0x005c
+	D_Clock = 0x00e0
+	D_Clock2 = 0x00b6
+	D_CLTb = 0x00b0
+	D_COCOXT = 0x0009
+	D_Crash = 0x006b
+	D_CRC = 0x003b
+	DD_ATT = 0x000d
+	D_Day = 0x002a
+	D_Daywk = 0x0034
+	D_DbgMem = 0x000a
+	DD_BIT = 0x0006
+	DD_BSZ = 0x0018
+	DD_BT = 0x0015
+	DD_DAT = 0x001a
+	DD_DIR = 0x0008
+	DD_DSK = 0x000e
+	D_DevTbl = 0x0080
+	DD_FMT = 0x0010
+	DD_MAP = 0x0004
+	D_DMAReq = 0x008a
+	DD_NAM = 0x001f
+	DD_OPT = 0x003f
+	DD_OWN = 0x000b
+	DD_RES = 0x0013
+	DD_SIZ = 0x0015
+	DD_SPT = 0x0011
+	DD_TKS = 0x0003
+	DD_TOT = 0x0000
+	D_DWSrvID = 0x0010
+	D_DWStat = 0x000e
+	D_DWSubAddr = 0x000c
+	D_ErrCod = 0x0033
+	D_ErrRst = 0x00ee
+	D_FIRQ = 0x00f6
+	D_Flip0 = 0x00a9
+	D_Flip1 = 0x00ab
+	D_FRQER = 0x0093
+	D_GPoll = 0x00b4
+	D_HINIT = 0x0090
+	D_HOFF0 = 0x009f
+	D_Hour = 0x002b
+	D_Init = 0x0024
+	DIR_ = 0x0080
+	DIR_FD = 0x001d
+	DIR_NM = 0x0000
+	D_IRQ = 0x00f8
+	D_IRQER = 0x0092
+	D_IRQS = 0x00af
+	DIR_SZ = 0x0020
+	D_MemSz = 0x00a3
+	D_Min = 0x002c
+	D_ModDAT = 0x005a
+	D_ModDir = 0x0044
+	D_ModEnd = 0x0058
+	D_Month = 0x0029
+	D_MotOn = 0x0032
+	D_NMI = 0x00fc
+	DNS_DTD = 0x0002
+	DNS_FM = 0x0000
+	DNS_FM0 = 0x0000
+	DNS_MFM0 = 0x0004
+	DNS_MFM = 0x0001
+	DNS_STD = 0x0000
+	D_Pipe = 0x0061
+	D_Poll = 0x0026
+	D_PolTbl = 0x0082
+	D_PrcDBT = 0x0048
+	D_Proc = 0x0050
+	D_PthDBT = 0x0088
+	D_QCnt = 0x007c
+	D_QIRQ = 0x003f
+	D_Quick = 0x003e
+	D_RESV1 = 0x0096
+	D_RESV2 = 0x0097
+	D_RESV3 = 0x009b
+	D_Sec = 0x002d
+	D_Slice = 0x002f
+	D_Speed = 0x00a0
+	D_SProcQ = 0x0056
+	D_SSTskN = 0x00a4
+	D_SvcIRQ = 0x00ce
+	D_SWI = 0x00fa
+	D_SWI2 = 0x00f4
+	D_SWI3 = 0x00f2
+	D_SWPage = 0x0003
+	D_SysDAT = 0x004c
+	D_SysDis = 0x00c2
+	D_SysIRQ = 0x00c4
+	D_SysMem = 0x004e
+	D_SysPrc = 0x004a
+	D_SysStk = 0x00cc
+	D_SysSvc = 0x00c0
+	D_SysTsk = 0x00d0
+	D_SysVec = 0x00f0
+	D_Task1N = 0x003d
+	D_Tasks = 0x0020
+	DT_CDFM = 0x0005
+	D_Tenths = 0x003c
+	D_Tick = 0x002e
+	D_Time = 0x0028
+	D_TIMLS = 0x0095
+	D_TIMMS = 0x0094
+	D_TINIT = 0x0091
+	D_TkCnt = 0x0035
+	D_TmpDAT = 0x0022
+	DT_NFM = 0x0004
+	DT_Pipe = 0x0002
+	DT_RBF = 0x0001
+	DT_RFM = 0x0006
+	DT_SBF = 0x0003
+	DT_SCF = 0x0000
+	D_TskIPt = 0x00a1
+	D_TSlice = 0x0030
+	D_UsrDis = 0x00c8
+	D_UsrIRQ = 0x00ca
+	D_UsrSvc = 0x00c6
+	D_VIDMD = 0x0098
+	D_VIDRS = 0x0099
+	D_VIRQ = 0x00ad
+	D_VOFF0 = 0x009e
+	D_VOFF1 = 0x009d
+	D_VOFF2 = 0x009c
+	D_WDAddr = 0x0000
+	D_WDBtDr = 0x0002
+	D_WProcQ = 0x0054
+	D_XFIRQ = 0x00e6
+	D_XIRQ = 0x00e8
+	D_XNMI = 0x00ec
+	D_XSWI = 0x00ea
+	D_XSWI2 = 0x00e4
+	D_XSWI3 = 0x00e2
+	D_Year = 0x0028
+	E_Alias = 0x00c7
+	E_ArrOvf = 0x0049
+	E_BadBuf = 0x00c2
+	E_BMCRC = 0x00e8
+	E_BMHP = 0x00ec
+	E_BMID = 0x00cd
+	E_BMode = 0x00cb
+	E_BNam = 0x00eb
+	E_BPAddr = 0x00d2
+	E_BPNam = 0x00d7
+	E_BPNum = 0x00c9
+	E_BPrcID = 0x00e0
+	E_BTyp = 0x00f9
+	E_BufSiz = 0x00bf
+	E_Bug = 0x00be
+	E_CEF = 0x00da
+	E_CRC = 0x00f3
+	E_DeadLk = 0x00fe
+	E_DelSP = 0x00df
+	E_DevBsy = 0x00fa
+	E_DevOvf = 0x00cc
+	E_DIDC = 0x00fb
+	E_DimLrg = 0x0019
+	E_DirFul = 0x00ce
+	E_DivZer = 0x002d
+	E_Dn = 0x00c6
+	E_DNE = 0x00ee
+	E_EndQou = 0x0029
+	E_EOF = 0x00d3
+	E_ExcVrb = 0x000b
+	E_FltOvf = 0x0032
+	E_FNA = 0x00d6
+	E_Full = 0x00f8
+	E_HangUp = 0x00dc
+	E_IBA = 0x00db
+	E_IChRef = 0x000e
+	E_ICoord = 0x00bd
+	E_ICOvf = 0x000d
+	E_IForkP = 0x00e6
+	E_IllA = 0x0043
+	E_IllArg = 0x00bb
+	E_IllCmd = 0x00c0
+	E_IllCnt = 0x0044
+	E_IllDec = 0x0048
+	E_IllDim = 0x0015
+	E_IllExp = 0x0047
+	E_IllFOR = 0x0046
+	E_IllInp = 0x003d
+	E_IllIVr = 0x004d
+	E_IllLit = 0x0016
+	E_IllMod = 0x000f
+	E_IllNum = 0x0010
+	E_IllOpd = 0x0012
+	E_IllOpr = 0x0013
+	E_IllPNm = 0x0040
+	E_IllPrf = 0x0011
+	E_IllRet = 0x0017
+	E_IllRFN = 0x0014
+	E_IllSfx = 0x0018
+	E_IllStC = 0x000c
+	E_IOConv = 0x003c
+	E_IOFRpt = 0x003e
+	E_IOFSyn = 0x003f
+	E_IOMism = 0x003a
+	E_IONum = 0x003b
+	E_IPrcID = 0x00e0
+	E_ISWI = 0x00e3
+	E_IWDef = 0x00c3
+	E_IWTyp = 0x00b7
+	E_KwnMod = 0x00e7
+	E_LinLrg = 0x001a
+	E_LnComp = 0x0033
+	E_Lock = 0x00fc
+	E_MemFul = 0x00cf
+	E_MFull = 0x0020
+	E_MltLin = 0x004b
+	E_MltVar = 0x004c
+	E_MNF = 0x00dd
+	E_ModBsy = 0x00d1
+	E_MulPrc = 0x002c
+	E_NEMod = 0x00ea
+	E_NES = 0x00d5
+	E_NFont = 0x00b9
+	E_NoAssg = 0x001b
+	E_NoChld = 0x00e2
+	E_NoComa = 0x001d
+	E_NoData = 0x004f
+	E_NoDim = 0x001e
+	E_NoDO = 0x001f
+	E_NoGoto = 0x0021
+	E_NoLPar = 0x0022
+	E_NoLRef = 0x0023
+	E_NonRcO = 0x0042
+	E_NoOprd = 0x0024
+	E_NoPath = 0x001c
+	E_NoRAM = 0x00ed
+	E_NoRout = 0x0030
+	E_NoRPar = 0x0025
+	E_NoTask = 0x00ef
+	E_NoTHEN = 0x0026
+	E_NoTO = 0x0027
+	E_NotRdy = 0x00f6
+	E_NoVRef = 0x0028
+	E_ParmEr = 0x0038
+	E_PNNF = 0x00d8
+	E_Poll = 0x00ca
+	E_PrcAbt = 0x00e4
+	E_PrcFul = 0x00e5
+	E_PthFul = 0x00c8
+	E_Read = 0x00f4
+	E_Sect = 0x00f1
+	E_Seek = 0x00f7
+	E_SeekRg = 0x004e
+	E_Share = 0x00fd
+	E_SLF = 0x00d9
+	E_StkOvf = 0x00ba
+	E_StrOvf = 0x002f
+	E_SubLrg = 0x002a
+	E_SubOvf = 0x0035
+	E_SubRng = 0x0037
+	E_SubUnd = 0x0036
+	E_SysOvf = 0x0039
+	E_TblFul = 0x00c1
+	E_TypMis = 0x002e
+	E_UndLin = 0x004a
+	E_UndVar = 0x0031
+	E_Unit = 0x00f0
+	E_UnkPrc = 0x002b
+	E_UnkSvc = 0x00d0
+	E_UnkSym = 0x000a
+	E_UnmCnt = 0x0045
+	E_Up = 0x00c5
+	E_USigP = 0x00e9
+	E_ValRng = 0x0034
+	E_WADef = 0x00b8
+	E_WP = 0x00f2
+	E_Write = 0x00f5
+	E_WrSub = 0x0041
+	E_WUndef = 0x00c4
+	EXEC_ = 0x0004
+	F_Alarm = 0x001e
+	F_AlHRAM = 0x0053
+	F_All64 = 0x0030
+	F_AllBit = 0x0013
+	F_AllImg = 0x003a
+	F_AllPrc = 0x004b
+	F_AllRAM = 0x0039
+	F_AllTsk = 0x003f
+	F_AProc = 0x002c
+	F_Boot = 0x0035
+	F_BtMem = 0x0036
+	F_Chain = 0x0005
+	F_ClrBlk = 0x0050
+	F_CmpNam = 0x0011
+	F_CpyMem = 0x001b
+	F_CRC = 0x0017
+	F_CRCMod = 0x0055
+	F_DATLog = 0x0044
+	F_DATTmp = 0x0045
+	F_Debug = 0x0023
+	F_DelBit = 0x0014
+	F_DelImg = 0x003b
+	F_DelPrc = 0x004c
+	F_DelRAM = 0x0051
+	F_DelTsk = 0x0040
+	F_ELink = 0x004d
+	F_Exit = 0x0006
+	F_Find64 = 0x002f
+	F_FModul = 0x004e
+	F_Fork = 0x0003
+	F_FreeHB = 0x003e
+	F_FreeLB = 0x003d
+	F_GBlkMp = 0x0019
+	F_GCMDir = 0x0052
+	F_GModDr = 0x001a
+	F_GPrDsc = 0x0018
+	F_GProcP = 0x0037
+	F_Icpt = 0x0009
+	F_ID = 0x000c
+	F_IODel = 0x0033
+	F_IOQu = 0x002b
+	F_IRQ = 0x002a
+	F_LDABX = 0x0049
+	F_LDAXY = 0x0046
+	F_LDAXYP = 0x0047
+	F_LDDDXY = 0x0048
+	F_Link = 0x0000
+	F_Load = 0x0001
+	F_MapBlk = 0x004f
+	F_Mem = 0x0007
+	F_Move = 0x0038
+	F_NMLink = 0x0021
+	F_NMLoad = 0x0022
+	F_NProc = 0x002d
+	F_NVRAM = 0x0071
+	F_PErr = 0x000f
+	F_PrsNam = 0x0010
+	F_ReBoot = 0x0054
+	F_RegDmp = 0x0070
+	F_RelTsk = 0x0043
+	F_ResTsk = 0x0042
+	F_Ret64 = 0x0031
+	F_SchBit = 0x0012
+	F_Send = 0x0008
+	F_SetImg = 0x003c
+	F_SetTsk = 0x0041
+	F_Sleep = 0x000a
+	F_SLink = 0x0034
+	F_SPrior = 0x000d
+	F_SRqMem = 0x0028
+	F_SRtMem = 0x0029
+	F_SSpd = 0x000b
+	F_SSvc = 0x0032
+	F_SSWI = 0x000e
+	F_STABX = 0x004a
+	F_STime = 0x0016
+	F_SUser = 0x001c
+	F_TimAlm = 0x0026
+	F_Time = 0x0015
+	F_TPS = 0x0025
+	F_UnLink = 0x0002
+	F_UnLoad = 0x001d
+	F_VBlock = 0x0057
+	F_VIRQ = 0x0027
+	F_VModul = 0x002e
+	F_Wait = 0x0004
+	F_XTime = 0x0056
+	FD_ATT = 0x0000
+	FD_Creat = 0x000d
+	FD_DAT = 0x0003
+	FD_LNK = 0x0008
+	FD_LS1 = 0x00fb
+	FD_LS2 = 0x00fa
+	FD_OWN = 0x0001
+	FD_SEG = 0x0010
+	FD_SIZ = 0x0009
+	FDSL_A = 0x0000
+	FDSL_B = 0x0003
+	FDSL_S = 0x0005
+	FMT_DNS = 0x0002
+	FMT_SIDE = 0x0001
+	FMT_T0DN = 0x0020
+	FMT_TDNS = 0x0004
+	HW_Page = 0x0007
+	I_Attach = 0x0080
+	I_ChgDir = 0x0086
+	I_Close = 0x008f
+	I_Create = 0x0083
+	I_Delete = 0x0087
+	I_DeletX = 0x0090
+	I_Detach = 0x0081
+	I_Dup = 0x0082
+	I_GetStt = 0x008d
+	I_MakDir = 0x0085
+	I_Open = 0x0084
+	I_Read = 0x0089
+	I_ReadLn = 0x008b
+	I_Seek = 0x0088
+	I_SetStt = 0x008e
+	I_Write = 0x008a
+	I_WritLn = 0x008c
+	ISIZ_ = 0x0020
+	IT_ALF = 0x0017
+	IT_BAU = 0x0027
+	IT_BDC = 0x0035
+	IT_BGC = 0x0034
+	IT_BSE = 0x0024
+	IT_BSO = 0x0014
+	IT_BSP = 0x001b
+	IT_COL = 0x002c
+	IT_CPX = 0x0031
+	IT_CPY = 0x0032
+	IT_CYL = 0x0017
+	IT_D2P = 0x0028
+	IT_DEL = 0x001c
+	IT_DLO = 0x0015
+	IT_DNS = 0x0016
+	IT_DRV = 0x0013
+	IT_DTP = 0x0012
+	IT_DUP = 0x0020
+	IT_DVC = 0x0012
+	IT_EKO = 0x0016
+	IT_EOF = 0x001e
+	IT_EOR = 0x001d
+	IT_Exten = 0x0022
+	IT_FGC = 0x0033
+	IT_ILV = 0x001f
+	IT_INT = 0x0022
+	IT_LLDRV = 0x0028
+	IT_MPI = 0x002a
+	IT_NUL = 0x0018
+	IT_OFS = 0x0026
+	IT_OVF = 0x0025
+	IT_PAG = 0x001a
+	IT_PAR = 0x0026
+	IT_PAU = 0x0019
+	IT_PSC = 0x0021
+	IT_QUT = 0x0023
+	IT_ROW = 0x002d
+	IT_RPR = 0x001f
+	IT_RWC = 0x0028
+	IT_SAS = 0x0020
+	IT_SCT = 0x001b
+	IT_SID = 0x0019
+	IT_SOFF1 = 0x0025
+	IT_SOFF2 = 0x0026
+	IT_SOFF3 = 0x0027
+	IT_SToff = 0x0024
+	IT_STP = 0x0014
+	IT_STY = 0x0030
+	IT_T0S = 0x001d
+	IT_TFM = 0x0021
+	IT_TYP = 0x0015
+	IT_UPC = 0x0013
+	IT_VAL = 0x002f
+	IT_VFY = 0x001a
+	IT_WND = 0x002e
+	IT_WPC = 0x0025
+	IT_XOFF = 0x002b
+	IT_XON = 0x002a
+	IT_XTYP = 0x002e
+	L3_Blks = 0x00ff
+	L3_End = 0x00ff
+	L3_RBF = 0x00ff
+	L3_SCF = 0x00ff
+	L3_Size = 0x00ff
+	L3_Start = 0x00ff
+	M_DTyp = 0x0012
+	M_Exec = 0x0009
+	M_FMgr = 0x0009
+	M_ID = 0x0000
+	M_ID1 = 0x0087
+	M_ID12 = 0x87cd
+	M_ID2 = 0x00cd
+	M_IDSize = 0x0009
+	M_Mem = 0x000b
+	M_Mode = 0x000d
+	M_Name = 0x0004
+	M_Opt = 0x0011
+	M_Parity = 0x0008
+	M_PDev = 0x000b
+	M_Port = 0x000e
+	M_Revs = 0x0007
+	M_Size = 0x0002
+	M_Type = 0x0006
+	MD_ESize = 0x0008
+	MD_Link = 0x0006
+	MD_MBSiz = 0x0002
+	MD_MPDAT = 0x0000
+	MD_MPtr = 0x0004
+	MPI_Slct = 0xff7f
+	MPI_Slot = 0x0003
+	OS9_D = 0x0001
+	P_Age = 0x000b
+	P_Alarm = 0x00c3
+	P_CID = 0x0003
+	P_DatBeg = 0x00bd
+	P_DATImg = 0x0040
+	P_DeadLk = 0x001e
+	P_DIO = 0x0020
+	P_FCalls = 0x00b5
+	P_ICalls = 0x00b9
+	P_ID = 0x0000
+	P_IOQN = 0x0010
+	P_IOQP = 0x000f
+	P_Links = 0x0080
+	P_NIO = 0x00a0
+	P_PagCnt = 0x0007
+	P_Path = 0x0030
+	P_PID = 0x0001
+	P_PModul = 0x0011
+	P_Prior = 0x000a
+	P_Queue = 0x000d
+	P_SelP = 0x00ac
+	P_SID = 0x0002
+	P_SigDat = 0x001c
+	P_Signal = 0x0019
+	P_SigVec = 0x001a
+	P_Size = 0x0200
+	P_SP = 0x0004
+	P_Stack = 0x0200
+	P_State = 0x000c
+	P_STicks = 0x00b1
+	P_SWI = 0x0013
+	P_SWI2 = 0x0015
+	P_SWI3 = 0x0017
+	P_Task = 0x0006
+	P_TimBeg = 0x00c0
+	P_User = 0x0008
+	P_UTicks = 0x00ad
+	PD_ALF = 0x0025
+	PD_ATT = 0x0033
+	PD_BAU = 0x0035
+	PD_BSE = 0x0032
+	PD_BSO = 0x0022
+	PD_BSP = 0x0029
+	PD_BUF = 0x0008
+	PD_CNT = 0x0002
+	PD_CP = 0x000b
+	PD_CPR = 0x0005
+	PD_CYL = 0x0025
+	PD_D2P = 0x0036
+	PD_DCP = 0x003a
+	PD_DEL = 0x002a
+	PD_DEV = 0x0003
+	PD_DFD = 0x0037
+	PD_DLO = 0x0023
+	PD_DNS = 0x0024
+	PD_DRV = 0x0021
+	PD_DSK = 0x001c
+	PD_DTB = 0x001e
+	PD_DTP = 0x0020
+	PD_DUP = 0x002e
+	PD_DV2 = 0x000a
+	PD_DVT = 0x003e
+	PD_EKO = 0x0024
+	PD_EOF = 0x002c
+	PD_EOR = 0x002b
+	PD_ERR = 0x003a
+	PD_Exten = 0x0030
+	PD_FD = 0x0034
+	PD_FST = 0x000a
+	PD_ILV = 0x002d
+	PD_INT = 0x0030
+	PD_MAX = 0x000d
+	PD_MIN = 0x000f
+	PD_MOD = 0x0001
+	PD_NUL = 0x0026
+	PD_OPT = 0x0020
+	PD_OVF = 0x0033
+	PD_PAG = 0x0028
+	PD_PAR = 0x0034
+	PD_PAU = 0x0027
+	PD_PD = 0x0000
+	PD_PLP = 0x003d
+	PD_PSC = 0x002f
+	PD_PST = 0x003f
+	PD_QUT = 0x0031
+	PD_RAW = 0x000c
+	PD_RGS = 0x0006
+	PD_RPR = 0x002d
+	PD_SAS = 0x002e
+	PD_SBL = 0x0013
+	PD_SBP = 0x0016
+	PD_SCT = 0x0029
+	PD_SID = 0x0027
+	PD_SIZ = 0x000f
+	PD_SMF = 0x000a
+	PD_SSZ = 0x0019
+	PD_STM = 0x0012
+	PD_SToff = 0x0032
+	PD_STP = 0x0022
+	PD_STS = 0x0010
+	PD_T0S = 0x002b
+	PD_TBL = 0x003b
+	PD_TFM = 0x002f
+	PD_TYP = 0x0023
+	PD_UPC = 0x0021
+	PD_VFY = 0x0028
+	PD_XOFF = 0x0039
+	PD_XON = 0x0038
+	PE_Confl = 0x0005
+	PE_FilNm = 0x0020
+	PE_HiLck = 0x000c
+	PE_Lock = 0x0007
+	PE_LoLck = 0x0008
+	PE_NxFil = 0x0003
+	PE_Owner = 0x0014
+	PE_PDptr = 0x0001
+	PE_PE = 0x0000
+	PE_Prior = 0x0016
+	PE_Req = 0x0015
+	PE_SigID = 0x0018
+	PE_SigSg = 0x0017
+	PE_TmOut = 0x0012
+	PE_Wait = 0x0010
+	PEXEC_ = 0x0020
+	PREAD_ = 0x0008
+	PST_DCD = 0x0001
+	PWRIT_ = 0x0010
+	Q_FLIP = 0x0002
+	Q_MAP = 0x0009
+	Q_MASK = 0x0003
+	Q_POLL = 0x0000
+	Q_PRTY = 0x0008
+	Q_SERV = 0x0004
+	Q_STAT = 0x0006
+	R_A = 0x0001
+	R_B = 0x0002
+	R_CC = 0x0000
+	R_D = 0x0001
+	R_DP = 0x0003
+	R_PC = 0x000a
+	R_Size = 0x000c
+	R_U = 0x0008
+	R_X = 0x0004
+	R_Y = 0x0006
+	RBF_D = 0x0001
+	READ_ = 0x0001
+	S_Abort = 0x0002
+	S_Alarm = 0x0005
+	S_HUP = 0x0004
+	S_Intrpt = 0x0003
+	S_Kill = 0x0000
+	S_Wake = 0x0001
+	S_Window = 0x0004
+	SCF_D = 0x0001
+	SHARE_ = 0x0040
+	SS_AAGBf = 0x0080
+	SS_AlfaS = 0x001c
+	SS_ARAM = 0x00ca
+	SS_Attr = 0x001c
+	SS_BlkRd = 0x0014
+	SS_BlkWr = 0x0015
+	SS_Break = 0x001d
+	SS_CDRel = 0x009c
+	SS_CDSig = 0x009c
+	SS_CDSta = 0x009c
+	SS_Close = 0x002a
+	SS_ComSt = 0x0028
+	SS_Cursr = 0x0025
+	SS_DCmd = 0x000d
+	SS_DevNm = 0x000e
+	SS_DirEnt = 0x0020
+	SS_DRAM = 0x00cb
+	SS_DRead = 0x0080
+	SS_DrvCh = 0x0086
+	SS_DSize = 0x0026
+	SS_DStat = 0x0012
+	SS_DWrit = 0x0080
+	SS_ECC = 0x00b0
+	SS_ELog = 0x0019
+	SS_EOF = 0x0006
+	SS_FClr = 0x0081
+	SS_FD = 0x000f
+	SS_FDInf = 0x0020
+	SS_Feed = 0x0009
+	SS_Fill = 0x00a0
+	SS_Frz = 0x000a
+	SS_FSet = 0x00c7
+	SS_FSig = 0x002c
+	SS_Hist = 0x00a1
+	SS_HngUp = 0x002b
+	SS_Joy = 0x0013
+	SS_KClr = 0x00c9
+	SS_KSet = 0x00c8
+	SS_KySns = 0x0027
+	SS_Link = 0x0007
+	SS_Lock = 0x0011
+	SS_MOFF = 0x0082
+	SS_MoTim = 0x0083
+	SS_Mount = 0x0082
+	SS_MpGPB = 0x0084
+	SS_Open = 0x0029
+	SS_Opt = 0x0000
+	SS_Pos = 0x0005
+	SS_RdNet = 0x0083
+	SS_Ready = 0x0001
+	SS_Relea = 0x001b
+	SS_Reset = 0x0003
+	SS_Reten = 0x0016
+	SS_RFM = 0x0018
+	SS_RsBit = 0x001e
+	SS_ScSiz = 0x0026
+	SS_SDRD = 0x0084
+	SS_SDWRT = 0x0084
+	SS_SetMF = 0x0024
+	SS_Size = 0x0002
+	SS_Sleep = 0x0085
+	SS_SLGBf = 0x0081
+	SS_Slots = 0x0085
+	SS_SPT = 0x000b
+	SS_SQD = 0x000c
+	SS_SSig = 0x001a
+	SS_Ticks = 0x0010
+	SS_ULink = 0x0008
+	SS_UnFrz = 0x0081
+	SS_VarSect = 0x0012
+	SS_VCtr = 0x0080
+	SS_VSig = 0x0081
+	SS_WFM = 0x0017
+	SS_WTrk = 0x0004
+	STP_12ms = 0x0002
+	STP_20ms = 0x0001
+	STP_30ms = 0x0000
+	STP_6ms = 0x0003
+	TYP_256 = 0x0000
+	TYP_3 = 0x0001
+	TYP_5 = 0x0000
+	TYP_512 = 0x0004
+	TYP_CCF = 0x0020
+	TYP_FLP = 0x0000
+	TYPH_1024 = 0x0002
+	TYPH_2048 = 0x0003
+	TYPH_256 = 0x0000
+	TYPH_512 = 0x0001
+	TYP_HARD = 0x0080
+	TYPH_DRSV = 0x000c
+	TYPH_DSQ = 0x0010
+	TYPH_SSM = 0x0003
+	TYP_NCCF = 0x0000
+	TYP_NSF = 0x0040
+	TYP_SBO = 0x0002
+	TYP_SOF = 0x0000
+	UPDAT_ = 0x0003
+	V_DESC = 0x0004
+	V_DRIV = 0x0000
+	V_DRIVEX = 0x0009
+	V_FMGR = 0x0006
+	V_FMGREX = 0x000b
+	V_STAT = 0x0002
+	V_USRS = 0x0008
+	V_BMapSz = 0x001c
+	V_BMB = 0x0017
+	V_BUSY = 0x0004
+	V_DEV2 = 0x0009
+	V_DiskID = 0x001a
+	VD_OFS = 0x0061
+	VD_STP = 0x0060
+	V_ERR = 0x000e
+	V_FileHd = 0x0018
+	Vi_Cnt = 0x0000
+	Vi_IFlag = 0x0001
+	V_INTR = 0x000b
+	Vi_PkSz = 0x0005
+	Vi_Rst = 0x0002
+	Vi_Stat = 0x0004
+	V_KANJI = 0x0011
+	V_KBUF = 0x0012
+	V_LINE = 0x0007
+	V_LPRC = 0x0003
+	V_MapSct = 0x001d
+	V_MODADR = 0x0014
+	V_NDRV = 0x0006
+	V_PAGE = 0x0000
+	V_PAUS = 0x0008
+	V_PCHR = 0x000d
+	V_PDLHd = 0x0016
+	V_PORT = 0x0001
+	V_QUIT = 0x000c
+	V_ResBit = 0x001e
+	V_RSV = 0x0018
+	V_SCF = 0x001d
+	V_ScOfst = 0x0020
+	V_ScTkOf = 0x001f
+	V_TkOfst = 0x0021
+	V_TRAK = 0x0015
+	V_TYPE = 0x0006
+	V_USER = 0x0006
+	V_WAKE = 0x0005
+	V_XOFF = 0x0010
+	V_XON = 0x000f
+	WRITE_ = 0x0002
+}
+
+var A_AciaP word
+var A_ModP word
+var A_TermV word
+var A_V1 word
+var A_V2 word
+var A_V3 word
+var A_V4 word
+var A_V5 word
+var A_V6 word
+var A_V7 word
+var Bt_Block word
+var Bt_Flag word
+var Bt_Offst word
+var Bt_Sec word
+var Bt_Size word
+var Bt_Start word
+var Bt_Track word
+var C_BELL word
+var C_BSP word
+var C_Clsall word
+var C_Clsgr word
+var C_COMA word
+var C_CR word
+var C_DELETE word
+var C_DEL word
+var C_DWN word
+var C_EL word
+var C_EOF word
+var C_FORM word
+var C_HOME word
+var C_INSERT word
+var C_INTR word
+var C_LFT word
+var C_LF word
+var C_NULL word
+var COCO_D word
+var C_PAUS word
+var C_PERD word
+var C_PLINE word
+var C_QUIT word
+var C_RARR word
+var C_RGT word
+var C_RPET word
+var C_RPRT word
+var C_SHRARR word
+var C_SI word
+var C_SO word
+var C_SPAC word
+var C_UP word
+var C_XOFF word
+var C_XON word
+var D_AltIRQ word
+var D_AProcQ word
+var DAT_Addr word
+var DAT_BlCt word
+var DAT_BlMx word
+var DAT_BlSz word
+var DAT_BMSz word
+var DAT_Free word
+var DAT_ImSz word
+var DAT_Regs word
+var DAT_Task word
+var DAT_TkCt word
+var DAT_WrEn word
+var DAT_WrPr word
+var D_BlkMap word
+var D_Boot word
+var D_BORDR word
+var D_BtBug word
+var D_BTHI word
+var D_BTLO word
+var D_BtPtr word
+var D_BtSz word
+var D_CBStrt word
+var D_CCMem word
+var D_CCStk word
+var D_CldRes word
+var D_Clock2 word
+var D_Clock word
+var D_CLTb word
+var D_COCOXT word
+var D_Crash word
+var D_CRC word
+var DD_ATT word
+var D_Daywk word
+var D_Day word
+var D_DbgMem word
+var DD_BIT word
+var DD_BSZ word
+var DD_BT word
+var DD_DAT word
+var DD_DIR word
+var DD_DSK word
+var D_DevTbl word
+var DD_FMT word
+var DD_MAP word
+var D_DMAReq word
+var DD_NAM word
+var DD_OPT word
+var DD_OWN word
+var DD_RES word
+var DD_SIZ word
+var D_DskTmr word
+var DD_SPT word
+var DD_TKS word
+var DD_TOT word
+var D_DWSrvID word
+var D_DWStat word
+var D_DWSubAddr word
+var D_ErrCod word
+var D_ErrRst word
+var D_FIRQ word
+var D_Flip0 word
+var D_Flip1 word
+var D_FMBM word
+var D_FRQER word
+var D_GPoll word
+var D_GSTA word
+var D_HINIT word
+var D_HOFF0 word
+var D_Hour word
+var D_Init word
+var D_INIT word
+var D_IOMH word
+var D_IOML word
+var DIR_FD word
+var DIR_NM word
+var D_IRQER word
+var D_IRQS word
+var D_IRQ word
+var DIR_SZ word
+var DIR_ word
+var D_KbdSta word
+var D_MDREG word
+var D_MemSz word
+var D_Min word
+var D_MLIM word
+var D_ModDAT word
+var D_ModDir word
+var D_ModEnd word
+var D_Month word
+var D_MotOn word
+var D_NMI word
+var DNS_DTD word
+var DNS_FM0 word
+var DNS_FM word
+var DNS_MFM0 word
+var DNS_MFM word
+var DNS_STD word
+var D_Pipe word
+var D_Poll word
+var D_PolTbl word
+var D_PrcDBT word
+var D_Proc word
+var D_PSTA word
+var D_PthDBT word
+var D_QCnt word
+var D_QIRQ word
+var D_Quick word
+var D_READ word
+var D_RESV1 word
+var D_RESV2 word
+var D_RESV3 word
+var D_Sec word
+var D_Slice word
+var D_Speed word
+var D_SProcQ word
+var D_SSTskN word
+var D_SvcIRQ word
+var D_SWI2 word
+var D_SWI3 word
+var D_SWI word
+var D_SWPage word
+var D_SysDAT word
+var D_SysDis word
+var D_SysIRQ word
+var D_SysMem word
+var D_SysPrc word
+var D_SysStk word
+var D_SysSvc word
+var D_SysTsk word
+var D_SysVec word
+var D_Task1N word
+var D_Tasks word
+var DT_CDFM word
+var D_Tenths word
+var D_TERM word
+var D_Tick word
+var D_Time word
+var D_TIMLS word
+var D_TIMMS word
+var D_TINIT word
+var D_TkCnt word
+var D_TmpDAT word
+var DT_NFM word
+var DT_Pipe word
+var DT_RBF word
+var DT_RFM word
+var DT_SBF word
+var DT_SCF word
+var D_TSec word
+var D_TskIPt word
+var D_TSlice word
+var D_URtoSs word
+var D_UsrDis word
+var D_UsrIRQ word
+var D_UsrSvc word
+var D_VIDMD word
+var D_VIDRS word
+var D_VIRQ word
+var D_VOFF0 word
+var D_VOFF1 word
+var D_VOFF2 word
+var D_WDAddr word
+var D_WDBtDr word
+var D_WProcQ word
+var D_WRIT word
+var D_XFIRQ word
+var D_XIRQ word
+var D_XNMI word
+var D_XSWI2 word
+var D_XSWI3 word
+var D_XSWI word
+var D_Year word
+var E_Alias word
+var E_ArrOvf word
+var E_BadBuf word
+var E_BMCRC word
+var E_BMHP word
+var E_BMID word
+var E_BMode word
+var E_BNam word
+var E_BPAddr word
+var E_BPNam word
+var E_BPNum word
+var E_BPrcID word
+var E_BTyp word
+var E_BufSiz word
+var E_Bug word
+var E_CEF word
+var E_CRC word
+var E_DeadLk word
+var E_DelSP word
+var E_DevBsy word
+var E_DevOvf word
+var E_DIDC word
+var E_DimLrg word
+var E_DirFul word
+var E_DivZer word
+var E_DNE word
+var E_Dn word
+var E_EndQou word
+var E_EOF word
+var E_ExcVrb word
+var E_FltOvf word
+var E_FNA word
+var E_Full word
+var E_HangUp word
+var E_IBA word
+var E_IChRef word
+var E_ICoord word
+var E_ICOvf word
+var E_IForkP word
+var E_IllArg word
+var E_IllA word
+var E_IllCmd word
+var E_IllCnt word
+var E_IllDec word
+var E_IllDim word
+var E_IllExp word
+var E_IllFOR word
+var E_IllInp word
+var E_IllIVr word
+var E_IllLit word
+var E_IllMod word
+var E_IllNum word
+var E_IllOpd word
+var E_IllOpr word
+var E_IllPNm word
+var E_IllPrf word
+var E_IllRet word
+var E_IllRFN word
+var E_IllSfx word
+var E_IllStC word
+var E_IOConv word
+var E_IOFRpt word
+var E_IOFSyn word
+var E_IOMism word
+var E_IONum word
+var E_IPrcID word
+var E_ISWI word
+var E_IWDef word
+var E_IWTyp word
+var E_KwnMod word
+var E_LinLrg word
+var E_LnComp word
+var E_Lock word
+var E_MemFul word
+var E_MFull word
+var E_MltLin word
+var E_MltVar word
+var E_MNF word
+var E_ModBsy word
+var E_MulPrc word
+var E_NEMod word
+var E_NES word
+var E_NFont word
+var E_NoAssg word
+var E_NoChld word
+var E_NoComa word
+var E_NoData word
+var E_NoDim word
+var E_NoDO word
+var E_NoGoto word
+var E_NoLPar word
+var E_NoLRef word
+var E_NonRcO word
+var E_NoOprd word
+var E_NoPath word
+var E_NoRAM word
+var E_NoRout word
+var E_NoRPar word
+var E_NoTask word
+var E_NoTHEN word
+var E_NoTO word
+var E_NotRdy word
+var E_NoVRef word
+var E_ParmEr word
+var E_PNNF word
+var E_Poll word
+var E_PrcAbt word
+var E_PrcFul word
+var E_PthFul word
+var E_Read word
+var E_Sect word
+var E_SeekRg word
+var E_Seek word
+var E_Share word
+var E_SLF word
+var E_StkOvf word
+var E_StrOvf word
+var E_SubLrg word
+var E_SubOvf word
+var E_SubRng word
+var E_SubUnd word
+var E_SysOvf word
+var E_TblFul word
+var E_TypMis word
+var E_UndLin word
+var E_UndVar word
+var E_Unit word
+var E_UnkPrc word
+var E_UnkSvc word
+var E_UnkSym word
+var E_UnmCnt word
+var E_Up word
+var E_USigP word
+var E_ValRng word
+var E_WADef word
+var E_WP word
+var E_Write word
+var E_WrSub word
+var E_WUndef word
+var EXEC_ word
+var F_Alarm word
+var F_AlHRAM word
+var F_All64 word
+var F_AllBit word
+var F_AllImg word
+var F_AllPrc word
+var F_AllRAM word
+var F_AllTsk word
+var F_AProc word
+var F_Boot word
+var F_BtMem word
+var F_Chain word
+var F_ClrBlk word
+var F_CmpNam word
+var F_CpyMem word
+var F_CRCMod word
+var F_CRC word
+var F_DATLog word
+var F_DATTmp word
+var FD_ATT word
+var FD_Creat word
+var FD_DAT word
+var F_Debug word
+var F_DelBit word
+var F_DelImg word
+var F_DelPrc word
+var F_DelRAM word
+var F_DelTsk word
+var FD_LNK word
+var FD_LS1 word
+var FD_LS2 word
+var FD_OWN word
+var FD_SEG word
+var FD_SIZ word
+var FDSL_A word
+var FDSL_B word
+var FDSL_S word
+var F_ELink word
+var F_Exit word
+var F_Find64 word
+var F_FModul word
+var F_Fork word
+var F_FreeHB word
+var F_FreeLB word
+var F_GBlkMp word
+var F_GCMDir word
+var F_GModDr word
+var F_GPrDsc word
+var F_GProcP word
+var F_Icpt word
+var F_ID word
+var F_IODel word
+var F_IOQu word
+var F_IRQ word
+var F_LDABX word
+var F_LDAXYP word
+var F_LDAXY word
+var F_LDDDXY word
+var F_Link word
+var F_Load word
+var F_MapBlk word
+var F_Mem word
+var F_Move word
+var FMT_DNS word
+var FMT_SIDE word
+var FMT_T0DN word
+var FMT_TDNS word
+var F_NMLink word
+var F_NMLoad word
+var F_NProc word
+var F_NVRAM word
+var F_PErr word
+var F_PrsNam word
+var F_ReBoot word
+var F_RegDmp word
+var F_RelTsk word
+var F_ResTsk word
+var F_Ret64 word
+var F_SchBit word
+var F_Send word
+var F_SetImg word
+var F_SetTsk word
+var F_Sleep word
+var F_SLink word
+var F_SPrior word
+var F_SRqMem word
+var F_SRtMem word
+var F_SSpd word
+var F_SSvc word
+var F_SSWI word
+var F_STABX word
+var F_STime word
+var F_SUser word
+var F_TimAlm word
+var F_Time word
+var F_TPS word
+var F_UnLink word
+var F_UnLoad word
+var F_VBlock word
+var F_VIRQ word
+var F_VModul word
+var F_Wait word
+var F_XTime word
+var HW_Page word
+var I_Attach word
+var I_ChgDir word
+var I_Close word
+var I_Create word
+var I_Delete word
+var I_DeletX word
+var I_Detach word
+var I_Dup word
+var I_GetStt word
+var I_MakDir word
+var I_Open word
+var I_ReadLn word
+var I_Read word
+var I_Seek word
+var I_SetStt word
+var ISIZ_ word
+var IT_ALF word
+var IT_BAU word
+var IT_BDC word
+var IT_BGC word
+var IT_BSE word
+var IT_BSO word
+var IT_BSP word
+var IT_COL word
+var IT_CPX word
+var IT_CPY word
+var IT_CYL word
+var IT_D2P word
+var IT_DEL word
+var IT_DLO word
+var IT_DNS word
+var IT_DRV word
+var IT_DTP word
+var IT_DUP word
+var IT_DVC word
+var IT_EKO word
+var IT_EOF word
+var IT_EOR word
+var IT_Exten word
+var IT_FGC word
+var IT_ILV word
+var IT_INT word
+var IT_LLDRV word
+var IT_MPI word
+var IT_NUL word
+var IT_OFS word
+var IT_OVF word
+var IT_PAG word
+var IT_PAR word
+var IT_PAU word
+var IT_PSC word
+var IT_QUT word
+var IT_ROW word
+var IT_RPR word
+var IT_RWC word
+var IT_SAS word
+var IT_SCT word
+var IT_SID word
+var IT_SOFF1 word
+var IT_SOFF2 word
+var IT_SOFF3 word
+var IT_SToff word
+var IT_STP word
+var IT_STY word
+var IT_T0S word
+var IT_TFM word
+var IT_TYP word
+var IT_UPC word
+var IT_VAL word
+var IT_VFY word
+var IT_WND word
+var IT_WPC word
+var IT_XOFF word
+var IT_XON word
+var IT_XTYP word
+var I_Write word
+var I_WritLn word
+var L3_Blks word
+var L3_End word
+var L3_RBF word
+var L3_SCF word
+var L3_Size word
+var L3_Start word
+var MD_ESize word
+var MD_Link word
+var MD_MBSiz word
+var MD_MPDAT word
+var MD_MPtr word
+var M_DTyp word
+var M_Exec word
+var M_FMgr word
+var M_ID12 word
+var M_ID1 word
+var M_ID2 word
+var M_IDSize word
+var M_ID word
+var M_Mem word
+var M_Mode word
+var M_Name word
+var M_Opt word
+var M_Parity word
+var M_PDev word
+var MPI_Slct word
+var MPI_Slot word
+var M_Port word
+var M_Revs word
+var M_Size word
+var M_Type word
+var OS9_D word
+var P_ADDR word
+var P_Age word
+var P_Alarm word
+var P_CHAP word
+var P_CID word
+var PD_ALF word
+var P_DatBeg word
+var P_DATImg word
+var PD_ATT word
+var PD_BAU word
+var PD_BSE word
+var PD_BSO word
+var PD_BSP word
+var PD_BUF word
+var PD_CNT word
+var PD_CPR word
+var PD_CP word
+var PD_CYL word
+var PD_D2P word
+var PD_DCP word
+var PD_DEL word
+var PD_DEV word
+var PD_DFD word
+var PD_DLO word
+var PD_DNS word
+var PD_DRV word
+var PD_DSK word
+var PD_DTB word
+var PD_DTP word
+var PD_DUP word
+var PD_DV2 word
+var PD_DVT word
+var P_DeadLk word
+var PD_EKO word
+var PD_EOF word
+var PD_EOR word
+var PD_ERR word
+var PD_Exten word
+var PD_FD word
+var PD_FST word
+var PD_ILV word
+var PD_INT word
+var P_DIO word
+var PD_MAX word
+var PD_MIN word
+var PD_MOD word
+var PD_NUL word
+var PD_OPT word
+var PD_OVF word
+var PD_PAG word
+var PD_PAR word
+var PD_PAU word
+var PD_PD word
+var PD_PLP word
+var PD_PSC word
+var PD_PST word
+var PD_QUT word
+var PD_RAW word
+var PD_RGS word
+var PD_RPR word
+var PD_SAS word
+var PD_SBL word
+var PD_SBP word
+var PD_SCT word
+var PD_SID word
+var PD_SIZ word
+var PD_SMF word
+var PD_SSZ word
+var PD_STM word
+var PD_SToff word
+var PD_STP word
+var PD_STS word
+var PD_T0S word
+var PD_TBL word
+var PD_TFM word
+var PD_TYP word
+var PD_UPC word
+var PD_VFY word
+var PD_XOFF word
+var PD_XON word
+var PE_Confl word
+var PE_FilNm word
+var PE_HiLck word
+var PE_Lock word
+var PE_LoLck word
+var PE_NxFil word
+var PE_Owner word
+var PE_PDptr word
+var PE_PE word
+var PE_Prior word
+var PE_Req word
+var PE_SigID word
+var PE_SigSg word
+var PE_TmOut word
+var PE_Wait word
+var PEXEC_ word
+var P_FCalls word
+var P_ICalls word
+var P_ID word
+var P_IOQN word
+var P_IOQP word
+var P_Links word
+var P_NIO word
+var P_PagCnt word
+var P_Path word
+var P_PATH word
+var P_PID word
+var P_PModul word
+var P_Prior word
+var P_Queue word
+var PREAD_ word
+var P_SelP word
+var P_SID word
+var P_SigDat word
+var P_Signal word
+var P_SigVec word
+var P_Size word
+var P_SP word
+var P_Stack word
+var P_State word
+var PST_DCD word
+var P_STicks word
+var P_SWI2 word
+var P_SWI3 word
+var P_SWI word
+var P_Task word
+var P_TimBeg word
+var P_User word
+var P_UTicks word
+var PWRIT_ word
+var Q_FLIP word
+var Q_MAP word
+var Q_MASK word
+var Q_POLL word
+var Q_PRTY word
+var Q_SERV word
+var Q_STAT word
+var R_A word
+var RBF_D word
+var R_B word
+var R_CC word
+var R_DP word
+var R_D word
+var READ_ word
+var R_PC word
+var R_Size word
+var R_U word
+var R_X word
+var R_Y word
+var S_Abort word
+var S_Alarm word
+var SCF_D word
+var SHARE_ word
+var S_HUP word
+var S_Intrpt word
+var S_Kill word
+var SS_AAGBf word
+var SS_AlfaS word
+var SS_ARAM word
+var SS_Attr word
+var SS_BlkRd word
+var SS_BlkWr word
+var SS_Break word
+var SS_CDRel word
+var SS_CDSig word
+var SS_CDSta word
+var SS_Close word
+var SS_ComSt word
+var SS_Cursr word
+var SS_DCmd word
+var SS_DevNm word
+var SS_DirEnt word
+var SS_DRAM word
+var SS_DRead word
+var SS_DrvCh word
+var SS_DSize word
+var SS_DStat word
+var SS_DWrit word
+var SS_ECC word
+var SS_ELog word
+var SS_EOF word
+var SS_FClr word
+var SS_FDInf word
+var SS_FD word
+var SS_Feed word
+var SS_Fill word
+var SS_Frz word
+var SS_FSet word
+var SS_FSig word
+var SS_Hist word
+var SS_HngUp word
+var SS_Joy word
+var SS_KClr word
+var SS_KSet word
+var SS_KySns word
+var SS_Link word
+var SS_Lock word
+var SS_MOFF word
+var SS_MoTim word
+var SS_Mount word
+var SS_MpGPB word
+var SS_Open word
+var SS_Opt word
+var SS_Pos word
+var SS_RdNet word
+var SS_Ready word
+var SS_Relea word
+var SS_Reset word
+var SS_Reten word
+var SS_RFM word
+var SS_RsBit word
+var SS_ScSiz word
+var SS_SDRD word
+var SS_SDWRT word
+var SS_SetMF word
+var SS_Size word
+var SS_Sleep word
+var SS_SLGBf word
+var SS_Slots word
+var SS_SPT word
+var SS_SQD word
+var SS_SSig word
+var SS_Ticks word
+var SS_ULink word
+var SS_UnFrz word
+var SS_VarSect word
+var SS_VCtr word
+var SS_VSig word
+var SS_WFM word
+var SS_WTrk word
+var STP_12ms word
+var STP_20ms word
+var STP_30ms word
+var STP_6ms word
+var S_Wake word
+var S_Window word
+var TYP_256 word
+var TYP_3 word
+var TYP_512 word
+var TYP_5 word
+var TYP_CCF word
+var TYP_FLP word
+var TYPH_1024 word
+var TYPH_2048 word
+var TYPH_256 word
+var TYPH_512 word
+var TYP_HARD word
+var TYPH_DRSV word
+var TYPH_DSQ word
+var TYPH_SSM word
+var TYP_NCCF word
+var TYP_NSF word
+var TYP_SBO word
+var TYP_SOF word
+var UPDAT_ word
+var V_BMapSz word
+var V_BMB word
+var V_BUSY word
+var V_DESC word
+var V_DEV2 word
+var V_DiskID word
+var VD_OFS word
+var V_DRIVEX word
+var V_DRIV word
+var VD_STP word
+var V_ERR word
+var V_FileHd word
+var V_FMGREX word
+var V_FMGR word
+var Vi_Cnt word
+var Vi_IFlag word
+var V_INTR word
+var Vi_PkSz word
+var Vi_Rst word
+var Vi_Stat word
+var V_KANJI word
+var V_KBUF word
+var V_LINE word
+var V_LPRC word
+var V_MapSct word
+var V_MODADR word
+var V_NDRV word
+var V_PAGE word
+var V_PAUS word
+var V_PCHR word
+var V_PDLHd word
+var V_PORT word
+var V_QUIT word
+var V_ResBit word
+var V_RSV word
+var V_SCF word
+var V_ScOfst word
+var V_ScTkOf word
+var V_STAT word
+var V_TkOfst word
+var V_TRAK word
+var V_TYPE word
+var V_USER word
+var V_USRS word
+var V_WAKE word
+var V_XOFF word
+var V_XON word
+var WRITE_ word
