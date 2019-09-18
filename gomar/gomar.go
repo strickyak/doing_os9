@@ -81,6 +81,8 @@ import (
 	"flag"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -89,9 +91,9 @@ var flagTraceAfter = flag.Int64("t", 0, "")
 var flagMaxSteps = flag.Int64("maxsteps", 0, "")
 var flagBootImageFilename = flag.String("boot", "boot.mem", "")
 var flagDiskImageFilename = flag.String("disk", "../_disk_", "")
-
+var flagListings = flag.String("listings", "", "name:addr:listfile,...")
 var flagStressTest = flag.String("stress", "", "If nonempty, string to repeat")
-var flagStdin = flag.Bool("S", true, "")
+var flagListingsDir = flag.String("lists", "_lists", "")
 
 func StdinToKeystrokes(keystrokes chan<- byte) {
 	in := bufio.NewScanner(os.Stdin)
@@ -124,6 +126,17 @@ func main() {
 	log.SetFlags(0)
 	flag.Parse()
 
+	listings := make(map[string]string)
+	relocations := make(map[string]emu.Word)
+	for _, a := range strings.Split(*flagListings, ",") {
+		b := strings.Split(a, ":")
+		if len(b) == 3 {
+			reloc, _ := strconv.ParseUint(b[1], 16, 16)
+			relocations[b[0]] = emu.Word(reloc)
+			listings[b[0]] = b[2]
+		}
+	}
+
 	keystrokes := make(chan byte, 0)
 	go ProduceKeystrokes(keystrokes)
 
@@ -134,5 +147,8 @@ func main() {
 		MaxSteps:          *flagMaxSteps,
 		TraceAfter:        *flagTraceAfter,
 		Keystrokes:        keystrokes,
+		Listings:          listings,
+		Relocations:       relocations,
+		NewListingsDir:    *flagListingsDir,
 	})
 }
