@@ -275,6 +275,9 @@ func MapAddrWithMapping(logical Word, m Mapping) int {
 }
 
 func MapAddr(logical Word, quiet bool) int {
+	if logical >= 0xFE00 {
+		return (0x3F << 13) | int(logical)
+	}
 	var z int
 	if MmuEnable {
 		slot := byte(logical >> 13)
@@ -1166,11 +1169,11 @@ func DefaultCompleter(cp *Completion) {
 	if (ccreg & 1 /* carry bit indicates error */) != 0 {
 		errcode := GetBReg()
 		L("Kernel 0x%02x:%s: -> ERROR [%02x] %s", cp.service-1, name, errcode, DecodeOs9Error(errcode))
-		L("    regs: %s", regs())
+		L("    regs: %s  #%d", regs(), steps)
 		L("\t%s", ShowMmu())
 	} else {
 		L("Kernel 0x%02x:%s: -> okay", cp.service-1, name)
-		L("    regs: %s", regs())
+		L("    regs: %s  #%d", regs(), steps)
 		L("\t%s", ShowMmu())
 	}
 	// TODO: move this to the "rti" instruction, and track by SP.  (would be better with re-entrant code.)
@@ -1471,7 +1474,7 @@ func DecodeOs9Opcode(b byte) {
 		s, _ = SysCallNames[Word(b)]
 	}
 	L("Kernel 0x%02x:%s: {%s}\n", b, s, buf.String())
-	L("    regs: %s", regs())
+	L("    regs: %s  #%d", regs(), steps)
 	L("\t%s", ShowMmu())
 
 	cp := &Os9SysCallCompletion[pcreg+1]
@@ -1593,6 +1596,14 @@ func inkey(keystrokes <-chan byte) byte {
 	}
 }
 
+func printableChar(ch byte) string {
+	if ' ' <= ch && ch <= '~' {
+		return string(rune(ch))
+	} else {
+		return F("{%d}", ch)
+	}
+}
+
 // var remember_ch byte
 func irq(keystrokes <-chan byte) {
 	kbd_cycle++
@@ -1609,7 +1620,7 @@ func irq(keystrokes <-chan byte) {
 			kbd_ch = 0
 		}
 		// remember_ch = kbd_ch
-		L("HEY, getchar -> ch %x %c kbd_ch %x %c (kbd_cycle = %d)\n", ch, ch, kbd_ch, kbd_ch, kbd_cycle)
+		L("HEY, getchar -> ch %x %s kbd_ch %x %s (kbd_cycle = %d)\n", ch, printableChar(ch), kbd_ch, printableChar(kbd_ch), kbd_cycle)
 		// } else if (kbd_cycle & 7) < 4 {
 		// kbd_ch = remember_ch
 	} else {
@@ -1694,7 +1705,22 @@ func PutIOByte(a Word, b byte) {
 	default:
 		log.Panicf("HEY, UNKNOWN PutIOByte address: 0x%04x", a)
 
-	case 0xFFB0, 0xFFB1:
+	case 0xFFB0,
+		0xFFB1,
+		0xFFB2,
+		0xFFB3,
+		0xFFB4,
+		0xFFB5,
+		0xFFB6,
+		0xFFB7,
+		0xFFB8,
+		0xFFB9,
+		0xFFBA,
+		0xFFBB,
+		0xFFBC,
+		0xFFBD,
+		0xFFBE,
+		0xFFBF:
 		L("B0: palettes <- %0x2", b)
 
 	case 0xFFD9:
@@ -1745,13 +1771,15 @@ func PutIOByte(a Word, b byte) {
 		{
 			task := byte((a >> 3) & 1)
 			slot := byte(a & 7)
+			was := MmuMap[task][slot]
 			MmuMap[task][slot] = b & 0x3F
-			L("GIME MmuMap[%d][%d] <- %02x", task, slot, b)
-			if task == 0 && slot == 7 && b != 0x3F {
-				panic("bad MmuMap[0][7]")
-			}
-			MmuMap[0][7] = 0x3F // Never change slot 7.
-			MmuMap[1][7] = 0x3F // Never change slot 7.
+			L("GIME MmuMap[%d][%d] <- %02x  (was %02x)", task, slot, b, was)
+			// if task == 0 && slot == 7 && b != 0x3F {
+			// panic("bad MmuMap[0][7]")
+			// }
+			// yak ddt TODO
+			// MmuMap[0][7] = 0x3F // Never change slot 7.
+			// MmuMap[1][7] = 0x3F // Never change slot 7.
 		}
 
 	case 0xFF02:
@@ -2799,9 +2827,9 @@ func DumpAllMemoryPhys() {
 	L("\n#DumpAllMemoryPhys(\n")
 	n := len(mem)
 	for i = 0; i < n; i += 32 {
-		buf.Reset()
-		Z(&buf, "%06x: ", i)
-
+		if i&0x1FFF == 0 {
+			L("[%02x] %06x:", i>>13, i)
+		}
 		// Look ahead for something interesting on this line.
 		something := false
 		for j = 0; j < 32; j++ {
@@ -2816,6 +2844,8 @@ func DumpAllMemoryPhys() {
 			continue
 		}
 
+		buf.Reset()
+		Z(&buf, "%06x: ", i)
 		for j = 0; j < 32; j += 8 {
 			Z(&buf,
 				"%02x%02x %02x%02x %02x%02x %02x%02x  ",
@@ -4209,7 +4239,7 @@ func Main(cf *Config) {
 			if pcreg >= 0xFF00 {
 				log.Panicf("PC in page FF: 0x%x", pcreg)
 			}
-			if pcreg >= 0x0140 && pcreg < 0x04FF {
+			if pcreg >= 0x0200 && pcreg < 0x04FF {
 				log.Panicf("PC in sys data: 0x%x", pcreg)
 			}
 			if Level == 1 {
