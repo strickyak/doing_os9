@@ -352,6 +352,9 @@ func W(addr Word) Word {
 }
 
 func PeekWPhys(addr int) Word {
+	if addr+1 > len(mem) {
+		return 0
+	}
 	return Word(mem[addr])<<8 | Word(mem[addr+1])
 }
 
@@ -1175,6 +1178,13 @@ func DefaultCompleter(cp *Completion) {
 		L("Kernel 0x%02x:%s: -> okay", cp.service-1, name)
 		L("    regs: %s  #%d", regs(), steps)
 		L("\t%s", ShowMmu())
+		if cp.service-1 == 0x8B {
+			var buf bytes.Buffer
+			for i := Word(0); i < yreg; i++ {
+				buf.WriteRune(rune(PeekB(xreg + i)))
+			}
+			L("ReadLn returns: [%x] %q", buf.Len(), buf.String())
+		}
 	}
 	// TODO: move this to the "rti" instruction, and track by SP.  (would be better with re-entrant code.)
 }
@@ -1434,24 +1444,29 @@ func DecodeOs9Opcode(b byte) {
 	case 0x8C:
 		s = "I$WritLn : Write Line of ASCII Data"
 		Z(&buf, "%q ", EscapeStringThruCrOrMax(xreg, yreg))
-		if true || !hyp {
-			path_num := GetAReg()
-			proc := PeekW(D_Proc)
-			path := PeekB(proc + P_PATH + Word(path_num))
-			pathDBT := PeekW(D_PthDBT)
-			q := PeekW(pathDBT + (Word(path) >> 2))
-			Z(&buf, "path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
-			if q != 0 {
-				pd := q + 64*(Word(path)&3)
-				dev := PeekW(pd + PD_DEV)
-				Z(&buf, "pd=%x dev=%x ", pd, dev)
-				desc := PeekW(dev + V_DESC)
-				name := ModuleName(PeekW(dev + V_DESC))
-				Z(&buf, "desc=%x=%s ", desc, name)
-				if name == "Term" {
-					fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
+
+		if false {
+			if true || !hyp {
+				path_num := GetAReg()
+				proc := PeekW(D_Proc)
+				path := PeekB(proc + P_PATH + Word(path_num))
+				pathDBT := PeekW(D_PthDBT)
+				q := PeekW(pathDBT + (Word(path) >> 2))
+				Z(&buf, "path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
+				if q != 0 {
+					pd := q + 64*(Word(path)&3)
+					dev := PeekW(pd + PD_DEV)
+					Z(&buf, "pd=%x dev=%x ", pd, dev)
+					desc := PeekW(dev + V_DESC)
+					name := ModuleName(PeekW(dev + V_DESC))
+					Z(&buf, "desc=%x=%s ", desc, name)
+					if name == "Term" {
+						fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
+					}
 				}
 			}
+		} else {
+			fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
 		}
 
 	case 0x8D:
@@ -1596,6 +1611,7 @@ func inkey(keystrokes <-chan byte) byte {
 	}
 }
 
+/*
 func printableChar(ch byte) string {
 	if ' ' <= ch && ch <= '~' {
 		return string(rune(ch))
@@ -1603,6 +1619,7 @@ func printableChar(ch byte) string {
 		return F("{%d}", ch)
 	}
 }
+*/
 
 // var remember_ch byte
 func irq(keystrokes <-chan byte) {
@@ -1620,13 +1637,13 @@ func irq(keystrokes <-chan byte) {
 			kbd_ch = 0
 		}
 		// remember_ch = kbd_ch
-		L("HEY, getchar -> ch %x %s kbd_ch %x %s (kbd_cycle = %d)\n", ch, printableChar(ch), kbd_ch, printableChar(kbd_ch), kbd_cycle)
+		L("HEY, getchar -> ch %x %q kbd_ch %x %q (kbd_cycle = %d)\n", ch, string(rune((ch))), kbd_ch, string(rune((kbd_ch))), kbd_cycle)
 		// } else if (kbd_cycle & 7) < 4 {
 		// kbd_ch = remember_ch
 	} else {
 		kbd_ch = 0
 	}
-	L("HEY, irq -> kbd_ch %x %c (kbd_cycle = %d)\n", kbd_ch, kbd_ch, kbd_cycle)
+	L("HEY, irq -> kbd_ch %x %q (kbd_cycle = %d)\n", kbd_ch, string(rune(kbd_ch)), kbd_cycle)
 
 	interrupt(VECTOR_IRQ)
 	irqs_pending &= ^byte(IRQ_PENDING)
@@ -2871,9 +2888,11 @@ func DumpAllMemory() {
 	var buf bytes.Buffer
 	L("\n#DumpAllMemory(\n")
 	for i = 0; i < 0x10000; i += 32 {
-		buf.Reset()
-		Z(&buf, "%04x: ", i)
-
+		if (i & 0x1FFF) == 0 {
+			blk := (i >> 13) & 0x3F
+			blkPhys := MmuMap[MmuTask][blk]
+			L("[%x -> %02x] %06x", blk, blkPhys, MapAddr(Word(i), true))
+		}
 		// Look ahead for something interesting on this line.
 		something := false
 		for j = 0; j < 32; j++ {
@@ -2888,6 +2907,8 @@ func DumpAllMemory() {
 			continue
 		}
 
+		buf.Reset()
+		Z(&buf, "%04x: ", i)
 		for j = 0; j < 32; j += 8 {
 			Z(&buf,
 				"%02x%02x %02x%02x %02x%02x %02x%02x  ",
@@ -2909,6 +2930,15 @@ func DumpAllMemory() {
 }
 
 func DumpPageZero() {
+	mmut := MmuTask
+	MmuTask = 0
+	map00 := MmuMap[0][0]
+	MmuMap[0][0] = 0
+	defer func() {
+		MmuTask = mmut
+		MmuMap[0][0] = map00
+	}()
+
 	L("PageZero: FreeBitMap=%x:%x MemoryLimit=%x ModDir=%x RomBase=%x\n",
 		W(D_FMBM), W(D_FMBM+2), W(D_MLIM), W(D_ModDir), W(D_Init))
 	L("  D_SWI3=%x D_SWI2=%x FIRQ=%x IRQ=%x SWI=%x NMI=%x SvcIRQ=%x Poll=%x\n",
@@ -3030,6 +3060,7 @@ func DumpPageZero() {
 }
 
 func DumpPathDesc(a Word) {
+	L("a=%04x", a)
 	if 0 == B(a+PD_PD) {
 		return
 	}
@@ -3048,7 +3079,7 @@ func DumpPathDesc(a Word) {
 		W(dev+V_FMGR), ModuleName(W(dev+V_FMGR)), B(dev+V_USRS))
 	L("%s", buf.String())
 
-	if paranoid {
+	if false && paranoid {
 		if B(a+PD_PD) > 10 {
 			panic("PD_PD")
 		}
@@ -3062,7 +3093,7 @@ func DumpPathDesc(a Word) {
 }
 
 func DumpAllPathDescs() {
-	if Level == 1 {
+	if true || Level == 1 {
 		p := W(D_PthDBT)
 		if 0 == p {
 			return
@@ -3070,10 +3101,12 @@ func DumpAllPathDescs() {
 
 		for i := Word(0); i < 32; i++ {
 			q := W(p + i*2)
+			L("PathDesc[%x]: %x", i, q)
 			if q != 0 {
 
 				for j := Word(0); j < 4; j++ {
 					k := i*4 + j
+					L("........[%x]: %x", j, k)
 					if k == 0 {
 						continue
 					} // There is no path desc 0 (it's the table).
@@ -3086,49 +3119,72 @@ func DumpAllPathDescs() {
 }
 
 func DumpProcDesc(a Word) {
-	if Level == 1 {
-		mod := W(a + P_PModul)
-		name := mod + W(mod+4)
-		L("Process @%x: id=%x pid=%x sid=%x cid=%x module='%s'", a, B(a+P_ID), B(a+P_PID), B(a+P_SID), B(a+P_CID), Os9String(name))
-		L("   sp=%x chap=%x Addr=%x PagCnt=%x User=%x Pri=%x Age=%x State=%x",
-			W(a+P_SP), B(a+P_CHAP), B(a+P_ADDR), B(a+P_PagCnt), W(a+P_User), B(a+P_Prior), B(a+P_Age), B(a+P_State))
-		L("   Queue=%x IOQP=%x IOQN=%x Signal=%x SigVec=%x SigDat=%x",
-			W(a+P_Queue), B(a+P_IOQP), B(a+P_IOQN), B(a+P_Signal), B(a+P_SigVec), B(a+P_SigDat))
-		L("   DIO %x %x %x %x %x %x PATH %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x",
-			W(a+P_DIO), W(a+P_DIO+2), W(a+P_DIO+4),
-			W(a+P_DIO+6), W(a+P_DIO+8), W(a+P_DIO+10),
-			B(a+P_PATH+0), B(a+P_PATH+1), B(a+P_PATH+2), B(a+P_PATH+3),
-			B(a+P_PATH+4), B(a+P_PATH+5), B(a+P_PATH+6), B(a+P_PATH+7),
-			B(a+P_PATH+8), B(a+P_PATH+9), B(a+P_PATH+10), B(a+P_PATH+11),
-			B(a+P_PATH+12), B(a+P_PATH+13), B(a+P_PATH+14), B(a+P_PATH+15))
-		if W(a+P_Queue) != 0 {
-			// If current proc, it has no queue.
-			// Other procs are in a queue.
-			if W(D_Proc) != a {
-				DumpProcDesc(W(a + P_Queue))
-			}
-		}
-
-		if paranoid {
-			if B(a+P_ID) > 10 {
-				panic("P_ID")
-			}
-			if B(a+P_PID) > 10 {
-				panic("P_PID")
-			}
-			if B(a+P_SID) > 10 {
-				panic("P_SID")
-			}
-			if B(a+P_CID) > 10 {
-				panic("P_CID")
-			}
-			if W(a+P_User) > 10 {
-				panic("P_User")
-			}
-			for i := Word(0); i < 10; i++ {
-				if B(a+P_PATH+i) > 10 {
-					panic(i)
+	L("a=%04x", a)
+	switch Level {
+	case 1, 2:
+		{
+			mod := PeekW(a + P_PModul)
+			name_str := "?"
+			mod_str := "?"
+			if mod != 0 {
+				if Level == 1 {
+					name := mod + PeekW(mod+4)
+					name_str = Os9String(name)
+					mod_str = F("%q @%04x", name_str, mod)
+				} else if Level == 2 {
+					m := GetMapping(a + P_DATImg)
+					modPhys := MapAddrWithMapping(mod, m)
+					modPhysPlus4 := PeekWPhys(modPhys + 4)
+					if modPhysPlus4 > 0 {
+						name := mod + modPhysPlus4
+						name_str = Os9StringWithMapping(name, m)
+						mod_str = F("%q @%04x %v", name_str, mod, m)
+					}
 				}
+			}
+			L("Process @%x: id=%x pid=%x sid=%x cid=%x module=%s", a, B(a+P_ID), B(a+P_PID), B(a+P_SID), B(a+P_CID), mod_str)
+			L("   sp=%x chap=%x Addr=%x PagCnt=%x User=%x Pri=%x Age=%x State=%x",
+				W(a+P_SP), B(a+P_CHAP), B(a+P_ADDR), B(a+P_PagCnt), W(a+P_User), B(a+P_Prior), B(a+P_Age), B(a+P_State))
+			L("   Queue=%x IOQP=%x IOQN=%x Signal=%x SigVec=%x SigDat=%x",
+				W(a+P_Queue), B(a+P_IOQP), B(a+P_IOQN), B(a+P_Signal), B(a+P_SigVec), B(a+P_SigDat))
+			L("   DIO %x %x %x %x %x %x PATH %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x",
+				W(a+P_DIO), W(a+P_DIO+2), W(a+P_DIO+4),
+				W(a+P_DIO+6), W(a+P_DIO+8), W(a+P_DIO+10),
+				B(a+P_PATH+0), B(a+P_PATH+1), B(a+P_PATH+2), B(a+P_PATH+3),
+				B(a+P_PATH+4), B(a+P_PATH+5), B(a+P_PATH+6), B(a+P_PATH+7),
+				B(a+P_PATH+8), B(a+P_PATH+9), B(a+P_PATH+10), B(a+P_PATH+11),
+				B(a+P_PATH+12), B(a+P_PATH+13), B(a+P_PATH+14), B(a+P_PATH+15))
+			if W(a+P_Queue) != 0 {
+				// If current proc, it has no queue.
+				// Other procs are in a queue.
+				if W(D_Proc) != a {
+					DumpProcDesc(W(a + P_Queue))
+				}
+			}
+
+			if paranoid {
+				if B(a+P_ID) > 10 {
+					panic("P_ID")
+				}
+				if B(a+P_PID) > 10 {
+					panic("P_PID")
+				}
+				if B(a+P_SID) > 10 {
+					panic("P_SID")
+				}
+				if B(a+P_CID) > 10 {
+					panic("P_CID")
+				}
+				if W(a+P_User) > 10 {
+					panic("P_User")
+				}
+				/*
+					for i := Word(0); i < 10; i++ {
+						if B(a+P_PATH+i) > 10 {
+							panic(i)
+						}
+					}
+				*/
 			}
 		}
 	}
@@ -3157,14 +3213,14 @@ type Mapping [8]Word
 
 func GetMapping(addr Word) Mapping {
 	return Mapping{
-		PeekW(addr),
-		PeekW(addr + 2),
-		PeekW(addr + 4),
-		PeekW(addr + 6),
-		PeekW(addr + 8),
-		PeekW(addr + 10),
-		PeekW(addr + 12),
-		PeekW(addr + 14),
+		0x3F & PeekW(addr),
+		0x3F & PeekW(addr+2),
+		0x3F & PeekW(addr+4),
+		0x3F & PeekW(addr+6),
+		0x3F & PeekW(addr+8),
+		0x3F & PeekW(addr+10),
+		0x3F & PeekW(addr+12),
+		0x3F & PeekW(addr+14),
 	}
 }
 func PeekBWithMapping(addr Word, m Mapping) byte {
@@ -3239,6 +3295,15 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 }
 
 func MemoryModules() {
+	mmut := MmuTask
+	MmuTask = 0
+	map00 := MmuMap[0][0]
+	MmuMap[0][0] = 0
+	defer func() {
+		MmuTask = mmut
+		MmuMap[0][0] = map00
+	}()
+
 	modulePointerOffset := Word(0)
 	if Level == 2 {
 		modulePointerOffset = Word(4)
