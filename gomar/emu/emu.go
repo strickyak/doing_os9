@@ -169,7 +169,7 @@ const FIRQ_PENDING = CC_INHIBIT_FIRQ
 //? const fillreg = 0xff
 //? const wfillreg = 0xffff
 
-const IRQ_FREQ = (10 * 1000)
+const IRQ_FREQ = (50 * 1000)
 
 const CC_INHIBIT_IRQ = 0x10
 const CC_INHIBIT_FIRQ = 0x40
@@ -204,6 +204,7 @@ func AddressInDeviceSpace(addr Word) bool {
 const MmuDefaultStartBlock = 0x38
 const MmuDefaultStartAddr = (MmuDefaultStartBlock << 13)
 
+var GimeVertIrqEnable bool
 var MmuEnable bool
 var MmuTask byte
 var MmuMap [2][8]byte
@@ -1593,7 +1594,7 @@ func MaybeGetChar() byte {
 func nmi() {
 	L("HEY, INTERRUPTING with NMI")
 	interrupt(VECTOR_NMI)
-	irqs_pending &= ^byte(NMI_PENDING)
+	irqs_pending &^= NMI_PENDING
 }
 
 func inkey(keystrokes <-chan byte) byte {
@@ -1653,32 +1654,15 @@ func GetIOByte(a Word) byte {
 	var z byte
 	switch a {
 	/* PIA 0 */
-
-	/*
-	   PUTBYTE ff01  <- 00
-	   PUTBYTE ff00  <- 00  // inputs
-	   PUTBYTE ff03  <- 00
-	   PUTBYTE ff02  <- ff  // outputs
-	   PUTBYTE ff01  <- 34
-	   PUTBYTE ff03  <- 35
-	*/
-
-	/* clock_60hz.list:
-	   0090 7DFF03           (/home/strick/6809):00227                  tst   PIA0Base+3 get hw byte
-	   0093 2B04             (/home/strick/6809):00228                  bmi   L0032      branch if sync flag on
-	   0095 6E9F0038         (/home/strick/6809):00229                  jmp   [>D.SvcIRQ] else service other possible IRQ
-	   0099 7DFF02           (/home/strick/6809):00230         L0032    tst   PIA0Base+2 clear interrupt
-	*/
 	case 0xFF00:
 		z = 255
 		if kbd_ch != 0 {
 			z = keypress(kbd_probe, kbd_ch)
-			L("HEY, KEYBOARD: %02x {%c} -> %02x\n", kbd_probe, kbd_ch, z)
+			L("HEY, KEYBOARD: %02x %q -> %02x\n", kbd_probe, string(rune(kbd_ch)), z)
 		} else {
 			L("HEY, KEYBOARD: %02x      -> %02x\n", kbd_probe, z)
 		}
 		return z
-
 	case 0xFF01:
 		return 0
 	case 0xFF02:
@@ -1711,10 +1695,20 @@ func GetIOByte(a Word) byte {
 		}
 		return z
 
+	case 0xFF92:  /* GIME IRQ */
+		switch Level {
+		case 2:
+			return 0x08
+		}
+		return 0
+	case 0xFF93:  /* GIME FIRQ */
+		return 0
+
 	default:
 		L("HEY, UNKNOWN GetIOByte: 0x%04x\n", a)
 		return 0
 	}
+	panic("notreached")
 }
 
 func PutIOByte(a Word, b byte) {
@@ -1746,16 +1740,28 @@ func PutIOByte(a Word, b byte) {
 	case 0xFF90:
 		MmuEnable = 0 != (b & 0x40)
 		L("GIME MmuEnable <- %v", MmuEnable)
-		//panic(666)
 
 	case 0xFF91:
 		MmuTask = b & 0x01
 		L("GIME MmuTask <- %v; clock rate <- %v", MmuTask, 0 != (b&0x40))
-		//panic(666)
 
-	case 0xFF92,
-		0xFF93,
-		0xFF94,
+	case 0xFF92:
+		// 0x08: Vertical IRQ.  0x01: Cartridge.
+		if (b &^ 0x09) != 0 {
+			log.Panicf("GIME IRQ Enable for unsupported emulated bits: %04x %02x", a, b)
+		}
+		if (b & 0x08) != 0 {
+			GimeVertIrqEnable = true
+		} else {
+			GimeVertIrqEnable = false
+		}
+
+	case 0xFF93:
+		if b != 0 {
+			log.Panicf("GIME FIRQ Enable for unsupported emulated bits: %04x %02x", a, b)
+		}
+
+	case 0xFF94,
 		0xFF95,
 		0xFF96,
 		0xFF97,
@@ -2997,66 +3003,6 @@ func DumpPageZero() {
 	Z(&buf, " D.DMAReq=%02x", PeekB(D_DMAReq))
 	L("%s", buf.String())
 	buf.Reset()
-
-	/*
-	   0090                  (            os9.d):00578         D.HINIT        RMB       1                   GIME INIT0 register (hardware setup $FF90)
-	   0091                  (            os9.d):00579         D.TINIT        RMB       1                   GIME INIT1 register (timer/task register $FF91)
-	   0092                  (            os9.d):00580         D.IRQER        RMB       1                   Interrupt enable regsiter ($FF92)
-	   0093                  (            os9.d):00581         D.FRQER        RMB       1                   Fast Interrupt enable register ($FF93)
-	   0094                  (            os9.d):00582         D.TIMMS        RMB       1                   Timer most significant nibble ($FF94)
-	   0095                  (            os9.d):00583         D.TIMLS        RMB       1                   Timer least significant byte ($FF95)
-	   0096                  (            os9.d):00584         D.RESV1        RMB       1                   reserved register ($FF96)
-	   0097                  (            os9.d):00585         D.RESV2        RMB       1                   reserved register ($FF97)
-	   0098                  (            os9.d):00586         D.VIDMD        RMB       1                   video mode register ($FF98)
-	   0099                  (            os9.d):00587         D.VIDRS        RMB       1                   video resolution register ($FF99)
-	   009A                  (            os9.d):00588         D.BORDR        RMB       1                   border register ($FF9A)
-	   009B                  (            os9.d):00589         D.RESV3        RMB       1                   reserved register ($FF9B)
-	   009C                  (            os9.d):00590         D.VOFF2        RMB       1                   vertical scroll/offset 2 register ($FF9C)
-	   009D                  (            os9.d):00591         D.VOFF1        RMB       1                   vertical offset 1 register ($FF9D)
-	   009E                  (            os9.d):00592         D.VOFF0        RMB       1                   vertical offset 0 register ($FF9E)
-	   009F                  (            os9.d):00593         D.HOFF0        RMB       1                   horizontal offset 0 register ($FF9F)
-	   00A0                  (            os9.d):00594         D.Speed        RMB       1                   Speed of COCO CPU 0=slow,1=fast ($A0)
-	   00A1                  (            os9.d):00595         D.TskIPt       RMB       2                   Task image Pointer table (CC) ($A1)
-	   00A3                  (            os9.d):00596         D.MemSz        RMB       1                   128/512K memory flag (CC) ($A3)
-	   00A4                  (            os9.d):00597         D.SSTskN       RMB       1                   System State Task Number (COCO) ($A4)
-	   00A5                  (            os9.d):00598         D.CCMem        RMB       2                   Pointer to beginning of CC Memory ($A5)
-	   00A7                  (            os9.d):00599         D.CCStk        RMB       2                   Pointer to top of CC Memory ($A7)
-	   00A9                  (            os9.d):00600         D.Flip0        RMB       2                   Change to Task 0 ($A9)
-	   00AB                  (            os9.d):00601         D.Flip1        RMB       2                   Change to reserved Task 1 ($AB)
-	   00AD                  (            os9.d):00602         D.VIRQ         RMB       2                   VIRQ Polling routine ($AD)
-	   00AF                  (            os9.d):00603         D.IRQS         RMB       1                   IRQ shadow register (CC Temporary) ($AF)
-	   00B0                  (            os9.d):00604         D.CLTb         RMB       2                   VIRQ Table address ($B0)
-	   00B2                  (            os9.d):00605         D.AltIRQ       RMB       2                   Alternate IRQ Vector (CC) ($B2)
-	   00B4                  (            os9.d):00606         D.GPoll        RMB       2                   CC GIME IRQ enable/disable toggle
-	   00B6                  (            os9.d):00607         D.Clock2       RMB       2                   CC Clock2 entry address
-	                         (            os9.d):00608                        ORG       $C0
-	   00C0                  (            os9.d):00609         D.SysSvc       RMB       2                   System Service Routine entry
-	   00C2                  (            os9.d):00610         D.SysDis       RMB       2                   System Service Dispatch Table ptr
-	   00C4                  (            os9.d):00611         D.SysIRQ       RMB       2                   System IRQ Routine entry
-	   00C6                  (            os9.d):00612         D.UsrSvc       RMB       2                   User Service Routine entry
-	   00C8                  (            os9.d):00613         D.UsrDis       RMB       2                   User Service Dispatch Table ptr
-	   00CA                  (            os9.d):00614         D.UsrIRQ       RMB       2                   User IRQ Routine entry
-	   00CC                  (            os9.d):00615         D.SysStk       RMB       2                   System stack
-	   00CE                  (            os9.d):00616         D.SvcIRQ       RMB       2                   In-System IRQ service
-	   00D0                  (            os9.d):00617         D.SysTsk       RMB       1                   System Task number
-	                         (            os9.d):00618                        ORG       $E0
-	   00E0                  (            os9.d):00619         D.Clock        RMB       2
-	   00E2                  (            os9.d):00620         D.XSWI3        RMB       2
-	   00E4                  (            os9.d):00621         D.XSWI2        RMB       2
-	   00E6                  (            os9.d):00622         D.XFIRQ        RMB       2
-	   00E8                  (            os9.d):00623         D.XIRQ         RMB       2
-	   00EA                  (            os9.d):00624         D.XSWI         RMB       2
-	   00EC                  (            os9.d):00625         D.XNMI         RMB       2
-	   00EE                  (            os9.d):00626         D.ErrRst       RMB       2
-	   00F0                  (            os9.d):00627         D.SysVec       RMB       2                   F$xxx system call vector for NitrOS-9 Level 3
-	   00F2                  (            os9.d):00628         D.SWI3         RMB       2
-	   00F4                  (            os9.d):00629         D.SWI2         RMB       2
-	   00F6                  (            os9.d):00630         D.FIRQ         RMB       2
-	   00F8                  (            os9.d):00631         D.IRQ          RMB       2
-	   00FA                  (            os9.d):00632         D.SWI          RMB       2
-	   00FC                  (            os9.d):00633         D.NMI          RMB       2
-	                         (            os9.d):00634
-	*/
 }
 
 func DumpPathDesc(a Word) {
@@ -4257,8 +4203,16 @@ func Main(cf *Config) {
 			}
 		}
 		if steps%IRQ_FREQ == IRQ_FREQ-1 {
-			irqs_pending |= IRQ_PENDING
-			Waiting = false
+			switch Level {
+			case 1:
+				irqs_pending |= IRQ_PENDING
+				Waiting = false
+			case 2:
+				if GimeVertIrqEnable {
+					irqs_pending |= IRQ_PENDING
+					Waiting = false
+				}
+			}
 		}
 
 		if Waiting {
