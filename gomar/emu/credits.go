@@ -1,15 +1,16 @@
-// 6809 & OS/9 Simulator "GOMAR".
-package main
+package emu
 
-/* 6809 Simulator "GOMAR".
+// License: GNU General Public License version 2, see LICENSE for more details.
 
-   License: GNU General Public License version 2, see LICENSE for more details.
+// The sbc09 team's code was converted to Go and many enhancements made
+// (including interrupts, software interrupts, and OS9 system calls)
+// by Henry Strickland (github.com/strickyak), 2019.
+//
+// The following credits belong to previous code.
+// The System Dependancies and many other details are largely no longer relevant,
+// but I greatly appreciate the core simulator which I am still using.
 
-   Converted to GO LANG in 2019 by Henry Strickland (github.com/strickyak)
-   based on code with the following copyleft:
-
-   ============================================================================
-
+/*
    created 1994 by L.C. Benschop.
    copyleft (c) 1994-2014 by the sbc09 team, see AUTHORS for more details.
    license: GNU General Public License version 2, see LICENSE for more details.
@@ -69,30 +70,3 @@ package main
                 -t  Enable trace.  (Still requires -DTRACE).
                 And more.
 */
-
-import (
-	"github.com/strickyak/doing_os9/gomar/emu"
-
-	"flag"
-	"log"
-	"os"
-	"runtime/pprof"
-)
-
-var FlagCpuProfile = flag.String("cpuprofile", "", "write cpu profile to file")
-
-func main() {
-	log.SetFlags(0)
-	flag.Parse()
-
-	if *FlagCpuProfile != "" {
-		f, err := os.Create(*FlagCpuProfile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
-
-	emu.Main()
-}

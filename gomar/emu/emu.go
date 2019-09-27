@@ -1,93 +1,50 @@
-/* 6809 Simulator "GOMAR".
-
-   License: GNU General Public License version 2, see LICENSE for more details.
-
-   Converted to GO LANG by Henry Strickland, 2019,
-   based on code with the following copyleft:
-
-   ============================================================================
-
-   created 1994 by L.C. Benschop.
-   copyleft (c) 1994-2014 by the sbc09 team, see AUTHORS for more details.
-   license: GNU General Public License version 2, see LICENSE for more details.
-
-   This program simulates a 6809 processor.
-
-   System dependencies: short must be 16 bits.
-                        char  must be 8 bits.
-                        long must be more than 16 bits.
-                        arrays up to 65536 bytes must be supported.
-                        machine must be twos complement.
-   Most Unix machines will work. For MSODS you need long pointers
-   and you may have to malloc() the mem array of 65536 bytes.
-
-   Define CPU_BIG_ENDIAN with != 0 if you have a big-endian machine (680x0 etc)
-   Usually UNIX systems get this automatically from BIG_ENDIAN and BYTE_ORDER
-   definitions ...
-
-   Define TRACE if you want an instruction trace on stderr.
-   Define TERM_CONTROL if you want nonblocking non-echoing key input.
-   * THIS IS DIRTY !!! *
-
-   Special instructions:
-   SWI2 writes char to stdout from register B.
-   SWI3 reads char from stdout to register B, sets carry at EOF.
-               (or when no key available when using term control).
-   SWI retains its normal function.
-   CWAI and SYNC stop simulator.
-
-   The program reads a binary image file at $100 and runs it from there.
-   The file name must be given on the command line.
-
-   Revisions:
-        2012-06-05 johann AT klasek at
-                Fixed: com with C "NOT" operator ... 0^(value) did not work!
-        2012-06-06
-                Fixed: changes from 1994 release (flag handling)
-                        reestablished.
-        2012-07-15 JK
-                New: option parsing, new option -d (dump memory on exit)
-        2013-10-07 JK
-                New: print ccreg with flag name in lower/upper case depending on flag state.
-        2013-10-20 JK
-                New: Show instruction disassembling in trace mode.
-        2014-07-01 JK
-                Fixed: disassembling output: cmpd
-        2014-07-11 JK
-                Fixed: undocumented tfr/exg register combinations.
-                        http://www.6809.org.uk/dragon/illegal-opcodes.shtml
-
-        2016-02-06 Henry Strickland <strickyak>
-                Because OS/9 uses SWI2 for kernel calls, allow other SWIs for I/O.
-                -i={0,1,2,3} Input char on {none, SWI, SWI2, or SWI3}.
-                -o={0,1,2,3} Output char on {none, SWI, SWI2, or SWI3}
-                -0  Initialize mem to 00.
-                -F  Initialize mem to FF.
-                -t  Enable trace.  (Still requires -DTRACE).
-                And more.
-*/
-
 package emu
 
+// See credits.go
+
+import "github.com/strickyak/doing_os9/gomar/sym"
+
 import (
-	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"path/filepath"
-	"regexp"
-	"strconv"
-	"strings"
 )
+
+// Verbosity:
+//	3: sys calls
+//	4: sys calls with memory dumps
+//	5: I/O
+//	7: instructions
+//	9: memory
+var FlagVerbosity = flag.Int64("v", 0, "")
+var FlagTraceAfter = flag.Int64("t", 0, "")
+var FlagMaxSteps = flag.Int64("max", 0, "")
+
+var FlagBootImageFilename = flag.String("boot", "boot.mem", "")
+var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
+var FlagStressTest = flag.String("stress", "", "If nonempty, string to repeat")
+var FlagListingsDir = flag.String("listings", "_listings", "")
 
 const paranoid = true // Do paranoid checks.
 const hyp = true      // Use hyperviser code.
 
-var F = fmt.Sprintf
-var L = log.Printf
-var Z = fmt.Fprintf
+//var F = fmt.Sprintf
+//var L = log.Printf
+//var Z = fmt.Fprintf
+
+func F(format string, args ...interface{}) string {
+	return fmt.Sprintf(format, args...)
+}
+func L(format string, args ...interface{}) {
+	log.Printf(format, args...)
+}
+func Z(w io.Writer, format string, args ...interface{}) {
+	fmt.Fprintf(w, format, args...)
+}
 
 type Word uint16
 
@@ -141,9 +98,6 @@ var dinst bytes.Buffer
 /* disassembled operand buffer */
 var dops bytes.Buffer
 
-/* disassembled instruction len (optional, on demand) */
-var da_len Word
-
 /* instruction cycles */
 var cycles int
 var cycles_sum int64
@@ -152,8 +106,6 @@ var Waiting bool
 var irqs_pending byte
 
 var instructionTable []func()
-
-var Level int
 
 func GetAReg() byte  { return Hi(dreg) }
 func GetBReg() byte  { return Lo(dreg) }
@@ -189,159 +141,11 @@ func HiLo(hi, lo byte) Word {
 	return (Word(hi) << 8) | Word(lo)
 }
 
-func Signed(a byte) Word {
+func SignExtend(a byte) Word {
 	if (a & 0x80) != 0 {
 		return 0xFF80 | Word(a)
 	} else {
 		return Word(a)
-	}
-}
-
-func AddressInDeviceSpace(addr Word) bool {
-	return (addr&0xFF00) == 0xFF00 && (addr&0xFFF0) != 0xFFF0
-}
-
-const MmuDefaultStartBlock = 0x38
-const MmuDefaultStartAddr = (MmuDefaultStartBlock << 13)
-
-var GimeVertIrqEnable bool
-var MmuEnable bool
-var MmuTask byte
-var MmuMap [2][8]byte
-
-func init() {
-	// Initialize Memory Map thus: 00 39 3a 3b 3c 3d 3e 3f
-	for task := 0; task < 2; task++ {
-		MmuMap[task][0] = 0x00 // Exception.
-		for slot := 1; slot < 8; slot++ {
-			MmuMap[task][slot] = byte(MmuDefaultStartBlock + slot)
-		}
-	}
-	// Initialize physical block 3b to spaces, except 0x0008 at the beginning.
-	const block3b = 0x3b * 0x2000
-	mem[block3b+0] = 0x00
-	mem[block3b+1] = 0x08
-	for i := 2; i < 0x2000; i++ {
-		mem[block3b+i] = ' '
-	}
-	/*   starting at 0xff90:
-	6c      init0
-	00      init1
-	00      irq enable
-	00      firq enable
-	0900    timer register
-	0000    unused
-	0320    screen settings
-	0000    ????
-	00      ????
-	ec01    physical video address (block 3b offset 0x0008 )
-	00      horizontal offset / scroll
-
-	A mirror of these bytes will appear at 0x0090-0x009f in the DP
-	*/
-	for i, b := range []byte{0x6c, 0, 0, 0, 9, 0, 0, 0, 3, 0x20, 0, 0, 0, 0x3c, 1, 0} {
-		PutIOByte(Word(0xFF90+i), b)
-		mem[0x90+i] = b // Probably don't need to set the mirror, but doing it anyway.
-	}
-}
-
-func ShowMmu() string {
-	return F("mmu:%d task:%d : %02x %02x %02x %02x  %02x %02x %02x %02x : %02x %02x %02x %02x  %02x %02x %02x %02x :",
-		CondI(MmuEnable, 1, 0),
-		MmuTask&1,
-		MmuMap[0][0],
-		MmuMap[0][1],
-		MmuMap[0][2],
-		MmuMap[0][3],
-		MmuMap[0][4],
-		MmuMap[0][5],
-		MmuMap[0][6],
-		MmuMap[0][7],
-		MmuMap[1][0],
-		MmuMap[1][1],
-		MmuMap[1][2],
-		MmuMap[1][3],
-		MmuMap[1][4],
-		MmuMap[1][5],
-		MmuMap[1][6],
-		MmuMap[1][7],
-	)
-}
-
-func MapAddrWithMapping(logical Word, m Mapping) int {
-	slot := 7 & (logical >> 13)
-	low := int(logical & 0x1FFF)
-	physicalPage := m[slot]
-	return (int(physicalPage) << 13) | low
-}
-
-func MapAddr(logical Word, quiet bool) int {
-	if logical >= 0xFE00 {
-		return (0x3F << 13) | int(logical)
-	}
-	var z int
-	if MmuEnable {
-		slot := byte(logical >> 13)
-		low := int(logical & 0x1FFF)
-		physicalPage := MmuMap[MmuTask][slot]
-		z = (int(physicalPage) << 13) | low
-		if !quiet && TraceMem {
-			L("\t\t\t\t\t\t MapAddr: %04x -> %06x ... task=%x  slot=%x  page=%x", logical, z, MmuTask, slot, physicalPage)
-		}
-		return z
-	} else {
-		if z < 0x2000 {
-			z = int(logical)
-		} else {
-			z = MmuDefaultStartAddr + int(logical)
-		}
-		if !quiet && TraceMem {
-			L("\t\t\t\t\t\t MapAddr: %04x -> %06x ... default map", logical, z)
-		}
-		return z
-	}
-}
-
-// B is fundamental func to get byte.  Hack register access into here.
-func B(addr Word) byte {
-	var z byte
-	mapped := MapAddr(addr, false)
-	if AddressInDeviceSpace(addr) {
-		z = GetIOByte(addr)
-		L("HEY, GetIO (%06x) %04x -> %02x : %c %c", mapped, addr, z, H(z), T(z))
-		mem[mapped] = z
-	} else {
-		z = mem[mapped]
-	}
-	if TraceMem {
-		L("\t\t\t\tGetB (%06x) %04x -> %02x : %c %c", mapped, addr, z, H(z), T(z))
-	}
-	return z
-}
-
-func PokeB(addr Word, b byte) {
-	mapped := MapAddr(addr, true)
-	mem[mapped] = b
-}
-
-func PeekB(addr Word) byte {
-	var z byte
-	mapped := MapAddr(addr, true)
-	z = mem[mapped]
-	return z
-}
-
-// PutB is fundamental func to set byte.  Hack register access into here.
-func PutB(addr Word, x byte) {
-	mapped := MapAddr(addr, false)
-	old := mem[mapped]
-	mem[mapped] = x
-	if TraceMem {
-		L("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
-	}
-	if AddressInDeviceSpace(addr) {
-		PutIOByte(addr, x)
-		L("PutIO (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
 	}
 }
 
@@ -350,13 +154,6 @@ func W(addr Word) Word {
 	hi := B(addr)
 	lo := B(addr + 1)
 	return HiLo(hi, lo)
-}
-
-func PeekWPhys(addr int) Word {
-	if addr+1 > len(mem) {
-		return 0
-	}
-	return Word(mem[addr])<<8 | Word(mem[addr+1])
 }
 
 func PeekW(addr Word) Word {
@@ -1159,13 +956,20 @@ type Completion struct {
 	service  byte
 }
 
+func Regs() string {
+	var buf bytes.Buffer
+	Z(&buf, "a=%02x b=%02x x=%04x:%04x y=%04x:%04x u=%04x:%04x s=%04x:%04x,%04x cc=%s dp=%02x #%d",
+		GetAReg(), GetBReg(), xreg, PeekW(xreg), yreg, PeekW(yreg), ureg, PeekW(ureg), sreg, PeekW(sreg), PeekW(sreg+2), ccbits(ccreg), dpreg, steps)
+	return buf.String()
+}
+
 var Os9SysCallCompletion [0x10000]Completion
 
 func DefaultCompleter(cp *Completion) {
-	if Word(cp.service-1) == F_NProc {
+	if Word(cp.service-1) == sym.F_NProc {
 		return // F$NProc does not return to its caller.
 	}
-	name, ok := SysCallNames[Word(cp.service-1)]
+	name, ok := sym.SysCallNames[cp.service-1]
 	if !ok {
 		name = "UNKNOWN"
 	}
@@ -1173,12 +977,12 @@ func DefaultCompleter(cp *Completion) {
 	if (ccreg & 1 /* carry bit indicates error */) != 0 {
 		errcode := GetBReg()
 		L("Kernel 0x%02x:%s: -> ERROR [%02x] %s", cp.service-1, name, errcode, DecodeOs9Error(errcode))
-		L("    regs: %s  #%d", regs(), steps)
-		L("\t%s", ShowMmu())
+		L("    regs: %s  #%d", Regs(), steps)
+		L("\t%s", ExplainMMU())
 	} else {
 		L("Kernel 0x%02x:%s: -> okay", cp.service-1, name)
-		L("    regs: %s  #%d", regs(), steps)
-		L("\t%s", ShowMmu())
+		L("    regs: %s  #%d", Regs(), steps)
+		L("\t%s", ExplainMMU())
 		if cp.service-1 == 0x8B {
 			var buf bytes.Buffer
 			for i := Word(0); i < yreg; i++ {
@@ -1420,17 +1224,17 @@ func DecodeOs9Opcode(b byte) {
 		s = "I$Write  : Write Data"
 		if true || !hyp {
 			path_num := GetAReg()
-			proc := PeekW(D_Proc)
-			path := PeekB(proc + P_PATH + Word(path_num))
-			pathDBT := PeekW(D_PthDBT)
+			proc := PeekW(sym.D_Proc)
+			path := PeekB(proc + sym.P_Path + Word(path_num))
+			pathDBT := PeekW(sym.D_PthDBT)
 			q := PeekW(pathDBT + (Word(path) >> 2))
 			Z(&buf, "path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
 			if q != 0 {
 				pd := q + 64*(Word(path)&3)
-				dev := PeekW(pd + PD_DEV)
+				dev := PeekW(pd + sym.PD_DEV)
 				Z(&buf, "pd=%x dev=%x ", pd, dev)
-				desc := PeekW(dev + V_DESC)
-				name := ModuleName(PeekW(dev + V_DESC))
+				desc := PeekW(dev + sym.V_DESC)
+				name := ModuleName(PeekW(dev + sym.V_DESC))
 				Z(&buf, "desc=%x=%s ", desc, name)
 				if name == "Term" {
 					addy := MapAddr(xreg, true)
@@ -1449,17 +1253,17 @@ func DecodeOs9Opcode(b byte) {
 		if false {
 			if true || !hyp {
 				path_num := GetAReg()
-				proc := PeekW(D_Proc)
-				path := PeekB(proc + P_PATH + Word(path_num))
-				pathDBT := PeekW(D_PthDBT)
+				proc := PeekW(sym.D_Proc)
+				path := PeekB(proc + sym.P_Path + Word(path_num))
+				pathDBT := PeekW(sym.D_PthDBT)
 				q := PeekW(pathDBT + (Word(path) >> 2))
 				Z(&buf, "path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
 				if q != 0 {
 					pd := q + 64*(Word(path)&3)
-					dev := PeekW(pd + PD_DEV)
+					dev := PeekW(pd + sym.PD_DEV)
 					Z(&buf, "pd=%x dev=%x ", pd, dev)
-					desc := PeekW(dev + V_DESC)
-					name := ModuleName(PeekW(dev + V_DESC))
+					desc := PeekW(dev + sym.V_DESC)
+					name := ModuleName(PeekW(dev + sym.V_DESC))
 					Z(&buf, "desc=%x=%s ", desc, name)
 					if name == "Term" {
 						fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
@@ -1487,11 +1291,11 @@ func DecodeOs9Opcode(b byte) {
 
 	}
 	if s == "" {
-		s, _ = SysCallNames[Word(b)]
+		s, _ = sym.SysCallNames[b]
 	}
 	L("Kernel 0x%02x:%s: {%s}\n", b, s, buf.String())
-	L("    regs: %s  #%d", regs(), steps)
-	L("\t%s", ShowMmu())
+	L("    regs: %s  #%d", Regs(), steps)
+	L("\t%s", ExplainMMU())
 
 	cp := &Os9SysCallCompletion[pcreg+1]
 	cp.callback = DefaultCompleter
@@ -1695,13 +1499,13 @@ func GetIOByte(a Word) byte {
 		}
 		return z
 
-	case 0xFF92:  /* GIME IRQ */
+	case 0xFF92: /* GIME IRQ */
 		switch Level {
 		case 2:
 			return 0x08
 		}
 		return 0
-	case 0xFF93:  /* GIME FIRQ */
+	case 0xFF93: /* GIME FIRQ */
 		return 0
 
 	default:
@@ -1999,33 +1803,6 @@ func T(ch byte) byte {
 	}
 }
 
-func da_inst(inst string, reg string, cyclecount int) {
-	dinst.Reset()
-	dops.Reset()
-	dinst.WriteString(inst)
-	dinst.WriteString(reg)
-	cycles += cyclecount
-}
-
-func da_inst_cat(inst string, cyclecount int) {
-	dinst.WriteString(inst)
-	cycles += cyclecount
-}
-
-func da_ops(part1 string, part2 string, cyclecount int) {
-	dops.WriteString(part1)
-	dops.WriteString(part2)
-	cycles += cyclecount
-}
-
-var reg_for_da_reg = []string{"d", "x", "y", "u", "s", "pc", "?", "?", "a", "b", "cc", "dp", "?", "?", "?", "?"}
-
-func da_reg(b byte) {
-	dops.WriteString(reg_for_da_reg[(b>>4)&0xf])
-	dops.WriteString(",")
-	dops.WriteString(reg_for_da_reg[b&0xf])
-}
-
 // Now follow the posbyte addressing modes. //
 
 func illaddr() EA { // illegal addressing mode, defaults to zero //
@@ -2036,8 +1813,8 @@ func illaddr() EA { // illegal addressing mode, defaults to zero //
 var dixreg = []string{"x", "y", "u", "s"}
 
 func ainc() EA {
-	da_ops(",", dixreg[idx], 2)
-	da_ops("+", "", 0)
+	Dis_ops(",", dixreg[idx], 2)
+	Dis_ops("+", "", 0)
 	regPtr := ixregs[idx]
 	z := *regPtr
 	(*regPtr)++
@@ -2047,8 +1824,8 @@ func ainc() EA {
 
 func ainc2() EA {
 	// Word temp;
-	da_ops(",", dixreg[idx], 3)
-	da_ops("++", "", 0)
+	Dis_ops(",", dixreg[idx], 3)
+	Dis_ops("++", "", 0)
 	//temp=(*ixregs[idx]);
 	//(*ixregs[idx])+=2;
 	//return(temp);
@@ -2059,7 +1836,7 @@ func ainc2() EA {
 }
 
 func adec() EA {
-	da_ops(",-", dixreg[idx], 2)
+	Dis_ops(",-", dixreg[idx], 2)
 	// return --(*ixregs[idx]);
 	regPtr := ixregs[idx]
 	(*regPtr)--
@@ -2068,7 +1845,7 @@ func adec() EA {
 
 func adec2() EA {
 	// Word temp;
-	da_ops(",--", dixreg[idx], 3)
+	Dis_ops(",--", dixreg[idx], 3)
 	//(*ixregs[idx])-=2;
 	//temp=(*ixregs[idx]);
 	//return(temp);
@@ -2078,18 +1855,18 @@ func adec2() EA {
 }
 
 func plus0() EA {
-	da_ops(",", dixreg[idx], 0)
+	Dis_ops(",", dixreg[idx], 0)
 	return EA(*ixregs[idx])
 }
 
 func plusa() EA {
-	da_ops("a,", dixreg[idx], 1)
-	return EA((*ixregs[idx]) + Signed(GetAReg()))
+	Dis_ops("a,", dixreg[idx], 1)
+	return EA((*ixregs[idx]) + SignExtend(GetAReg()))
 }
 
 func plusb() EA {
-	da_ops("b,", dixreg[idx], 1)
-	return EA((*ixregs[idx]) + Signed(GetBReg()))
+	Dis_ops("b,", dixreg[idx], 1)
+	return EA((*ixregs[idx]) + SignExtend(GetBReg()))
 }
 
 func plusn() EA {
@@ -2101,53 +1878,53 @@ func plusn() EA {
 	} else {
 		off = F("$%02x,", b)
 	}
-	da_ops(off, dixreg[idx], 1)
-	return EA((*ixregs[idx]) + Signed(b))
+	Dis_ops(off, dixreg[idx], 1)
+	return EA((*ixregs[idx]) + SignExtend(b))
 }
 
 func plusnn() EA {
 	w := ImmWord()
 	off := F("$%04x,", w)
-	da_ops(off, dixreg[idx], 4)
+	Dis_ops(off, dixreg[idx], 4)
 	return EA(*ixregs[idx] + w)
 }
 
 func plusd() EA {
-	da_ops("d,", dixreg[idx], 4)
+	Dis_ops("d,", dixreg[idx], 4)
 	return EA(*ixregs[idx] + dreg)
 }
 
 func npcr() EA {
 	b := ImmByte()
-	off := F("$%04x,pcr", (pcreg+Signed(b))&0xffff)
-	da_ops(off, "", 1)
-	return EA(pcreg + Signed(b))
+	off := F("$%04x,pcr", (pcreg+SignExtend(b))&0xffff)
+	Dis_ops(off, "", 1)
+	return EA(pcreg + SignExtend(b))
 }
 
 func nnpcr() EA {
 	w := ImmWord()
 	off := F("$%04x,pcr", (pcreg+w)&0xffff)
-	da_ops(off, "", 5)
+	Dis_ops(off, "", 5)
 	return EA(pcreg + w)
 }
 
 func direct() EA {
 	w := ImmWord()
 	off := F("$%04x", w)
-	da_ops(off, "", 3)
+	Dis_ops(off, "", 3)
 	return EA(w)
 }
 
 func zeropage() EA {
 	b := ImmByte()
 	off := F("$%02x", b)
-	da_ops(off, "", 2)
+	Dis_ops(off, "", 2)
 	return EA(HiLo(dpreg, b))
 }
 
 func immediate() EA {
 	off := F("#$%02x", B(pcreg))
-	da_ops(off, "", 0)
+	Dis_ops(off, "", 0)
 	z := pcreg
 	pcreg++
 	return EA(z)
@@ -2156,7 +1933,7 @@ func immediate() EA {
 func immediate2() EA {
 	z := pcreg
 	off := F("#$%04x", (Word(B(pcreg))<<8)|Word(B(pcreg+1)))
-	da_ops(off, "", 0)
+	Dis_ops(off, "", 0)
 	pcreg += 2
 	return EA(z)
 }
@@ -2172,12 +1949,12 @@ func postbyte() EA {
 	idx = ((pb & 0x60) >> 5)
 	if (pb & 0x80) != 0 {
 		if (pb & 0x10) != 0 {
-			da_ops("[", "", 3)
+			Dis_ops("[", "", 3)
 		}
 		temp := (pbtable[pb&0x0f])()
 		if (pb & 0x10) != 0 {
 			temp = EA(temp.GetW())
-			da_ops("]", "", 0)
+			Dis_ops("]", "", 0)
 		}
 		return EA(temp)
 	} else {
@@ -2194,7 +1971,7 @@ func postbyte() EA {
 		} else {
 			off = F("%d,", temp)
 		}
-		da_ops(off, dixreg[idx], 1)
+		Dis_ops(off, dixreg[idx], 1)
 		return EA(*ixregs[idx] + temp)
 	}
 }
@@ -2210,13 +1987,13 @@ func eaddr0() EA { // effective address for NEG..JMP //
 		return 0
 
 	case 4:
-		da_inst_cat("a", -2)
+		Dis_inst_cat("a", -2)
 		return ARegEA
 	case 5:
-		da_inst_cat("b", -2)
+		Dis_inst_cat("b", -2)
 		return BRegEA
 	case 6:
-		da_inst_cat("", 2)
+		Dis_inst_cat("", 2)
 		return postbyte()
 	case 7:
 		return direct()
@@ -2231,7 +2008,7 @@ func eaddr8() EA { // effective address for 8-bits ops. //
 	case 1:
 		return zeropage()
 	case 2:
-		da_inst_cat("", 2)
+		Dis_inst_cat("", 2)
 		return postbyte()
 	case 3:
 		return direct()
@@ -2242,16 +2019,16 @@ func eaddr8() EA { // effective address for 8-bits ops. //
 func eaddr16() EA { // effective address for 16-bits ops. //
 	switch (ireg & 0x30) >> 4 {
 	case 0:
-		da_inst_cat("", -1)
+		Dis_inst_cat("", -1)
 		return immediate2()
 	case 1:
-		da_inst_cat("", -1)
+		Dis_inst_cat("", -1)
 		return zeropage()
 	case 2:
-		da_inst_cat("", 1)
+		Dis_inst_cat("", 1)
 		return postbyte()
 	case 3:
-		da_inst_cat("", -1)
+		Dis_inst_cat("", -1)
 		return direct()
 	}
 	panic("notreached")
@@ -2357,7 +2134,7 @@ func AOrB(aIfZero byte) EA {
 
 func add() {
 	var aop, bop, res Word
-	da_inst("add", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("add", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	aop = Word(accum.GetB())
 	bop = Word(eaddr8().GetB())
@@ -2368,7 +2145,7 @@ func add() {
 
 func sbc() {
 	var aop, bop, res Word
-	da_inst("sbc", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("sbc", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	aop = Word(accum.GetB())
 	bop = Word(eaddr8().GetB())
@@ -2379,7 +2156,7 @@ func sbc() {
 
 func sub() {
 	var aop, bop, res Word
-	da_inst("sub", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("sub", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	aop = Word(accum.GetB())
 	bop = Word(eaddr8().GetB())
@@ -2390,7 +2167,7 @@ func sub() {
 
 func adc() {
 	var aop, bop, res Word
-	da_inst("adc", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("adc", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	aop = Word(accum.GetB())
 	bop = Word(eaddr8().GetB())
@@ -2401,7 +2178,7 @@ func adc() {
 
 func cmp() {
 	var aop, bop, res Word
-	da_inst("cmp", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("cmp", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	aop = Word(accum.GetB())
 	bop = Word(eaddr8().GetB())
@@ -2411,7 +2188,7 @@ func cmp() {
 
 func and() {
 	var aop, bop, res byte
-	da_inst("and", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("and", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	aop = (accum.GetB())
 	bop = (eaddr8().GetB())
@@ -2422,7 +2199,7 @@ func and() {
 }
 func or() {
 	var aop, bop, res byte
-	da_inst("or", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("or", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	aop = (accum.GetB())
 	bop = (eaddr8().GetB())
@@ -2433,7 +2210,7 @@ func or() {
 }
 func eor() {
 	var aop, bop, res byte
-	da_inst("eor", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("eor", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	aop = (accum.GetB())
 	bop = (eaddr8().GetB())
@@ -2444,7 +2221,7 @@ func eor() {
 }
 func bit() {
 	var aop, bop, res byte
-	da_inst("bit", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("bit", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	aop = (accum.GetB())
 	bop = (eaddr8().GetB())
@@ -2454,7 +2231,7 @@ func bit() {
 }
 
 func ld() {
-	da_inst("ld", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("ld", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	res := eaddr8().GetB()
 	SETNZ8(res)
@@ -2463,7 +2240,7 @@ func ld() {
 }
 
 func st() {
-	da_inst("st", CondS(0 != (ireg&0x40), "b", "a"), 2)
+	Dis_inst("st", CondS(0 != (ireg&0x40), "b", "a"), 2)
 	accum := AOrB(ireg & 0x40)
 	res := accum.GetB()
 	eaddr8().PutB(res)
@@ -2472,22 +2249,22 @@ func st() {
 }
 
 func jsr() {
-	da_inst("jsr", "", 5)
-	da_len = -pcreg
+	Dis_inst("jsr", "", 5)
+	Dis_len(-pcreg)
 	w := eaddr8()
-	da_len += pcreg + 1
+	Dis_len_incr(pcreg + 1)
 	PushWord(pcreg)
 	pcreg = Word(w)
 }
 
 func bsr() {
 	b := ImmByte()
-	da_inst("bsr", "", 7)
-	da_len = 2
+	Dis_inst("bsr", "", 7)
+	Dis_len(2)
 	PushWord(pcreg)
-	pcreg += Signed(b)
+	pcreg += SignExtend(b)
 	off := F("$%04x", pcreg&0xffff)
-	da_ops(off, "", 0)
+	Dis_ops(off, "", 0)
 }
 
 func neg() {
@@ -2502,7 +2279,7 @@ func neg() {
 	}
 
 	a = 0
-	da_inst("neg", "", 4)
+	Dis_inst("neg", "", 4)
 	ea := eaddr0()
 	a = Word(ea.GetB())
 	r = -a
@@ -2511,7 +2288,7 @@ func neg() {
 }
 
 func com() {
-	da_inst("com", "", 4)
+	Dis_inst("com", "", 4)
 	ea := eaddr0()
 	r := ^(ea.GetB())
 	SETNZ8(r)
@@ -2521,7 +2298,7 @@ func com() {
 }
 
 func lsr() {
-	da_inst("lsr", "", 4)
+	Dis_inst("lsr", "", 4)
 	ea := eaddr0()
 	r := ea.GetB()
 	if (r & 0x01) != 0 {
@@ -2541,7 +2318,7 @@ func lsr() {
 
 func ror() {
 	c := (ccreg & 0x01) << 7
-	da_inst("ror", "", 4)
+	Dis_inst("ror", "", 4)
 	ea := eaddr0()
 	r := ea.GetB()
 	if (r & 0x01) != 0 {
@@ -2555,7 +2332,7 @@ func ror() {
 }
 
 func asr() {
-	da_inst("asr", "", 4)
+	Dis_inst("asr", "", 4)
 	ea := eaddr0()
 	r := ea.GetB()
 	if (r & 0x01) != 0 {
@@ -2579,7 +2356,7 @@ func asr() {
 func asl() {
 	var a, r Word
 
-	da_inst("asl", "", 4)
+	Dis_inst("asl", "", 4)
 	ea := eaddr0()
 	a = Word(ea.GetB())
 	r = a << 1
@@ -2589,7 +2366,7 @@ func asl() {
 
 func rol() {
 	c := (ccreg & 0x01)
-	da_inst("rol", "", 4)
+	Dis_inst("rol", "", 4)
 	ea := eaddr0()
 	r := ea.GetB()
 	if (r & 0x80) != 0 {
@@ -2608,7 +2385,7 @@ func rol() {
 }
 
 func inc() {
-	da_inst("inc", "", 4)
+	Dis_inst("inc", "", 4)
 	ea := eaddr0()
 	r := ea.GetB()
 	r++
@@ -2622,7 +2399,7 @@ func inc() {
 }
 
 func dec() {
-	da_inst("dec", "", 4)
+	Dis_inst("dec", "", 4)
 	ea := eaddr0()
 	r := ea.GetB()
 	r--
@@ -2636,7 +2413,7 @@ func dec() {
 }
 
 func tst() {
-	da_inst("tst", "", 4)
+	Dis_inst("tst", "", 4)
 	ea := eaddr0()
 	r := ea.GetB()
 	SETNZ8(r)
@@ -2644,15 +2421,15 @@ func tst() {
 }
 
 func jmp() {
-	da_len = -pcreg
-	da_inst("jmp", "", 1)
+	Dis_len(-pcreg)
+	Dis_inst("jmp", "", 1)
 	ea := eaddr0()
-	da_len += pcreg + 1
+	Dis_len_incr(pcreg + 1)
 	pcreg = Word(ea)
 }
 
 func clr() {
-	da_inst("clr", "", 4)
+	Dis_inst("clr", "", 4)
 	ea := eaddr0()
 	ea.PutB(0)
 	CLN()
@@ -2669,7 +2446,7 @@ func flag0() {
 	iflag = 1
 	ireg = B(pcreg)
 	pcreg++
-	da_inst("", "", 1)
+	Dis_inst("", "", 1)
 	(instructionTable[ireg])()
 	iflag = 0
 }
@@ -2682,13 +2459,13 @@ func flag1() {
 	iflag = 2
 	ireg = B(pcreg)
 	pcreg++
-	da_inst("", "", 1)
+	Dis_inst("", "", 1)
 	(instructionTable[ireg])()
 	iflag = 0
 }
 
 func nop() {
-	da_inst("nop", "", 2)
+	Dis_inst("nop", "", 2)
 }
 
 func sync_inst() {
@@ -2704,33 +2481,33 @@ func cwai() {
 	L("HEY, Waiting, cwai #$%02x.", b)
 	Waiting = true
 
-	da_inst("cwai", "", 20)
+	Dis_inst("cwai", "", 20)
 	off := F("#$%02x", b)
-	da_ops(off, "", 0)
+	Dis_ops(off, "", 0)
 }
 
 func lbra() {
 	w := ImmWord()
 	pcreg += w
-	da_len = 3
-	da_inst("lbra", "", 5)
+	Dis_len(3)
+	Dis_inst("lbra", "", 5)
 	off := F("$%04x", pcreg&0xffff)
-	da_ops(off, "", 0)
+	Dis_ops(off, "", 0)
 }
 
 func lbsr() {
-	da_len = 3
-	da_inst("lbsr", "", 9)
+	Dis_len(3)
+	Dis_inst("lbsr", "", 9)
 	w := ImmWord()
 	PushWord(pcreg)
 	pcreg += w
 	off := F("$%04x", pcreg)
-	da_ops(off, "", 0)
+	Dis_ops(off, "", 0)
 }
 
 func daa() {
 	var a Word
-	da_inst("daa", "", 2)
+	Dis_inst("daa", "", 2)
 	a = Word(GetAReg())
 	if (ccreg & 0x20) != 0 {
 		a += 6
@@ -2753,22 +2530,22 @@ func daa() {
 func orcc() {
 	b := ImmByte()
 	off := F("#$%02x", b)
-	da_inst("orcc", "", 3)
-	da_ops(off, "", 0)
+	Dis_inst("orcc", "", 3)
+	Dis_ops(off, "", 0)
 	ccreg |= b
 }
 
 func andcc() {
 	b := ImmByte()
 	off := F("#$%02x", b)
-	da_inst("andcc", "", 3)
-	da_ops(off, "", 0)
+	Dis_inst("andcc", "", 3)
+	Dis_ops(off, "", 0)
 	ccreg &= b
 }
 
 func mul() {
 	w := Word(GetAReg()) * Word(GetBReg())
-	da_inst("mul", "", 11)
+	Dis_inst("mul", "", 11)
 	if (w) != 0 {
 		CLZ()
 	} else {
@@ -2783,20 +2560,20 @@ func mul() {
 }
 
 func sex() {
-	da_inst("sex", "", 2)
-	w := Signed(GetBReg())
+	Dis_inst("sex", "", 2)
+	w := SignExtend(GetBReg())
 	SETNZ16(w)
 	dreg = (w)
 }
 
 func abx() {
-	da_inst("abx", "", 3)
+	Dis_inst("abx", "", 3)
 	xreg += Word(GetBReg())
 }
 
 func rts() {
-	da_inst("rts", "", 5)
-	da_len = 1
+	Dis_inst("rts", "", 5)
+	Dis_len(1)
 	PullWord(&pcreg)
 }
 
@@ -2828,11 +2605,11 @@ func rti() {
 	L("pre-rti stack: %s", buf.String())
 
 	if entire == 0 {
-		da_inst("rti", "", 6)
+		Dis_inst("rti", "", 6)
 	} else {
-		da_inst("rti", "", 15)
+		Dis_inst("rti", "", 15)
 	}
-	da_len = 1
+	Dis_len(1)
 	PullByte(&ccreg)
 	if entire != 0 {
 		PullWord(&dreg)
@@ -2945,94 +2722,100 @@ func DumpPageZero() {
 		MmuMap[0][0] = map00
 	}()
 
+	L("PageZero:\n")
+
+	/* some Level1:
 	L("PageZero: FreeBitMap=%x:%x MemoryLimit=%x ModDir=%x RomBase=%x\n",
-		W(D_FMBM), W(D_FMBM+2), W(D_MLIM), W(D_ModDir), W(D_Init))
+		W(sym.D_FMBM), W(sym.D_FMBM+2), W(sym.D_MLIM), W(sym.D_ModDir), W(sym.D_Init))
+	*/
 	L("  D_SWI3=%x D_SWI2=%x FIRQ=%x IRQ=%x SWI=%x NMI=%x SvcIRQ=%x Poll=%x\n",
-		W(D_SWI3), W(D_SWI2), W(D_FIRQ), W(D_IRQ), W(D_SWI), W(D_NMI), W(D_SvcIRQ), W(D_Poll))
+		W(sym.D_SWI3), W(sym.D_SWI2), W(sym.D_FIRQ), W(sym.D_IRQ), W(sym.D_SWI), W(sym.D_NMI), W(sym.D_SvcIRQ), W(sym.D_Poll))
+	/* some Level1:
 	L("  BTLO=%x BTHI=%x  IO Free Mem Lo=%x Hi=%x D_DevTbl=%x D_PolTbl=%x D_PthDBT=%x D_Proc=%x\n",
-		W(D_BTLO), W(D_BTHI), W(D_IOML), W(D_IOMH), W(D_DevTbl), W(D_PolTbl), W(D_PthDBT), W(D_Proc))
+		W(sym.D_BTLO), W(sym.D_BTHI), W(sym.D_IOML), W(sym.D_IOMH), W(sym.D_DevTbl), W(sym.D_PolTbl), W(sym.D_PthDBT), W(sym.D_Proc))
+	*/
 	L("  D_Slice=%x D_TSlice=%x\n",
-		W(D_Slice), W(D_TSlice))
+		W(sym.D_Slice), W(sym.D_TSlice))
 
 	var buf bytes.Buffer
-	Z(&buf, " D.Tasks=%04x", PeekW(D_Tasks))
-	Z(&buf, " D.TmpDAT=%04x", PeekW(D_TmpDAT))
-	Z(&buf, " D.Init=%04x", PeekW(D_Init))
-	Z(&buf, " D.Poll=%04x", PeekW(D_Poll))
-	Z(&buf, " D.Tick=%02x", PeekB(D_Tick))
-	Z(&buf, " D.Slice=%02x", PeekB(D_Slice))
-	Z(&buf, " D.TSlice=%02x", PeekB(D_TSlice))
-	Z(&buf, " D.Boot=%02x", PeekB(D_Boot))
-	Z(&buf, " D.MotOn=%02x", PeekB(D_MotOn))
-	Z(&buf, " D.ErrCod=%02x", PeekB(D_ErrCod))
-	Z(&buf, " D.Daywk=%02x", PeekB(D_Daywk))
-	Z(&buf, " D.TkCnt=%02x", PeekB(D_TkCnt))
-	Z(&buf, " D.BtPtr=%04x", PeekW(D_BtPtr))
-	Z(&buf, " D.BtSz=%04x", PeekW(D_BtSz))
+	Z(&buf, " D.Tasks=%04x", PeekW(sym.D_Tasks))
+	Z(&buf, " D.TmpDAT=%04x", PeekW(sym.D_TmpDAT))
+	Z(&buf, " D.Init=%04x", PeekW(sym.D_Init))
+	Z(&buf, " D.Poll=%04x", PeekW(sym.D_Poll))
+	Z(&buf, " D.Tick=%02x", PeekB(sym.D_Tick))
+	Z(&buf, " D.Slice=%02x", PeekB(sym.D_Slice))
+	Z(&buf, " D.TSlice=%02x", PeekB(sym.D_TSlice))
+	Z(&buf, " D.Boot=%02x", PeekB(sym.D_Boot))
+	Z(&buf, " D.MotOn=%02x", PeekB(sym.D_MotOn))
+	Z(&buf, " D.ErrCod=%02x", PeekB(sym.D_ErrCod))
+	Z(&buf, " D.Daywk=%02x", PeekB(sym.D_Daywk))
+	Z(&buf, " D.TkCnt=%02x", PeekB(sym.D_TkCnt))
+	Z(&buf, " D.BtPtr=%04x", PeekW(sym.D_BtPtr))
+	Z(&buf, " D.BtSz=%04x", PeekW(sym.D_BtSz))
 	L("%s", buf.String())
 	buf.Reset()
 
-	Z(&buf, " D.CRC=%02x", PeekB(D_CRC))
-	Z(&buf, " D.Tenths=%02x", PeekB(D_Tenths))
-	Z(&buf, " D.Task1N=%02x", PeekB(D_Task1N))
-	Z(&buf, " D.Quick=%02x", PeekB(D_Quick))
-	Z(&buf, " D.QIRQ=%02x", PeekB(D_QIRQ))
-	Z(&buf, " D.BlkMap=%04x,%04x", PeekW(D_BlkMap), PeekW(D_BlkMap+2))
-	Z(&buf, " D.ModDir=%04x,%04x", PeekW(D_ModDir), PeekW(D_ModDir+2))
-	Z(&buf, " D.PrcDBT=%04x", PeekW(D_PrcDBT))
-	Z(&buf, " D.SysPrc=%04x", PeekW(D_SysPrc))
-	Z(&buf, " D.SysDAT=%04x", PeekW(D_SysDAT))
-	// Z(&buf, " D.Mem=%04x", PeekW(D_Mem))
-	Z(&buf, " D.Proc=%04x", PeekW(D_Proc))
-	Z(&buf, " D.AProcQ=%04x", PeekW(D_AProcQ))
-	Z(&buf, " D.WProcQ=%04x", PeekW(D_WProcQ))
-	Z(&buf, " D.SProcQ=%04x", PeekW(D_SProcQ))
+	Z(&buf, " D.CRC=%02x", PeekB(sym.D_CRC))
+	Z(&buf, " D.Tenths=%02x", PeekB(sym.D_Tenths))
+	Z(&buf, " D.Task1N=%02x", PeekB(sym.D_Task1N))
+	Z(&buf, " D.Quick=%02x", PeekB(sym.D_Quick))
+	Z(&buf, " D.QIRQ=%02x", PeekB(sym.D_QIRQ))
+	Z(&buf, " D.BlkMap=%04x,%04x", PeekW(sym.D_BlkMap), PeekW(sym.D_BlkMap+2))
+	Z(&buf, " D.ModDir=%04x,%04x", PeekW(sym.D_ModDir), PeekW(sym.D_ModDir+2))
+	Z(&buf, " D.PrcDBT=%04x", PeekW(sym.D_PrcDBT))
+	Z(&buf, " D.SysPrc=%04x", PeekW(sym.D_SysPrc))
+	Z(&buf, " D.SysDAT=%04x", PeekW(sym.D_SysDAT))
+	// Z(&buf, " D.Mem=%04x", PeekW(sym.D_Mem))
+	Z(&buf, " D.Proc=%04x", PeekW(sym.D_Proc))
+	Z(&buf, " D.AProcQ=%04x", PeekW(sym.D_AProcQ))
+	Z(&buf, " D.WProcQ=%04x", PeekW(sym.D_WProcQ))
+	Z(&buf, " D.SProcQ=%04x", PeekW(sym.D_SProcQ))
 	L("%s", buf.String())
 	buf.Reset()
 
-	Z(&buf, " D.ModEnd=%04x", PeekW(D_ModEnd))
-	Z(&buf, " D.ModDAT=%04x", PeekW(D_ModDAT))
-	Z(&buf, " D.CldRes=%04x", PeekW(D_CldRes))
-	Z(&buf, " D.BtBug=%04x%02x", PeekW(D_BtBug), PeekB(D_BtBug+2))
-	Z(&buf, " D.Pipe=%04x", PeekW(D_Pipe))
+	Z(&buf, " D.ModEnd=%04x", PeekW(sym.D_ModEnd))
+	Z(&buf, " D.ModDAT=%04x", PeekW(sym.D_ModDAT))
+	Z(&buf, " D.CldRes=%04x", PeekW(sym.D_CldRes))
+	Z(&buf, " D.BtBug=%04x%02x", PeekW(sym.D_BtBug), PeekB(sym.D_BtBug+2))
+	Z(&buf, " D.Pipe=%04x", PeekW(sym.D_Pipe))
 
-	Z(&buf, " D.QCnt=%02x", PeekB(D_QCnt))
-	Z(&buf, " D.DevTbl=%04x", PeekW(D_DevTbl))
-	Z(&buf, " D.PolTbl=%04x", PeekW(D_PolTbl))
-	Z(&buf, " D.PthDBT=%04x", PeekW(D_PthDBT))
-	Z(&buf, " D.DMAReq=%02x", PeekB(D_DMAReq))
+	Z(&buf, " D.QCnt=%02x", PeekB(sym.D_QCnt))
+	Z(&buf, " D.DevTbl=%04x", PeekW(sym.D_DevTbl))
+	Z(&buf, " D.PolTbl=%04x", PeekW(sym.D_PolTbl))
+	Z(&buf, " D.PthDBT=%04x", PeekW(sym.D_PthDBT))
+	Z(&buf, " D.DMAReq=%02x", PeekB(sym.D_DMAReq))
 	L("%s", buf.String())
 	buf.Reset()
 }
 
 func DumpPathDesc(a Word) {
 	L("a=%04x", a)
-	if 0 == B(a+PD_PD) {
+	if 0 == B(a+sym.PD_PD) {
 		return
 	}
-	L("Path @%x: #=%x mode=%x count=%x dev=%x\n", a, B(a+PD_PD), B(a+PD_MOD), B(a+PD_CNT), W(a+PD_DEV))
+	L("Path @%x: #=%x mode=%x count=%x dev=%x\n", a, B(a+sym.PD_PD), B(a+sym.PD_MOD), B(a+sym.PD_CNT), W(a+sym.PD_DEV))
 	L("   curr_process=%x caller_reg_stack=%x buffer=%x  dev_type=%x\n",
-		B(a+PD_CPR), B(a+PD_RGS), B(a+PD_BUF), B(a+PD_DTP))
+		B(a+sym.PD_CPR), B(a+sym.PD_RGS), B(a+sym.PD_BUF), B(a+sym.PD_DTP))
 
 	// the Device Table Entry:
-	dev := W(a + PD_DEV)
+	dev := W(a + sym.PD_DEV)
 	var buf bytes.Buffer
 	Z(&buf, "   dev: @%x driver_mod=%x=%s ",
-		dev, W(dev+V_DRIV), ModuleName(W(dev+V_DRIV)))
+		dev, W(dev+sym.V_DRIV), ModuleName(W(dev+sym.V_DRIV)))
 	Z(&buf, "driver_static_store=%x descriptor_mod=%x=%s ",
-		W(dev+V_STAT), W(dev+V_DESC), ModuleName(W(dev+V_DESC)))
+		W(dev+sym.V_STAT), W(dev+sym.V_DESC), ModuleName(W(dev+sym.V_DESC)))
 	Z(&buf, "file_man=%x=%s use=%d\n",
-		W(dev+V_FMGR), ModuleName(W(dev+V_FMGR)), B(dev+V_USRS))
+		W(dev+sym.V_FMGR), ModuleName(W(dev+sym.V_FMGR)), B(dev+sym.V_USRS))
 	L("%s", buf.String())
 
 	if false && paranoid {
-		if B(a+PD_PD) > 10 {
+		if B(a+sym.PD_PD) > 10 {
 			panic("PD_PD")
 		}
-		if B(a+PD_CNT) > 20 {
+		if B(a+sym.PD_CNT) > 20 {
 			panic("PD_CNT")
 		}
-		if B(a+PD_CPR) > 10 {
+		if B(a+sym.PD_CPR) > 10 {
 			panic("PD_CPR")
 		}
 	}
@@ -3040,7 +2823,7 @@ func DumpPathDesc(a Word) {
 
 func DumpAllPathDescs() {
 	if true || Level == 1 {
-		p := W(D_PthDBT)
+		p := W(sym.D_PthDBT)
 		if 0 == p {
 			return
 		}
@@ -3069,7 +2852,7 @@ func DumpProcDesc(a Word) {
 	switch Level {
 	case 1, 2:
 		{
-			mod := PeekW(a + P_PModul)
+			mod := PeekW(a + sym.P_PModul)
 			name_str := "?"
 			mod_str := "?"
 			if mod != 0 {
@@ -3078,7 +2861,7 @@ func DumpProcDesc(a Word) {
 					name_str = Os9String(name)
 					mod_str = F("%q @%04x", name_str, mod)
 				} else if Level == 2 {
-					m := GetMapping(a + P_DATImg)
+					m := GetMapping(a + sym.P_DATImg)
 					modPhys := MapAddrWithMapping(mod, m)
 					modPhysPlus4 := PeekWPhys(modPhys + 4)
 					if modPhysPlus4 > 0 {
@@ -3088,45 +2871,47 @@ func DumpProcDesc(a Word) {
 					}
 				}
 			}
-			L("Process @%x: id=%x pid=%x sid=%x cid=%x module=%s", a, B(a+P_ID), B(a+P_PID), B(a+P_SID), B(a+P_CID), mod_str)
+			L("Process @%x: id=%x pid=%x sid=%x cid=%x module=%s", a, B(a+sym.P_ID), B(a+sym.P_PID), B(a+sym.P_SID), B(a+sym.P_CID), mod_str)
+			/* some Level1
 			L("   sp=%x chap=%x Addr=%x PagCnt=%x User=%x Pri=%x Age=%x State=%x",
-				W(a+P_SP), B(a+P_CHAP), B(a+P_ADDR), B(a+P_PagCnt), W(a+P_User), B(a+P_Prior), B(a+P_Age), B(a+P_State))
+				W(a+sym.P_SP), B(a+sym.P_CHAP), B(a+sym.P_ADDR), B(a+sym.P_PagCnt), W(a+sym.P_User), B(a+sym.P_Prior), B(a+sym.P_Age), B(a+sym.P_State))
+			*/
 			L("   Queue=%x IOQP=%x IOQN=%x Signal=%x SigVec=%x SigDat=%x",
-				W(a+P_Queue), B(a+P_IOQP), B(a+P_IOQN), B(a+P_Signal), B(a+P_SigVec), B(a+P_SigDat))
+				W(a+sym.P_Queue), B(a+sym.P_IOQP), B(a+sym.P_IOQN), B(a+sym.P_Signal), B(a+sym.P_SigVec), B(a+sym.P_SigDat))
 			L("   DIO %x %x %x %x %x %x PATH %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x",
-				W(a+P_DIO), W(a+P_DIO+2), W(a+P_DIO+4),
-				W(a+P_DIO+6), W(a+P_DIO+8), W(a+P_DIO+10),
-				B(a+P_PATH+0), B(a+P_PATH+1), B(a+P_PATH+2), B(a+P_PATH+3),
-				B(a+P_PATH+4), B(a+P_PATH+5), B(a+P_PATH+6), B(a+P_PATH+7),
-				B(a+P_PATH+8), B(a+P_PATH+9), B(a+P_PATH+10), B(a+P_PATH+11),
-				B(a+P_PATH+12), B(a+P_PATH+13), B(a+P_PATH+14), B(a+P_PATH+15))
-			if W(a+P_Queue) != 0 {
+				W(a+sym.P_DIO), W(a+sym.P_DIO+2), W(a+sym.P_DIO+4),
+				W(a+sym.P_DIO+6), W(a+sym.P_DIO+8), W(a+sym.P_DIO+10),
+				B(a+sym.P_Path+0), B(a+sym.P_Path+1), B(a+sym.P_Path+2), B(a+sym.P_Path+3),
+				B(a+sym.P_Path+4), B(a+sym.P_Path+5), B(a+sym.P_Path+6), B(a+sym.P_Path+7),
+				B(a+sym.P_Path+8), B(a+sym.P_Path+9), B(a+sym.P_Path+10), B(a+sym.P_Path+11),
+				B(a+sym.P_Path+12), B(a+sym.P_Path+13), B(a+sym.P_Path+14), B(a+sym.P_Path+15))
+			if W(a+sym.P_Queue) != 0 {
 				// If current proc, it has no queue.
 				// Other procs are in a queue.
-				if W(D_Proc) != a {
-					DumpProcDesc(W(a + P_Queue))
+				if W(sym.D_Proc) != a {
+					DumpProcDesc(W(a + sym.P_Queue))
 				}
 			}
 
 			if paranoid {
-				if B(a+P_ID) > 10 {
+				if B(a+sym.P_ID) > 10 {
 					panic("P_ID")
 				}
-				if B(a+P_PID) > 10 {
+				if B(a+sym.P_PID) > 10 {
 					panic("P_PID")
 				}
-				if B(a+P_SID) > 10 {
+				if B(a+sym.P_SID) > 10 {
 					panic("P_SID")
 				}
-				if B(a+P_CID) > 10 {
+				if B(a+sym.P_CID) > 10 {
 					panic("P_CID")
 				}
-				if W(a+P_User) > 10 {
+				if W(a+sym.P_User) > 10 {
 					panic("P_User")
 				}
 				/*
 					for i := Word(0); i < 10; i++ {
-						if B(a+P_PATH+i) > 10 {
+						if B(a+sym.P_Path+i) > 10 {
 							panic(i)
 						}
 					}
@@ -3137,21 +2922,21 @@ func DumpProcDesc(a Word) {
 }
 
 func DumpProcesses() {
-	if W(D_Proc) != 0 {
+	if W(sym.D_Proc) != 0 {
 		L("D_Proc: CURRENT:")
-		DumpProcDesc(W(D_Proc))
+		DumpProcDesc(W(sym.D_Proc))
 	}
-	if W(D_AProcQ) != 0 {
+	if W(sym.D_AProcQ) != 0 {
 		L("D_AProcQ: Active:")
-		DumpProcDesc(W(D_AProcQ))
+		DumpProcDesc(W(sym.D_AProcQ))
 	}
-	if W(D_WProcQ) != 0 {
+	if W(sym.D_WProcQ) != 0 {
 		L("D_WProcQ: Wait:")
-		DumpProcDesc(W(D_WProcQ))
+		DumpProcDesc(W(sym.D_WProcQ))
 	}
-	if W(D_SProcQ) != 0 {
+	if W(sym.D_SProcQ) != 0 {
 		L("D_SProcQ: Sleep")
-		DumpProcDesc(W(D_SProcQ))
+		DumpProcDesc(W(sym.D_SProcQ))
 	}
 }
 
@@ -3193,8 +2978,8 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 	if Level == 2 {
 		modulePointerOffset = Word(4)
 	}
-	start := PeekW(D_ModDir)
-	limit := PeekW(D_ModDir + 2)
+	start := PeekW(sym.D_ModDir)
+	limit := PeekW(sym.D_ModDir + 2)
 	i := start
 
 	tm := TraceMem
@@ -3254,8 +3039,8 @@ func MemoryModules() {
 	if Level == 2 {
 		modulePointerOffset = Word(4)
 	}
-	start := PeekW(D_ModDir)
-	limit := PeekW(D_ModDir + 2)
+	start := PeekW(sym.D_ModDir)
+	limit := PeekW(sym.D_ModDir + 2)
 	i := start
 
 	t := TraceMem
@@ -3299,8 +3084,8 @@ var swi_name = []string{"swi", "swi2", "swi3"}
 func swi() {
 	swi_num := iflag + 1 // 1, 2, or 3 for SWI, SWI2, or SWI3.
 
-	da_inst(swi_name[iflag], "", 5)
-	da_len = 3 /* Often an extra byte after the SWI opcode */
+	Dis_inst(swi_name[iflag], "", 5)
+	Dis_len(3 /* Often an extra byte after the SWI opcode */)
 
 	ccreg |= 0x80
 	PushWord(pcreg)
@@ -3353,7 +3138,7 @@ func Os9HypervisorCall(syscall byte) {
 	handled := false
 	L("Hyp::%x", syscall)
 	switch Word(syscall) {
-	case I_Attach:
+	case sym.I_Attach:
 		{
 			access_mode := GetAReg()
 			dev_name := Os9String(xreg)
@@ -3365,27 +3150,27 @@ func Os9HypervisorCall(syscall byte) {
 				handled = true
 			*/
 		}
-	case I_ChgDir:
-	case I_Close:
-	case I_Create:
-	case I_Delete:
-	case I_DeletX:
-	case I_Detach:
+	case sym.I_ChgDir:
+	case sym.I_Close:
+	case sym.I_Create:
+	case sym.I_Delete:
+	case sym.I_DeletX:
+	case sym.I_Detach:
 		{
 			dev_table := ureg
 			L("Hyp I_Detach %04x", dev_table)
 		}
-	case I_Dup:
+	case sym.I_Dup:
 		L("Hyp I_Dup %d.", GetAReg())
-	case I_GetStt:
-	case I_MakDir:
-	case I_Open:
-	case I_Read:
-	case I_ReadLn:
-	case I_Seek:
-	case I_SetStt:
-	case I_Write:
-	case I_WritLn:
+	case sym.I_GetStt:
+	case sym.I_MakDir:
+	case sym.I_Open:
+	case sym.I_Read:
+	case sym.I_ReadLn:
+	case sym.I_Seek:
+	case sym.I_SetStt:
+	case sym.I_Write:
+	case sym.I_WritLn:
 	}
 	if handled {
 		sreg += 10
@@ -3405,9 +3190,9 @@ byte *byteregs[]={d_reg+1,d_reg,&ccreg,&dpreg,&fillreg,&fillreg,&fillreg,&fillre
 */
 
 func tfr() {
-	da_inst("tfr", "", 7)
+	Dis_inst("tfr", "", 7)
 	b := ImmByte()
-	da_reg(b)
+	Dis_reg(b)
 	src := TfrReg(15 & (b >> 4))
 	dst := TfrReg(15 & b)
 	if (src & 8) != (dst & 8) {
@@ -3423,9 +3208,9 @@ func tfr() {
 }
 
 func exg() {
-	da_inst("exg", "", 8)
+	Dis_inst("exg", "", 8)
 	b := ImmByte()
-	da_reg(b)
+	Dis_reg(b)
 	r1 := TfrReg(15 & (b >> 4))
 	r2 := TfrReg(15 & b)
 	if (b & 0x80) == 0 {
@@ -3446,21 +3231,21 @@ func br(f bool) {
 
 	if 0 == iflag {
 		b := ImmByte()
-		dest = pcreg + Signed(b)
+		dest = pcreg + SignExtend(b)
 		if f {
-			pcreg += Signed(b)
+			pcreg += SignExtend(b)
 		}
-		da_len = 2
+		Dis_len(2)
 	} else {
 		w := ImmWord()
 		dest = pcreg + w
 		if f {
 			pcreg += w
 		}
-		da_len = 3
+		Dis_len(3)
 	}
 	off := F("$%04x", dest&0xffff)
-	da_ops(off, "", 0)
+	Dis_ops(off, "", 0)
 }
 
 func NXORV() bool {
@@ -3471,87 +3256,87 @@ func IFLAG() bool {
 }
 
 func bra() {
-	da_inst(CondS(IFLAG(), "l", ""), "bra", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bra", CondI(IFLAG(), 5, 3))
 	br(true)
 }
 
 func brn() {
-	da_inst(CondS(IFLAG(), "l", ""), "brn", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "brn", CondI(IFLAG(), 5, 3))
 	br(false)
 }
 
 func bhi() {
-	da_inst(CondS(IFLAG(), "l", ""), "bhi", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bhi", CondI(IFLAG(), 5, 3))
 	br(0 == (ccreg & 0x05))
 }
 
 func bls() {
-	da_inst(CondS(IFLAG(), "l", ""), "bls", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bls", CondI(IFLAG(), 5, 3))
 	br(0 != ccreg&0x05)
 }
 
 func bcc() {
-	da_inst(CondS(IFLAG(), "l", ""), "bcc", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bcc", CondI(IFLAG(), 5, 3))
 	br(0 == (ccreg & 0x01))
 }
 
 func bcs() {
-	da_inst(CondS(IFLAG(), "l", ""), "bcs", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bcs", CondI(IFLAG(), 5, 3))
 	br(0 != ccreg&0x01)
 }
 
 func bne() {
-	da_inst(CondS(IFLAG(), "l", ""), "bne", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bne", CondI(IFLAG(), 5, 3))
 	br(0 == (ccreg & 0x04))
 }
 
 func beq() {
-	da_inst(CondS(IFLAG(), "l", ""), "beq", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "beq", CondI(IFLAG(), 5, 3))
 	br(0 != ccreg&0x04)
 }
 
 func bvc() {
-	da_inst(CondS(IFLAG(), "l", ""), "bvc", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bvc", CondI(IFLAG(), 5, 3))
 	br(0 == (ccreg & 0x02))
 }
 
 func bvs() {
-	da_inst(CondS(IFLAG(), "l", ""), "bvs", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bvs", CondI(IFLAG(), 5, 3))
 	br(0 != ccreg&0x02)
 }
 
 func bpl() {
-	da_inst(CondS(IFLAG(), "l", ""), "bpl", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bpl", CondI(IFLAG(), 5, 3))
 	br(0 == (ccreg & 0x08))
 }
 
 func bmi() {
-	da_inst(CondS(IFLAG(), "l", ""), "bmi", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bmi", CondI(IFLAG(), 5, 3))
 	br(0 != ccreg&0x08)
 }
 
 func bge() {
-	da_inst(CondS(IFLAG(), "l", ""), "bge", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bge", CondI(IFLAG(), 5, 3))
 	br(!NXORV())
 }
 
 func blt() {
-	da_inst(CondS(IFLAG(), "l", ""), "blt", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "blt", CondI(IFLAG(), 5, 3))
 	br(NXORV())
 }
 
 func bgt() {
-	da_inst(CondS(IFLAG(), "l", ""), "bgt", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "bgt", CondI(IFLAG(), 5, 3))
 	br(!(NXORV() || 0 != ccreg&0x04))
 }
 
 func ble() {
-	da_inst(CondS(IFLAG(), "l", ""), "ble", CondI(IFLAG(), 5, 3))
+	Dis_inst(CondS(IFLAG(), "l", ""), "ble", CondI(IFLAG(), 5, 3))
 	br(NXORV() || 0 != ccreg&0x04)
 }
 
 func leax() {
-	da_inst("leax", "", 4)
+	Dis_inst("leax", "", 4)
 	w := Word(postbyte())
 	if w != 0 {
 		CLZ()
@@ -3562,7 +3347,7 @@ func leax() {
 }
 
 func leay() {
-	da_inst("leay", "", 4)
+	Dis_inst("leay", "", 4)
 	w := Word(postbyte())
 	if w != 0 {
 		CLZ()
@@ -3573,12 +3358,12 @@ func leay() {
 }
 
 func leau() {
-	da_inst("leau", "", 4)
+	Dis_inst("leau", "", 4)
 	ureg = Word(postbyte())
 }
 
 func leas() {
-	da_inst("leas", "", 4)
+	Dis_inst("leas", "", 4)
 	sreg = Word(postbyte())
 }
 
@@ -3590,7 +3375,7 @@ func bit_count(b byte) int {
 	for i := 0; i <= 7; i++ {
 		if (b & mask) != 0 {
 			count++
-			da_ops(CondS(count > 1, ",", ""),
+			Dis_ops(CondS(count > 1, ",", ""),
 				reg_for_bit_count[i],
 				1+CondI(i < 4, 1, 0))
 		}
@@ -3601,7 +3386,7 @@ func bit_count(b byte) int {
 
 func pshs() {
 	b := ImmByte()
-	da_inst("pshs", "", 5)
+	Dis_inst("pshs", "", 5)
 	bit_count(b)
 	if (b & 0x80) != 0 {
 		PushWord(pcreg)
@@ -3631,8 +3416,8 @@ func pshs() {
 
 func puls() {
 	b := ImmByte()
-	da_inst("puls", "", 5)
-	da_len = 2
+	Dis_inst("puls", "", 5)
+	Dis_len(2)
 	bit_count(b)
 	if (b & 0x01) != 0 {
 		PullByte(&ccreg)
@@ -3666,7 +3451,7 @@ func puls() {
 
 func pshu() {
 	b := ImmByte()
-	da_inst("pshu", "", 5)
+	Dis_inst("pshu", "", 5)
 	bit_count(b)
 	if (b & 0x80) != 0 {
 		PushUWord(pcreg)
@@ -3696,8 +3481,8 @@ func pshu() {
 
 func pulu() {
 	b := ImmByte()
-	da_inst("pulu", "", 5)
-	da_len = 2
+	Dis_inst("pulu", "", 5)
+	Dis_len(2)
 	bit_count(b)
 	if (b & 0x01) != 0 {
 		PullUByte(&ccreg)
@@ -3745,7 +3530,7 @@ func SETSTATUSD(a, b, res uint32) {
 
 func addd() {
 	var aop, bop, res uint32
-	da_inst("addd", "", 5)
+	Dis_inst("addd", "", 5)
 	aop = uint32(dreg)
 	ea := eaddr16()
 	bop = uint32(ea.GetW())
@@ -3757,13 +3542,13 @@ func addd() {
 func subd() {
 	var aop, bop, res uint32
 	if iflag != 0 {
-		da_inst("cmpd", "", 5)
+		Dis_inst("cmpd", "", 5)
 	} else {
-		da_inst("subd", "", 5)
+		Dis_inst("subd", "", 5)
 	}
 	if iflag == 2 {
 		aop = uint32(ureg)
-		da_inst("cmpu", "", 5)
+		Dis_inst("cmpu", "", 5)
 	} else {
 		aop = uint32(dreg)
 	}
@@ -3780,13 +3565,13 @@ func cmpx() {
 	var aop, bop, res uint32
 	switch iflag {
 	case 0:
-		da_inst("cmpx", "", 5)
+		Dis_inst("cmpx", "", 5)
 		aop = uint32(xreg)
 	case 1:
-		da_inst("cmpy", "", 5)
+		Dis_inst("cmpy", "", 5)
 		aop = uint32(yreg)
 	case 2:
-		da_inst("cmps", "", 5)
+		Dis_inst("cmps", "", 5)
 		aop = uint32(sreg)
 	}
 	ea := eaddr16()
@@ -3796,7 +3581,7 @@ func cmpx() {
 }
 
 func ldd() {
-	da_inst("ldd", "", 4)
+	Dis_inst("ldd", "", 4)
 	ea := eaddr16()
 	w := ea.GetW()
 	SETNZ16(w)
@@ -3805,9 +3590,9 @@ func ldd() {
 
 func ldx() {
 	if iflag != 0 {
-		da_inst("ldy", "", 4)
+		Dis_inst("ldy", "", 4)
 	} else {
-		da_inst("ldx", "", 4)
+		Dis_inst("ldx", "", 4)
 	}
 	ea := eaddr16()
 	w := ea.GetW()
@@ -3821,9 +3606,9 @@ func ldx() {
 
 func ldu() {
 	if iflag != 0 {
-		da_inst("lds", "", 4)
+		Dis_inst("lds", "", 4)
 	} else {
-		da_inst("ldu", "", 4)
+		Dis_inst("ldu", "", 4)
 	}
 	ea := eaddr16()
 	w := ea.GetW()
@@ -3836,7 +3621,7 @@ func ldu() {
 }
 
 func std() {
-	da_inst("std", "", 4)
+	Dis_inst("std", "", 4)
 	ea := eaddr16()
 	w := dreg
 	SETNZ16(w)
@@ -3845,9 +3630,9 @@ func std() {
 
 func stx() {
 	if iflag != 0 {
-		da_inst("sty", "", 4)
+		Dis_inst("sty", "", 4)
 	} else {
-		da_inst("stx", "", 4)
+		Dis_inst("stx", "", 4)
 	}
 	ea := eaddr16()
 	var w Word
@@ -3862,9 +3647,9 @@ func stx() {
 
 func stu() {
 	if iflag == 0 {
-		da_inst("stu", "", 4)
+		Dis_inst("stu", "", 4)
 	} else {
-		da_inst("sts", "", 4)
+		Dis_inst("sts", "", 4)
 	}
 	ea := eaddr16()
 	var w Word
@@ -3894,123 +3679,6 @@ func ccbits(b byte) string {
 	return buf.String()
 }
 
-/* max. bytes of instruction code per trace line */
-const I_MAX = 4
-
-func where(addr Word) string {
-	if Level == 2 {
-		name, offset := MemoryModuleOf(addr)
-		if name != "" {
-			return F("%q+%04x ", name, offset)
-		} else {
-			return "? "
-		}
-	}
-	// TODO -- did this ever work for Level 1?
-	var buf bytes.Buffer
-
-	start := W(0x26)
-	limit := W(0x28)
-
-	for i := start; i < limit; i += 4 {
-		mod := W(i)
-		if mod != 0 {
-			size := W(mod + 2)
-			if mod < addr && addr < mod+size {
-				cp := mod + W(mod+4)
-				for {
-					b := B(cp)
-					ch := 127 & b
-					if '!' <= ch && ch <= '~' {
-						buf.WriteByte(ch)
-					}
-					if (b & 128) != 0 {
-						Z(&buf, ",%04x ", addr-mod)
-						return buf.String()
-					}
-					cp++
-				}
-			}
-		}
-	}
-	return "? "
-}
-
-var been_there [0x10000]bool
-
-func regs() string {
-	var buf bytes.Buffer
-	Z(&buf, "a=%02x b=%02x x=%04x:%04x y=%04x:%04x u=%04x:%04x s=%04x:%04x,%04x cc=%s dp=%02x #%d",
-		GetAReg(), GetBReg(), xreg, PeekW(xreg), yreg, PeekW(yreg), ureg, PeekW(ureg), sreg, PeekW(sreg), PeekW(sreg+2), ccbits(ccreg), dpreg, steps)
-	return buf.String()
-}
-func trace() {
-	var buf bytes.Buffer
-	wh := where(pcreg_prev)
-	oldnew := CondI(been_there[pcreg_prev], 'o', 'N')
-	Z(&buf, "%s%c %04x:", wh, oldnew, pcreg_prev)
-	been_there[pcreg_prev] = true
-
-	var ilen int
-	if da_len != 0 {
-		ilen = int(da_len)
-	} else {
-		ilen = int(pcreg - pcreg_prev)
-		if ilen < 0 {
-			ilen = -ilen
-		}
-	}
-	for i := Word(0); i < I_MAX; i++ {
-		if int(i) < ilen {
-			Z(&buf, "%02x", B(pcreg_prev+i))
-		} else {
-			Z(&buf, "  ")
-		}
-	}
-	Z(&buf, " %-5s %-17s [%02d] ", dinst.String(), dops.String(), cycles)
-	log.Printf("%s%s", buf.String(), regs())
-	da_len = 0
-
-	// TODO: join this with `where` above.
-	for label, r := range annotations {
-		if pcreg_prev < r.Reloc {
-			continue
-		}
-		if pcreg_prev >= r.Reloc+r.Len {
-			continue
-		}
-		text, _ := r.Texts[pcreg_prev-r.Reloc]
-		if text != "" {
-			log.Printf("%q %04x: %s", label, pcreg_prev-r.Reloc, text)
-		}
-	}
-	name, offset := MemoryModuleOf(pcreg_prev)
-	if name != "" {
-		name = strings.ToLower(name)
-		note, ok := annotations[name]
-		if ok {
-			text, _ := note.Texts[offset]
-			log.Printf("%q+%04x :::: %s", name, offset, text)
-		} else {
-			log.Printf("%q+%04x :::: ????", name, offset)
-		}
-	}
-
-	log.Printf("\t%s debug=%q", ShowMmu(), DebugString)
-}
-
-func Finish() {
-	L("Finish:")
-	L("Cycles: %d   Steps: %d", cycles_sum, steps)
-	L("")
-	DumpAllMemory()
-	L("")
-	DumpAllMemoryPhys()
-	L("")
-	L("Cycles: %d   Steps: %d", cycles_sum, steps)
-}
-
-// STOP
 func init() {
 	instructionTable = []func(){
 		neg, ill, ill, com, lsr, ill, ror, asr,
@@ -4048,157 +3716,52 @@ func init() {
 	}
 }
 
-type Config struct {
-	DiskImageFilename string
-	BootImageFilename string
-	Listings          map[string]string
-	Relocations       map[string]Word
-	Level             int
-	MaxSteps          int64
-	TraceAfter        int64
-	Keystrokes        <-chan byte
-	NewListingsDir    string
-}
-
 var tracing bool
 
-type Notes struct {
-	Reloc Word
-	Len   Word
-	Texts map[Word]string
-}
+func Main() {
+	InitTrace()
+	InitHardware()
 
-var annotations = make(map[string]*Notes)
+	keystrokes := make(chan byte, 0)
+	go ProduceKeystrokes(keystrokes)
 
-var parseListingLine = regexp.MustCompile(
-	`^([0-9A-F]{4}) [0-9A-F]+ +[(].*?[)]:[0-9]{5} *(.*)$`)
-
-func readListing(filename string) (texts map[Word]string, maxAddr Word) {
-	maxAddr = Word(0)
-	texts = make(map[Word]string)
-	fd, err := os.Open(filename)
-	defer fd.Close()
+	fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
 	if err != nil {
-		log.Panicf("Cannot open listing %q: %v", filename, err)
-	}
-	r := bufio.NewScanner(fd)
-	for r.Scan() {
-		m := parseListingLine.FindStringSubmatch(r.Text())
-		if len(m) == 3 {
-			hexaddr, text := m[1], m[2]
-			addr, err := strconv.ParseUint(hexaddr, 16, 16)
-			if err != nil {
-				panic(err)
-			}
-			waddr := Word(addr)
-			texts[waddr] = text
-			if waddr > maxAddr {
-				maxAddr = waddr
-			}
-		}
-	}
-	return texts, maxAddr
-}
-
-func readListsDir(dirname string) {
-	filenames, err := filepath.Glob(filepath.Join(dirname, "*.list"))
-	if err != nil {
-		panic(err)
-	}
-	for _, filename := range filenames {
-		texts, maxAddr := readListing(filename)
-		notes := &Notes{
-			Reloc: 0,
-			Len:   maxAddr,
-			Texts: texts,
-		}
-		base := filepath.Base(filename)
-		parts := strings.Split(base, ".")
-		key := strings.ToLower(parts[0])
-		annotations[key] = notes
-	}
-}
-
-func readListings(listings map[string]string, relocations map[string]Word) {
-	for key, filename := range listings {
-		reloc, _ := relocations[key]
-		texts, maxAddr := readListing(filename)
-
-		/*
-		   L("KEY %q reloc %04x len %04x", key, reloc, maxAddr)
-		   for k, v := range texts {
-		     L("    [%04x] %q", k, v)
-		   }
-		*/
-		notes := &Notes{
-			Reloc: reloc,
-			Len:   maxAddr,
-			Texts: texts,
-		}
-		annotations[key] = notes
-	}
-}
-
-func Main(cf *Config) {
-	fd, err := os.OpenFile(cf.DiskImageFilename, os.O_RDWR, 0644)
-	if err != nil {
-		log.Fatalf("Cannot open disk image: %q: %v", cf.DiskImageFilename, err)
+		log.Fatalf("Cannot open disk image: %q: %v", *FlagBootImageFilename, err)
 	}
 	disk_fd = fd
 
-	boot, err := ioutil.ReadFile(cf.BootImageFilename)
+	boot, err := ioutil.ReadFile(*FlagBootImageFilename)
 	if err != nil {
-		log.Fatalf("Cannot read boot image: %q: %v", cf.BootImageFilename, err)
+		log.Fatalf("Cannot read boot image: %q: %v", *FlagDiskImageFilename, err)
 	}
-	for i, e := range boot {
-		PokeB(Word(i+0x100), e)
+	L("boot mem size: %x", len(boot))
+	for i, b := range boot {
+		PokeB(Word(i+0x100), b)
 	}
-	// copy(mem[MmuDefaultStartAddr+0x100:], boot)
-
-	readListings(cf.Listings, cf.Relocations)
-	if cf.NewListingsDir != "" {
-		readListsDir(cf.NewListingsDir)
-	}
+	DumpAllMemory()
 
 	pcreg = 0x100
 	sreg = 0
 	dpreg = 0
 	iflag = 0
 
-	da_len = 0
+	Dis_len(0)
 	cycles_sum = 0
-
-	Level = cf.Level
-	switch Level {
-	case 1:
-		if PeekB(0xFFFC) != 0x01 {
-			log.Fatalf("Level is 2, but PeekB(0xFFFC) != 0x01")
-		}
-		InitLevel1()
-	case 2:
-		if PeekB(0xFFFC) != 0xFE {
-			log.Fatalf("Level is 2, but PeekB(0xFFFC) != 0xFE")
-		}
-		InitLevel2()
-	default:
-		log.Fatalf("Unknown level: %d", Level)
-	}
 
 	defer func() {
 		TraceMem = false
 		Finish()
 	}()
 
-	maxsteps := cf.MaxSteps
-	traceAfter := cf.TraceAfter
-	for steps = 0; maxsteps == 0 || steps < maxsteps; steps++ {
+	for steps = 0; *FlagMaxSteps == 0 || steps < *FlagMaxSteps; steps++ {
 		pcreg_prev = pcreg
 
 		cp := &Os9SysCallCompletion[pcreg]
 		if cp.callback != nil {
 			cp.callback(cp)
 			cp.callback = nil
-			if TraceMem {
+			if TraceMem && *FlagVerbosity >= 4 {
 				DumpAllMemory()
 			}
 		}
@@ -4226,7 +3789,7 @@ func Main(cf *Config) {
 			}
 			if (irqs_pending&IRQ_PENDING) != 0 && !(ccreg&CC_INHIBIT_IRQ != 0) {
 
-				irq(cf.Keystrokes)
+				irq(keystrokes)
 				continue
 			}
 		}
@@ -4234,18 +3797,19 @@ func Main(cf *Config) {
 		// Take one step.
 		cycles = 0
 		TraceMem = tracing
+		// L("cycles %d TraceMem %v pcreg %d steps %d", cycles, TraceMem, pcreg, steps)
 		ireg = B(pcreg)
 		pcreg++
 		(instructionTable[ireg])() /* process instruction */
 		TraceMem = false
 		cycles_sum += int64(cycles)
 
-		if tracing || traceAfter > 0 && steps >= traceAfter {
+		if tracing || *FlagTraceAfter > 0 && steps >= *FlagTraceAfter {
 			tracing = true
-			trace()
+			Trace()
 		}
 
-		if pcreg == D_BtBug && D_BtBug > 0 {
+		if pcreg == sym.D_BtBug && sym.D_BtBug > 0 {
 			if len(DebugString) < 20 {
 				DebugString += string(rune(GetAReg() & 0x7F))
 			}
