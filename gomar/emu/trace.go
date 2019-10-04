@@ -18,7 +18,7 @@ var been_there [0x10000]bool
 /* max. bytes of instruction code per trace line */
 const MaximumBytesPerOpcode = 4
 
-/* disassembled instruction len (optional, on demand) */
+/* disassembled instruction len */
 var dis_length Word
 
 func Dis_len(n Word) {
@@ -75,9 +75,9 @@ func Finish() {
 	L("Finish:")
 	L("Cycles: %d   Steps: %d", cycles_sum, steps)
 	L("")
-	DumpAllMemory()
+	DoDumpAllMemory()
 	L("")
-	DumpAllMemoryPhys()
+	DoDumpAllMemoryPhys()
 	L("")
 	L("Cycles: %d   Steps: %d", cycles_sum, steps)
 }
@@ -146,4 +146,13 @@ func Dis_reg(b byte) {
 	dops.WriteString(reg_for_da_reg[(b>>4)&0xf])
 	dops.WriteString(",")
 	dops.WriteString(reg_for_da_reg[b&0xf])
+}
+
+func DumpAllMemory()    { DoDumpAllMemory() }
+func DumpPageZero()     { DoDumpPageZero() }
+func DumpProcesses()    { DoDumpProcesses() }
+func DumpAllPathDescs() { DoDumpAllPathDescs() }
+
+func LogIO(f string, args ...interface{}) {
+	L(f, args...)
 }
