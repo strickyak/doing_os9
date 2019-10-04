@@ -10,16 +10,22 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"os"
+	"log"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 )
 
+var flagListing = flag.String("listing", "", "assembler listing with definitions")
+var flagErrMsg = flag.String("errmsg", "", "errmsg file from SYS directory")
+
 // We pick symbols with a single `$` or `.`.
-var Match = regexp.MustCompile(`^[[].G[]] ([A-Za-z]+)([.$])([A-Za-z0-9]*) +([0-9A-F]{4})\s*$`)
+var SymbolMatch = regexp.MustCompile(`^[[].G[]] ([A-Za-z]+)([.$])([A-Za-z0-9]*) +([0-9A-F]{4})\s*$`)
+var ErrMsgMatch = regexp.MustCompile(`^([0-9]+) [-]+ (.*)$`)
 
 func SortedKeys(m map[string]string) []string {
 	var keys []string
@@ -31,8 +37,9 @@ func SortedKeys(m map[string]string) []string {
 }
 
 func main() {
+	flag.Parse()
 	// Command line args are the +build tags to require.
-	for _, arg := range os.Args[1:] {
+	for _, arg := range flag.Args() {
 		fmt.Printf("// +build %s\n", arg)
 	}
 	// Blank line required between +build directives and package comment.
@@ -51,10 +58,14 @@ func main() {
 	syscalls := make(map[string]string)
 	errnos := make(map[string]string)
 
-	r := bufio.NewScanner(os.Stdin)
+	fd, err := os.Open(*flagListing)
+	if err != nil {
+		log.Fatalf("Cannot open listing file %q: %v", *flagListing, err)
+	}
+	r := bufio.NewScanner(fd)
 	for r.Scan() {
 		t := r.Text()
-		m := Match.FindStringSubmatch(t)
+		m := SymbolMatch.FindStringSubmatch(t)
 		if m != nil {
 			symbol := fmt.Sprintf("%s%s%s", m[1], m[2], m[3])
 			constName := fmt.Sprintf("%s_%s", m[1], m[3])
@@ -94,14 +105,30 @@ func main() {
 	}
 
 	done := make(map[string]bool)
-	fmt.Printf("var Os9Error = map[byte]string {")
+	fmt.Printf("var Os9Error = map[byte]string {\n")
 	for _, errno := range SortedKeys(errnos) {
-		val := consts[errno]		
+		val := consts[errno]
 		did, _ := done[val]
 		if !did {
 			fmt.Printf("\t%s: %q,\n", errno, "E$" + errnos[errno])
 			done[val] = true
 		}
 	}
-	fmt.Printf("}")
+	fmt.Printf("}\n")
+
+	fmt.Printf("var Os9ErrorName = map[byte]string {\n")
+	fd, err = os.Open(*flagErrMsg)
+	if err != nil {
+		log.Fatalf("Cannot open errmsg file %q: %v", *flagErrMsg, err)
+	}
+	r = bufio.NewScanner(fd)
+	for r.Scan() {
+		t := r.Text()
+		m := ErrMsgMatch.FindStringSubmatch(t)
+		if m == nil {
+			log.Fatalf("Cannot ErrMsgMatch this line from %q: %q", *flagErrMsg, t)
+		}
+		fmt.Printf("\t%s: %q,\n", m[1], m[2])
+	}
+	fmt.Printf("}\n")
 }
