@@ -40,7 +40,7 @@ func Z(w *bytes.Buffer, format string, args ...interface{}) {
 
 // Verbosity:
 //	's' sys calls
-//	'r' sys calls with RAM dumps
+//	'r' RAM dumps at sys calls
 //	'd' I/O devices
 //	'i' instructions
 //	'm' memory get/put
