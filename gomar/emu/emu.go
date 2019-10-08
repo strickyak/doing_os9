@@ -2960,9 +2960,8 @@ func Main() {
 	SetVerbosityBits(*FlagInitialVerbosity)
 	InitTrace()
 	InitHardware()
-
 	keystrokes := make(chan byte, 0)
-	go ProduceKeystrokes(keystrokes)
+	go InputRoutine(keystrokes)
 
 	fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
 	if err != nil {
