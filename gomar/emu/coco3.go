@@ -9,6 +9,11 @@ import (
 	"log"
 )
 
+// While booting OS9 Level2, the screen seems to be doubleByte
+// at 07c000 to 07d000.  Second line begins at 07c0a0,
+// that is 160 bytes from start, or 80 doubleBytes.
+// 4096 div 160 is 25.6 lines.
+
 const P_Path = sym.P_Path
 
 const MmuDefaultStartAddr = (0x38 << 13)
@@ -23,10 +28,17 @@ var MmuMap [2][8]byte
 func InitHardware() {
 	Coco3Contract()
 }
+
+var videoEpoch int64
+
 func FireTimerInterrupt() {
 	if GimeVertIrqEnable {
 		irqs_pending |= IRQ_PENDING
 		Waiting = false
+	}
+	videoEpoch++
+	if videoEpoch%10 == 1 {
+		PublishVideoText()
 	}
 }
 
@@ -193,7 +205,8 @@ func DoDumpAllMemoryPhys() {
 		something := false
 		for j = 0; j < 32; j++ {
 			x := mem[i+j]
-			if x != 0 && x != ' ' {
+			// if x != 0 && x != ' ' //
+			if x != 0 {
 				something = true
 				break
 			}

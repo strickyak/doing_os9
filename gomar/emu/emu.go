@@ -20,7 +20,7 @@ var FlagListingsDir = flag.String("listings", "_listings", "")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 var FlagTraceAfter = flag.Uint64("after", MaxUint64, "Tracing starts after this many steps")
 
-const paranoid = true // Do paranoid checks.
+const paranoid = false // Do paranoid checks.
 const hyp = true      // Use hyperviser code.
 
 // F is for FORMAT (i.e. fmt.Sprintf)
