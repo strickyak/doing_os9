@@ -13,11 +13,17 @@ package main
 
 import D "github.com/strickyak/doing_os9"
 
-//import "bufio"
-import "fmt"
-import "io/ioutil"
-import "os"
-import FP "path/filepath"
+import (
+	"bytes"
+	"flag"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+var UNIX = flag.Bool("unix", false, "Unixify: use lowercase and change \\r to \\n")
 
 type Segment struct {
 	At   int
@@ -29,6 +35,7 @@ type PairIS struct {
 }
 
 func main() {
+	flag.Parse()
 
 	bb := D.ReadN(os.Stdin, 256)
 
@@ -48,6 +55,9 @@ func ReadAtLen(pos int, sz int) []byte {
 	return D.ReadN(os.Stdin, sz)
 }
 func PrintInode(inode int, path string) {
+	if *UNIX {
+		path = strings.ToLower(path)
+	}
 	bb := ReadAtLen(inode*256, 256)
 
 	fmt.Printf("\n========= INODE #%d %q =========\n\n", inode, path)
@@ -83,8 +93,8 @@ func PrintInode(inode int, path string) {
 		for _, p := range segments {
 			fmt.Printf("=== Directory Segment at %d segs %d (inode %d path %q) ===\n", p.At, p.Segs, inode, path)
 
-			if len(os.Args) > 1 {
-				os.MkdirAll(FP.Join(os.Args[1], path), 0755)
+			if flag.NArg() > 0 {
+				os.MkdirAll(filepath.Join(flag.Arg(0), path), 0755)
 			}
 
 			segsize := p.Segs * 256
@@ -136,8 +146,11 @@ func PrintInode(inode int, path string) {
 
 		D.PrintModuleHeader(contents)
 
-		if len(os.Args) > 1 {
-			ioutil.WriteFile(FP.Join(os.Args[1], path), contents, 0666)
+		if flag.NArg() > 0 {
+			if *UNIX {
+				contents = bytes.ReplaceAll(contents, []byte{13}, []byte{10})
+			}
+			ioutil.WriteFile(filepath.Join(flag.Arg(0), path), contents, 0666)
 		}
 	}
 }
