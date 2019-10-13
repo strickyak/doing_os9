@@ -11,8 +11,10 @@ import (
 )
 
 var flagLevel = flag.Int("level", 1, "level 1 or 2, for interrupt vectors")
+var flagVhd = flag.Bool("vhd", false, "True for 86scd.vhd where boot sector seems to be sector 612.")
 
 const BOOT_SECTOR = 1224
+const BOOT_SECTOR_VHD = 612
 
 var Mem []byte
 
@@ -54,9 +56,13 @@ func main() {
 	}
 
 	// Read 18 256-byte sectors, starting at BOOT_SECTOR.
-	_, err := os.Stdin.Seek(BOOT_SECTOR*256, 0)
+	bootSector := int64(BOOT_SECTOR)
+	if *flagVhd {
+		bootSector = BOOT_SECTOR_VHD
+	}
+	_, err := os.Stdin.Seek(bootSector*256, 0)
 	if err != nil {
-		panic("cannot Seek BOOT_SECTOR")
+		panic("cannot Seek bootSector")
 	}
 	n, _ := io.ReadFull(os.Stdin, Mem[0x2600:0x3800])
 	if n != 18*256 {
