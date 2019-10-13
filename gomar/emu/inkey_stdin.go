@@ -19,3 +19,5 @@ func InputRoutine(keystrokes chan<- byte) {
 	close(keystrokes)
 	log.Fatal("Stdin ended")
 }
+
+func PublishVideoText() {}
