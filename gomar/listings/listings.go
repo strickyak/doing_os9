@@ -28,7 +28,7 @@ func (o *Listings) Lookup(module string, offset uint) string {
 }
 
 func LoadDir(dirname string) *Listings {
-	filenames, err := filepath.Glob(filepath.Join(dirname, "*.list"))
+	filenames, err := filepath.Glob(filepath.Join(dirname, "*.l*st"))
 	if err != nil {
 		log.Panicf("Cannot read directory %q: %v", dirname, err)
 	}
@@ -37,6 +37,11 @@ func LoadDir(dirname string) *Listings {
 	}
 	for _, filename := range filenames {
 		base := filepath.Base(filename)
+		ext := filepath.Ext(base)
+		if ext != ".list" && ext != ".lst" {
+			continue
+		}
+
 		parts := strings.Split(base, ".")
 		key := strings.ToLower(parts[0])
 		listings.Lines[key] = loadFile(filename)
@@ -44,7 +49,9 @@ func LoadDir(dirname string) *Listings {
 	return listings
 }
 
-var parse = regexp.MustCompile(`^([0-9A-F]{4}) [0-9A-F]+ +[(].*?[)]:[0-9]{5} *(.*)$`)
+var parse = regexp.MustCompile(`^([0-9A-F]{4}) [0-9A-F]+ +[(].*?[)]:[0-9]{5} +(.*)$`)
+var parseSection = regexp.MustCompile(`^ +[(].*?[)]:[0-9]{5} +(?i:section) +([A-Za-z0-9_]+)`)
+var parseEndSection = regexp.MustCompile(`^ +[(].*?[)]:[0-9]{5} +(?i:endsection)`)
 
 func loadFile(filename string) map[uint]string {
 	d := make(map[uint]string)
@@ -54,15 +61,27 @@ func loadFile(filename string) map[uint]string {
 	}
 	defer fd.Close()
 	r := bufio.NewScanner(fd)
+	inOtherSection := false
 	for r.Scan() {
-		m := parse.FindStringSubmatch(r.Text())
-		if m != nil {
+		text := r.Text()
+		m := parse.FindStringSubmatch(text)
+		if m != nil && !inOtherSection {
 			hexaddr, line := m[1], m[2]
 			addr, err := strconv.ParseUint(hexaddr, 16, 16)
 			if err != nil {
 				log.Panicf("Should have been a hex integer: %q: %v", hexaddr, err)
 			}
 			d[uint(addr)] = line
+			log.Printf("FILE %s ADDR %x LINE %q", filename, addr, line)
+		}
+		m = parseSection.FindStringSubmatch(text)
+		if m != nil {
+			section := m[1]
+			inOtherSection = (section != "code")
+		}
+		m = parseEndSection.FindStringSubmatch(text)
+		if m != nil {
+			inOtherSection = false
 		}
 	}
 	return d
