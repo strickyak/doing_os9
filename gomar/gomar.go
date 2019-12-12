@@ -1,3 +1,5 @@
+// +build main
+
 // 6809 & OS/9 Simulator "GOMAR".
 package main
 

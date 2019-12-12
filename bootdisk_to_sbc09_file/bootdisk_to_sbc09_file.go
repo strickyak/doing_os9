@@ -3,15 +3,31 @@
 //   go run bootdisk_to_sbc09_file.go <  $HOME/6809/nitros9/nos96809l1v030208coco_80d.dsk > /tmp/boot
 package main
 
+/*
+	DD.FMT DISK FORMAT:  offset $10:
+
+	BIT B0 - SIDE
+	0 = SINGLE SIDED
+	1 = DOUBLE SIDED
+
+	BIT B1 - DENSITY
+	0 = SINGLE DENSITY
+	1 = DOUBLE DENSITY
+
+	BIT B2 - TRACK DENSITY
+	0 = SINGLE (48 TPI)
+	1= DOUBLE (96 TPI)
+*/
+
 import (
 	 "bytes"
 	 "flag"
 	 "io"
+	 "log"
 	 "os"
 )
 
-var flagLevel = flag.Int("level", 1, "level 1 or 2, for interrupt vectors")
-var flagVhd = flag.Bool("vhd", false, "True for 86scd.vhd where boot sector seems to be sector 612.")
+var flagLevel = flag.Int("level", 0, "level 1 or 2, for interrupt vectors")
 
 const BOOT_SECTOR = 1224
 const BOOT_SECTOR_VHD = 612
@@ -51,20 +67,36 @@ func main() {
 		PutWord(0xFFFC, 0xFEFD) // NMI
 		PutWord(0xFFF8, 0xFEF7) // IRQ
 		PutWord(0xFFF6, 0xFEF4) // FIRQ
+	case 0:
+		panic("Use --level to define OS9 level")
 	default:
 		panic("bad level")
 	}
 
+	formatByte := make([]byte, 1)
+	_, err := os.Stdin.Seek(10, 0)
+	if err != nil {
+		panic("cannot Seek FMT byte")
+	}
+	n, _ := io.ReadFull(os.Stdin, formatByte)
+	if n != 1 {
+		panic("cannot read FMT byte")
+	}
+
 	// Read 18 256-byte sectors, starting at BOOT_SECTOR.
 	bootSector := int64(BOOT_SECTOR)
-	if *flagVhd {
-		bootSector = BOOT_SECTOR_VHD
+	switch formatByte[0] {
+	case 2: bootSector = 612
+	case 3: bootSector = 1224
+	default:
+		log.Panicf("unknown format byte: 0x%x", bootSector)
 	}
-	_, err := os.Stdin.Seek(bootSector*256, 0)
+
+	_, err = os.Stdin.Seek(bootSector*256, 0)
 	if err != nil {
 		panic("cannot Seek bootSector")
 	}
-	n, _ := io.ReadFull(os.Stdin, Mem[0x2600:0x3800])
+	n, _ = io.ReadFull(os.Stdin, Mem[0x2600:0x3800])
 	if n != 18*256 {
 		panic("cannot read boot track")
 	}

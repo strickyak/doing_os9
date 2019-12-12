@@ -3,10 +3,10 @@
 package emu
 
 import (
-	//"github.com/strickyak/doing_os9/gomar/sym"
-
 	"bytes"
+	"flag"
 	"log"
+	"os"
 )
 
 func AddressInDeviceSpace(addr Word) bool {
@@ -74,6 +74,20 @@ func GetIOByte(a Word) byte {
 	panic("notreached")
 }
 
+func LogicalSector(sector, side, track byte) int64 {
+	switch disk_dd_fmt {
+	case 2:
+		if side != 0 {
+			panic(side)
+		}
+		return int64(disk_sector) - 1 + int64(disk_track)*18
+	case 3:
+		return int64(disk_sector) - 1 + int64(disk_side)*18 + int64(disk_track)*36
+	}
+	log.Panicf("bad disk_dd_fmt: %d", disk_dd_fmt)
+	panic(0)
+}
+
 func PutIOByte(a Word, b byte) {
 	if 0xFF90 <= a && a < 0xFFC0 {
 		PutGimeIOByte(a, b)
@@ -114,7 +128,7 @@ func PutIOByte(a Word, b byte) {
 			case 0x80:
 				{
 					prev_disk_command = disk_command
-					disk_offset = 256 * (int64(disk_sector) - 1 + int64(disk_side)*18 + int64(disk_track)*36)
+					disk_offset = 256 * LogicalSector(disk_sector, disk_side, disk_track)
 					if disk_drive != 1 {
 						log.Panicf("ERROR: R: Drive %d not supported\n", disk_drive)
 					}
@@ -142,7 +156,7 @@ func PutIOByte(a Word, b byte) {
 			case 0xA0:
 				{
 					prev_disk_command = disk_command
-					disk_offset = 256 * (int64(disk_sector) - 1 + int64(disk_side)*18 + int64(disk_track)*36)
+					disk_offset = 256 * LogicalSector(disk_sector, disk_side, disk_track)
 					if disk_drive != 1 {
 						log.Panicf("ERROR: W: Drive %d not supported\n", disk_drive)
 					}
@@ -260,6 +274,68 @@ func PutIOByte(a Word, b byte) {
 		{
 			L("VDG PutByte OK: %x <- %x\n", a, b)
 		}
+
+	case 0xFF80,
+		0xFF81,
+		0xFF82:
+		break // Logical Sector Number: let it save in ram.
+	case 0xFF84,
+		0xFF85:
+		break // Buffer Location: let it save in ram.
+	case 0xFF83:
+		switch b {
+		case emudskReadSector:
+			{
+				initEmudsk()
+				lsn := (uint64(PeekB(0xFF80)) << 16) | (uint64(PeekB(0xFF81)) << 8) | uint64(PeekB(0xFF82))
+				ptr := (uint64(PeekB(0xFF84)) << 8) | uint64(PeekB(0xFF85))
+				_, err := fileEmudsk.Seek(int64(lsn*256), 0)
+				if err != nil {
+					log.Panicf("Cannot seek to sector %d on %q: %v", lsn, *flagEmudsk, err)
+				}
+				bb := make([]byte, 256)
+				cc, err := fileEmudsk.Read(bb)
+				if err != nil {
+					log.Panicf("Cannot read sector %d on %q: %v", lsn, *flagEmudsk, err)
+				}
+				if cc != 256 {
+					log.Panicf("Short read sector %d on %q: %d bytes", lsn, *flagEmudsk, cc)
+				}
+				for i, e := range bb {
+					PokeB(Word(ptr)+Word(i), e)
+				}
+				PokeB(0xFF83, 0) // OK
+			}
+		case emudskWriteSector:
+			initEmudsk()
+			log.Fatalf("writing not yet supported on emudisk")
+		case emudskCloseDevice:
+			initEmudsk()
+			PokeB(0xFF83, 0) // OK
+		}
+	}
+}
+
+const (
+	emudskReadSector byte = iota
+	emudskWriteSector
+	emudskCloseDevice
+)
+
+var flagEmudsk = flag.String("emudsk", "", "emudsk Emulation Disk")
+var fileEmudsk *os.File
+
+func initEmudsk() {
+	if fileEmudsk != nil {
+		return
+	}
+	if *flagEmudsk == "" {
+		return
+	}
+	var err error
+	fileEmudsk, err = os.Open(*flagEmudsk)
+	if err != nil {
+		log.Fatalf("Cannot open emudsk %q: %v", *flagEmudsk, err)
 	}
 }
 

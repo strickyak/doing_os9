@@ -18,10 +18,9 @@ var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagStressTest = flag.String("stress", "", "If nonempty, string to repeat")
 var FlagListingsDir = flag.String("listings", "_listings", "")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
-var FlagTraceAfter = flag.Uint64("after", MaxUint64, "Tracing starts after this many steps")
 
 const paranoid = false // Do paranoid checks.
-const hyp = true      // Use hyperviser code.
+const hyp = true       // Use hyperviser code.
 
 // F is for FORMAT (i.e. fmt.Sprintf)
 func F(format string, args ...interface{}) string {
@@ -39,6 +38,7 @@ func Z(w *bytes.Buffer, format string, args ...interface{}) {
 }
 
 // Verbosity:
+//	'a' all lowercase letters
 //	's' sys calls
 //	'r' RAM dumps at sys calls
 //	'd' I/O devices
@@ -46,11 +46,19 @@ func Z(w *bytes.Buffer, format string, args ...interface{}) {
 //	'm' memory get/put
 var V [128]bool                                                            // Verbosity bits
 var FlagInitialVerbosity = flag.String("v", "", "Initial verbosity chars") // Initial Verbosity
-var FlagTraceVerbosity = flag.String("t", "", "Trace verbosity chars")     // Trace Verbosity
+var FlagTraceVerbosity = flag.String("vv", "", "Trace verbosity chars")    // Trace Verbosity
+var FlagTraceAfter = flag.Uint64("t", MaxUint64, "Tracing starts after this many steps")
+
 func SetVerbosityBits(s string) {
 	for _, r := range s {
 		if int(r) >= len(V) {
 			log.Panicf("Verbosity rune %d too large for Verbosity Array", r)
+		}
+		if r == 'a' {
+			for i := 'a'; i <= 'z'; i++ {
+				V[i] = true
+			}
+			continue
 		}
 		V[r] = true
 	}
@@ -1388,6 +1396,8 @@ var disk_control byte
 var disk_fd *os.File
 var disk_stuff [256]byte
 var zero_disk_stuff [256]byte
+var disk_sector_0 [256]byte
+var disk_dd_fmt byte // Offset 16.
 var disk_i Word
 
 var kbd_ch byte
@@ -2963,21 +2973,44 @@ func Main() {
 	keystrokes := make(chan byte, 0)
 	go InputRoutine(keystrokes)
 
-	fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
-	if err != nil {
-		log.Fatalf("Cannot open disk image: %q: %v", *FlagBootImageFilename, err)
+	{
+		// Open disk image.
+		fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
+		if err != nil {
+			log.Fatalf("Cannot open disk image: %q: %v", *FlagBootImageFilename, err)
+		}
+		disk_fd = fd
 	}
-	disk_fd = fd
 
-	boot, err := ioutil.ReadFile(*FlagBootImageFilename)
-	if err != nil {
-		log.Fatalf("Cannot read boot image: %q: %v", *FlagDiskImageFilename, err)
+	{
+		// Read disk_sector_0.
+		n, err := disk_fd.Read(disk_sector_0[:])
+		if err != nil {
+			log.Panicf("Bad disk sector read: err=%v", err)
+		}
+		if n != 256 {
+			log.Panicf("Short disk sector read: n=%d", n)
+		}
+
+		disk_dd_fmt = disk_sector_0[16]
+
+		tracks_per_sector := int(disk_sector_0[17])*256 + int(disk_sector_0[18])
+		if tracks_per_sector != 18 {
+			log.Panicf("Not 18 sectors per track: %d.", tracks_per_sector)
+		}
 	}
-	L("boot mem size: %x", len(boot))
-	for i, b := range boot {
-		PokeB(Word(i+0x100), b)
+
+	{
+		boot, err := ioutil.ReadFile(*FlagBootImageFilename)
+		if err != nil {
+			log.Fatalf("Cannot read boot image: %q: %v", *FlagDiskImageFilename, err)
+		}
+		L("boot mem size: %x", len(boot))
+		for i, b := range boot {
+			PokeB(Word(i+0x100), b)
+		}
+		DumpAllMemory()
 	}
-	DumpAllMemory()
 
 	pcreg = 0x100
 	sreg = 0
@@ -2997,6 +3030,8 @@ func Main() {
 	}
 	stepsUntilTimer := uint(IRQ_FREQ)
 	for steps := uint64(0); steps < max; steps++ {
+		// println("loop", steps, pcreg_prev, pcreg)
+		log.Printf("loop: steps=%d prev=%04x pc=%04x", steps, pcreg_prev, pcreg)
 		pcreg_prev = pcreg
 
 		if stepsUntilTimer == 0 {
