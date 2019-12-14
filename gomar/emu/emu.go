@@ -91,7 +91,7 @@ func TfrReg(b byte) EA {
 }
 
 var fdump int
-var steps int64
+var Steps uint64
 var DebugString string
 
 /* 6809 registers */
@@ -124,6 +124,14 @@ var irqs_pending byte
 
 var instructionTable []func()
 
+var PcVisitedK [64]byte
+
+func init() {
+	for i := 0; i < 64; i++ {
+		PcVisitedK[i] = '.'
+	}
+}
+
 func GetAReg() byte  { return Hi(dreg) }
 func GetBReg() byte  { return Lo(dreg) }
 func PutAReg(x byte) { dreg = HiLo(x, Lo(dreg)) }
@@ -153,6 +161,9 @@ func Lo(a Word) byte {
 }
 func HiLo(hi, lo byte) Word {
 	return (Word(hi) << 8) | Word(lo)
+}
+func HiMidLo(hi, mid, lo byte) uint {
+	return (uint(hi) << 16) | (uint(mid) << 8) | uint(lo)
 }
 
 func SignExtend(a byte) Word {
@@ -973,7 +984,7 @@ type Completion struct {
 func Regs() string {
 	var buf bytes.Buffer
 	Z(&buf, "a=%02x b=%02x x=%04x:%04x y=%04x:%04x u=%04x:%04x s=%04x:%04x,%04x cc=%s dp=%02x #%d",
-		GetAReg(), GetBReg(), xreg, PeekW(xreg), yreg, PeekW(yreg), ureg, PeekW(ureg), sreg, PeekW(sreg), PeekW(sreg+2), ccbits(ccreg), dpreg, steps)
+		GetAReg(), GetBReg(), xreg, PeekW(xreg), yreg, PeekW(yreg), ureg, PeekW(ureg), sreg, PeekW(sreg), PeekW(sreg+2), ccbits(ccreg), dpreg, Steps)
 	return buf.String()
 }
 
@@ -991,11 +1002,11 @@ func DefaultCompleter(cp *Completion) {
 	if (ccreg & 1 /* carry bit indicates error */) != 0 {
 		errcode := GetBReg()
 		L("Kernel 0x%02x:%s: -> ERROR [%02x] %s", cp.service-1, name, errcode, DecodeOs9Error(errcode))
-		L("    regs: %s  #%d", Regs(), steps)
+		L("    regs: %s  #%d", Regs(), Steps)
 		L("\t%s", ExplainMMU())
 	} else {
 		L("Kernel 0x%02x:%s: -> okay", cp.service-1, name)
-		L("    regs: %s  #%d", Regs(), steps)
+		L("    regs: %s  #%d", Regs(), Steps)
 		L("\t%s", ExplainMMU())
 		if cp.service-1 == 0x8B {
 			var buf bytes.Buffer
@@ -1310,7 +1321,7 @@ func DecodeOs9Opcode(b byte) {
 		s, _ = sym.SysCallNames[b]
 	}
 	L("Kernel 0x%02x:%s: {%s}\n", b, s, buf.String())
-	L("    regs: %s  #%d", Regs(), steps)
+	L("    regs: %s  #%d", Regs(), Steps)
 	L("\t%s", ExplainMMU())
 
 	cp := &Os9SysCallCompletion[pcreg+1]
@@ -3029,9 +3040,15 @@ func Main() {
 		max = *FlagMaxSteps
 	}
 	stepsUntilTimer := uint(IRQ_FREQ)
-	for steps := uint64(0); steps < max; steps++ {
-		// println("loop", steps, pcreg_prev, pcreg)
-		log.Printf("loop: steps=%d prev=%04x pc=%04x", steps, pcreg_prev, pcreg)
+	early := true
+	for Steps = uint64(0); Steps < max; Steps++ {
+		if early {
+			early = EarlyAction()
+		}
+
+		PcVisitedK[63&(pcreg>>10)] = 'A' + (15 & byte(pcreg>>10))
+		// println("loop", Steps, pcreg_prev, pcreg)
+		log.Printf("loop: Steps=%d prev=%04x pc=%04x <%s>", Steps, pcreg_prev, pcreg, string(PcVisitedK[:]))
 		pcreg_prev = pcreg
 
 		if stepsUntilTimer == 0 {
@@ -3068,11 +3085,11 @@ func Main() {
 		instructionTable[ireg]()
 		cycles_sum += int64(cycles)
 
-		if steps >= *FlagTraceAfter {
+		if Steps >= *FlagTraceAfter {
 			Trace()
 		}
 
-		if paranoid && steps > 100000 {
+		if paranoid && Steps > 100000 {
 			if pcreg < 0x005E /* D.BtDbg */ {
 				log.Panicf("PC in page 0: 0x%x", pcreg)
 			}
@@ -3095,5 +3112,4 @@ func Main() {
 			}
 		}
 	} /* next step */
-
 }

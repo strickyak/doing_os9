@@ -73,13 +73,13 @@ func Trace() {
 
 func Finish() {
 	L("Finish:")
-	L("Cycles: %d   Steps: %d", cycles_sum, steps)
+	L("Cycles: %d   Steps: %d", cycles_sum, Steps)
 	L("")
 	DoDumpAllMemory()
 	L("")
 	DoDumpAllMemoryPhys()
 	L("")
-	L("Cycles: %d   Steps: %d", cycles_sum, steps)
+	L("Cycles: %d   Steps: %d", cycles_sum, Steps)
 }
 
 func where(addr Word) string {
@@ -155,4 +155,16 @@ func DumpAllPathDescs() { DoDumpAllPathDescs() }
 
 func LogIO(f string, args ...interface{}) {
 	L(f, args...)
+}
+
+// Call this before each instruction until it returns false.
+func EarlyAction() bool {
+	// OS9 boots with PC in the first half of memory space.
+	// When it jumps into the higher half, it jumps into modules.
+	if pcreg > 0x8000 {
+		DumpAllMemory()
+		ScanRamForOs9Modules()
+		return false
+	}
+	return true
 }

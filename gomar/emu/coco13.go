@@ -278,11 +278,14 @@ func PutIOByte(a Word, b byte) {
 	case 0xFF80,
 		0xFF81,
 		0xFF82:
-		break // Logical Sector Number: let it save in ram.
+		log.Printf("LogicalSectorNumber: %x <- %x", a, b)
+		break // Emulated Disk: Logical Sector Number: let it save in ram.
 	case 0xFF84,
 		0xFF85:
-		break // Buffer Location: let it save in ram.
+		log.Printf("Buffer: %x <- %x", a, b)
+		break // Emulated Disk: Buffer Location: let it save in ram.
 	case 0xFF83:
+		log.Printf("emudsk: %x <- %x", a, b)
 		switch b {
 		case emudskReadSector:
 			{
@@ -312,6 +315,7 @@ func PutIOByte(a Word, b byte) {
 		case emudskCloseDevice:
 			initEmudsk()
 			PokeB(0xFF83, 0) // OK
+			log.Fatalf("closing not yet supported on emudisk")
 		}
 	}
 }
@@ -382,4 +386,43 @@ func DoDumpAllMemory() {
 		L("%s\n", buf.String())
 	}
 	L("#DumpAllMemory)\n")
+}
+
+func ScanRamForOs9Modules() {
+	for i := 256; i < len(mem)-256; i++ {
+		if mem[i] == 0x87 && mem[i+1] == 0xCD {
+			parity := byte(255)
+			for j := 0; j < 9; j++ {
+				parity ^= mem[i+j]
+			}
+			if parity == 0 {
+				sz := int(HiLo(mem[i+2], mem[i+3]))
+				nameAddr := i + int(HiLo(mem[i+4], mem[i+5]))
+				got := uint32(HiMidLo(mem[i+sz-3], mem[i+sz-2], mem[i+sz-1]))
+				crc := 0xFFFFFF ^ Os9CRC(mem[i:i+sz])
+				if got == crc {
+					log.Printf("SCAN (at $%x sz $%x) %q %06x %06x", i, sz, Os9StringPhys(nameAddr), mem[i+sz-3:i+sz], 0xFFFFFF^Os9CRC(mem[i:i+sz]))
+				} else {
+					log.Printf("SCAN BAD CRC (@%04x) %06x %06x", i, got, crc)
+
+				}
+			} else {
+				log.Printf("SCAN BAD PARITY (@%04x) %02x", i, parity)
+			}
+		}
+	}
+}
+
+func Os9CRC(a []byte) uint32 {
+	var crc uint32 = 0xFFFFFF
+	for k := 0; k < len(a)-3; k++ {
+		crc ^= uint32(a[k]) << 16
+		for i := 0; i < 8; i++ {
+			crc <<= 1
+			if (crc & 0x1000000) != 0 {
+				crc ^= 0x800063
+			}
+		}
+	}
+	return crc & 0xffffff
 }
