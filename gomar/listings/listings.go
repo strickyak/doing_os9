@@ -44,7 +44,7 @@ func LoadDir(dirname string) *Listings {
 
 		parts := strings.Split(base, ".")
 		key := strings.ToLower(parts[0])
-		listings.Lines[key] = loadFile(filename)
+		listings.Lines[key] = LoadFile(filename)
 	}
 	return listings
 }
@@ -53,7 +53,7 @@ var parse = regexp.MustCompile(`^([0-9A-F]{4}) [0-9A-F]+ +[(].*?[)]:[0-9]{5} +(.
 var parseSection = regexp.MustCompile(`^ +[(].*?[)]:[0-9]{5} +(?i:section) +([A-Za-z0-9_]+)`)
 var parseEndSection = regexp.MustCompile(`^ +[(].*?[)]:[0-9]{5} +(?i:endsection)`)
 
-func loadFile(filename string) map[uint]string {
+func LoadFile(filename string) map[uint]string {
 	d := make(map[uint]string)
 	fd, err := os.Open(filename)
 	if err != nil {
