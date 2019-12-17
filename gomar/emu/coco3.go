@@ -7,6 +7,8 @@ import (
 
 	"bytes"
 	"log"
+	"fmt"
+	"strings"
 )
 
 // While booting OS9 Level2, the screen seems to be doubleByte
@@ -574,6 +576,7 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 	addrPhys := MapAddr(addr, true)
 	addr32 := uint32(addrPhys)
 
+	// First scan for initial modules.
 	for _, m := range InitialModules {
 		if addr32 >= m.Addr && addr32 < (m.Addr+m.Len) {
 			return m.Id(), Word(addr32 - m.Addr)
@@ -606,15 +609,23 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 		}
 		m := GetMapping(moduleDatImagePtr)
 		end := mod + PeekWWithMapping(mod+2, m)
-		name := mod + PeekWWithMapping(mod+4, m)
+		//name := mod + PeekWWithMapping(mod+4, m)
 
 		modPhys := MapAddrWithMapping(mod, m)
 		endPhys := MapAddrWithMapping(end, m)
 		if modPhys <= addrPhys && addrPhys < endPhys {
-			return Os9StringWithMapping(name, m), Word(addrPhys - modPhys)
+			// return Os9StringWithMapping(name, m), Word(addrPhys - modPhys)
+			return ModuleId(mod, modPhys, m), Word(addrPhys - modPhys)
 		}
 	}
 	return "", 0 // No module found for the addr.
+}
+
+func ModuleId(mod Word, mp int, m Mapping) string {
+	name := mod + PeekWWithMapping(mod+4, m)
+	modname := Os9StringWithMapping(name, m)
+	sz := int(PeekWWithMapping(mod+2, m))
+	return fmt.Sprintf("%s.%04x%02x%02x%02x", strings.ToLower(modname), sz, mem[mp+sz-3], mem[mp+sz-2], mem[mp+sz-1])
 }
 
 func MemoryModules() {
