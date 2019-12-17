@@ -572,6 +572,13 @@ func PutGimeIOByte(a Word, b byte) {
 }
 func MemoryModuleOf(addr Word) (name string, offset Word) {
 	addrPhys := MapAddr(addr, true)
+	addr32 := uint32(addrPhys)
+
+	for _, m := range InitialModules {
+		if addr32 >= m.Addr && addr32 < (m.Addr+m.Len) {
+			return m.Id(), Word(addr32 - m.Addr)
+		}
+	}
 
 	modulePointerOffset := Word(4)
 	start := PeekW(sym.D_ModDir)

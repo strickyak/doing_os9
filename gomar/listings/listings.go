@@ -2,62 +2,58 @@ package listings
 
 import (
 	"bufio"
+	"flag"
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
+	//"strings"
 )
 
-type Listings struct {
-	Lines map[string]map[uint]string
+var Borges = flag.String("borges", "", "dir with source module listings")
+
+type ModSrc struct {
+	Src      map[uint]string
+	Filename string
+	Err      error
 }
 
-func (o *Listings) Lookup(module string, offset uint) string {
-	if o == nil {
+var Listings = make(map[string]*ModSrc)
+
+func Lookup(module string, offset uint) string {
+	if *Borges == "" {
 		return ""
 	}
-	key := strings.ToLower(module)
-	d, ok := o.Lines[key]
+
+	m, ok := Listings[module]
 	if !ok {
+		filename := filepath.Join(*Borges, module)
+		m = LoadFile(filename)
+		Listings[module] = m
+	}
+
+	if m.Err != nil {
 		return "" // Module not found.
 	}
-	s, _ := d[offset]
+	s, _ := m.Src[offset]
 	return s // Empty if offset not found.
-}
-
-func LoadDir(dirname string) *Listings {
-	filenames, err := filepath.Glob(filepath.Join(dirname, "*.l*st"))
-	if err != nil {
-		log.Panicf("Cannot read directory %q: %v", dirname, err)
-	}
-	listings := &Listings{
-		Lines: make(map[string]map[uint]string),
-	}
-	for _, filename := range filenames {
-		base := filepath.Base(filename)
-		ext := filepath.Ext(base)
-		if ext != ".list" && ext != ".lst" {
-			continue
-		}
-
-		parts := strings.Split(base, ".")
-		key := strings.ToLower(parts[0])
-		listings.Lines[key] = LoadFile(filename)
-	}
-	return listings
 }
 
 var parse = regexp.MustCompile(`^([0-9A-F]{4}) [0-9A-F]+ +[(].*?[)]:[0-9]{5} +(.*)$`)
 var parseSection = regexp.MustCompile(`^ +[(].*?[)]:[0-9]{5} +(?i:section) +([A-Za-z0-9_]+)`)
 var parseEndSection = regexp.MustCompile(`^ +[(].*?[)]:[0-9]{5} +(?i:endsection)`)
 
-func LoadFile(filename string) map[uint]string {
+func LoadFile(filename string) *ModSrc {
 	d := make(map[uint]string)
 	fd, err := os.Open(filename)
 	if err != nil {
-		log.Panicf("Cannot open listing %q: %v", filename, err)
+		log.Printf("BAD: Cannot open listing %q: %v", filename, err)
+		return &ModSrc{
+			Src:      nil,
+			Filename: filename,
+			Err:      err,
+		}
 	}
 	defer fd.Close()
 	r := bufio.NewScanner(fd)
@@ -84,5 +80,9 @@ func LoadFile(filename string) map[uint]string {
 			inOtherSection = false
 		}
 	}
-	return d
+	return &ModSrc{
+		Src:      d,
+		Filename: filename,
+		Err:      nil,
+	}
 }

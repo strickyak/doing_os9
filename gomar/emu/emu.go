@@ -16,7 +16,6 @@ import (
 var FlagBootImageFilename = flag.String("boot", "boot.mem", "")
 var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagStressTest = flag.String("stress", "", "If nonempty, string to repeat")
-var FlagListingsDir = flag.String("listings", "_listings", "")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 
 const paranoid = false // Do paranoid checks.
@@ -2979,7 +2978,6 @@ const MaxUint64 = 0xFFFFFFFFFFFFFFFF
 
 func Main() {
 	SetVerbosityBits(*FlagInitialVerbosity)
-	InitTrace()
 	InitHardware()
 	keystrokes := make(chan byte, 0)
 	go InputRoutine(keystrokes)

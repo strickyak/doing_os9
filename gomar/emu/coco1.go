@@ -75,6 +75,14 @@ func PutGimeIOByte(a Word, b byte) {
 	log.Panicf("UNKNOWN PutGimeIOByte address: 0x%04x <- 0x%02x", a, b)
 }
 func MemoryModuleOf(addr Word) (name string, offset Word) {
+	addr32 := uint32(addrPhys)
+
+	for _, m := range InitialModules {
+		if addr32 >= m.Addr && addr32 < (m.Addr+m.Len) {
+			return m.Id(), m.Addr - addr32
+		}
+	}
+
 	modulePointerOffset := Word(0)
 	start := PeekW(sym.D_ModDir)
 	limit := PeekW(sym.D_ModDir + 2)

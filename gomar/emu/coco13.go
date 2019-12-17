@@ -5,8 +5,10 @@ package emu
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"log"
 	"os"
+	"strings"
 )
 
 func AddressInDeviceSpace(addr Word) bool {
@@ -388,7 +390,19 @@ func DoDumpAllMemory() {
 	L("#DumpAllMemory)\n")
 }
 
-func ScanRamForOs9Modules() {
+type ModuleFound struct {
+	Addr uint32
+	Len  uint32
+	CRC  uint32
+	Name string
+}
+
+func (m ModuleFound) Id() string {
+	return strings.ToLower(fmt.Sprintf("%s.%04x%06x", m.Name, m.Len, m.CRC))
+}
+
+func ScanRamForOs9Modules() []*ModuleFound {
+	var z []*ModuleFound
 	for i := 256; i < len(mem)-256; i++ {
 		if mem[i] == 0x87 && mem[i+1] == 0xCD {
 			parity := byte(255)
@@ -402,6 +416,12 @@ func ScanRamForOs9Modules() {
 				crc := 0xFFFFFF ^ Os9CRC(mem[i:i+sz])
 				if got == crc {
 					log.Printf("SCAN (at $%x sz $%x) %q %06x %06x", i, sz, Os9StringPhys(nameAddr), mem[i+sz-3:i+sz], 0xFFFFFF^Os9CRC(mem[i:i+sz]))
+					z = append(z, &ModuleFound{
+						Addr: uint32(i),
+						Len:  uint32(sz),
+						CRC:  crc,
+						Name: Os9StringPhys(nameAddr),
+					})
 				} else {
 					log.Printf("SCAN BAD CRC (@%04x) %06x %06x", i, got, crc)
 
@@ -411,6 +431,7 @@ func ScanRamForOs9Modules() {
 			}
 		}
 	}
+	return z
 }
 
 func Os9CRC(a []byte) uint32 {

@@ -11,8 +11,6 @@ import (
 	"strings"
 )
 
-var Source *listings.Listings
-
 var been_there [0x10000]bool
 
 /* max. bytes of instruction code per trace line */
@@ -26,12 +24,6 @@ func Dis_len(n Word) {
 }
 func Dis_len_incr(n Word) {
 	dis_length += n
-}
-
-func InitTrace() {
-	if *FlagListingsDir != "" {
-		Source = listings.LoadDir(*FlagListingsDir)
-	}
 }
 
 func Trace() {
@@ -64,7 +56,7 @@ func Trace() {
 	module, offset := MemoryModuleOf(pcreg_prev)
 	if module != "" {
 		moduleLower := strings.ToLower(module)
-		text := Source.Lookup(moduleLower, uint(offset))
+		text := listings.Lookup(moduleLower, uint(offset))
 		log.Printf("%q+%04x :::: %s", module, offset, text)
 	}
 
@@ -157,13 +149,15 @@ func LogIO(f string, args ...interface{}) {
 	L(f, args...)
 }
 
+var InitialModules []*ModuleFound
+
 // Call this before each instruction until it returns false.
 func EarlyAction() bool {
 	// OS9 boots with PC in the first half of memory space.
 	// When it jumps into the higher half, it jumps into modules.
 	if pcreg > 0x8000 {
 		DumpAllMemory()
-		ScanRamForOs9Modules()
+		InitialModules = ScanRamForOs9Modules()
 		return false
 	}
 	return true
