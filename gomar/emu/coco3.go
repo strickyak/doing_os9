@@ -6,8 +6,8 @@ import (
 	"github.com/strickyak/doing_os9/gomar/sym"
 
 	"bytes"
-	"log"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -85,7 +85,7 @@ func Coco3Contract() {
 }
 
 func ExplainMMU() string {
-	return F("mmu:%d task:%d : (t0) %02x %02x %02x %02x  %02x %02x %02x %02x : (t1) %02x %02x %02x %02x  %02x %02x %02x %02x :",
+	return F("mmu:%d task:%d [[ %02x %02x %02x %02x  %02x %02x %02x %02x || %02x %02x %02x %02x  %02x %02x %02x %02x ]]",
 		CondI(MmuEnable, 1, 0),
 		MmuTask&1,
 		MmuMap[0][0],
@@ -386,22 +386,22 @@ func DoDumpProcDesc(a Word) {
 	switch Level {
 	case 1, 2:
 		{
-			mod := PeekW(a + sym.P_PModul)
+			begin := PeekW(a + sym.P_PModul)
 			name_str := "?"
 			mod_str := "?"
-			if mod != 0 {
+			if begin != 0 {
 				if Level == 1 {
-					name := mod + PeekW(mod+4)
+					name := begin + PeekW(begin+4)
 					name_str = Os9String(name)
-					mod_str = F("%q @%04x", name_str, mod)
+					mod_str = F("%q @%04x", name_str, begin)
 				} else if Level == 2 {
 					m := GetMapping(a + sym.P_DATImg)
-					modPhys := MapAddrWithMapping(mod, m)
+					modPhys := MapAddrWithMapping(begin, m)
 					modPhysPlus4 := PeekWPhys(modPhys + 4)
 					if modPhysPlus4 > 0 {
-						name := mod + modPhysPlus4
+						name := begin + modPhysPlus4
 						name_str = Os9StringWithMapping(name, m)
-						mod_str = F("%q @%04x %v", name_str, mod, m)
+						mod_str = F("%q @%04x %v", name_str, begin, m)
 					}
 				}
 			}
@@ -598,8 +598,8 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 	}()
 
 	for ; i < limit; i += 4 + modulePointerOffset {
-		mod := PeekW(i + modulePointerOffset)
-		if mod == 0 {
+		begin := PeekW(i + modulePointerOffset)
+		if begin == 0 {
 			continue
 		}
 
@@ -608,23 +608,23 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 			continue
 		}
 		m := GetMapping(moduleDatImagePtr)
-		end := mod + PeekWWithMapping(mod+2, m)
-		//name := mod + PeekWWithMapping(mod+4, m)
+		end := begin + PeekWWithMapping(begin+2, m)
+		//name := begin + PeekWWithMapping(begin+4, m)
 
-		modPhys := MapAddrWithMapping(mod, m)
+		modPhys := MapAddrWithMapping(begin, m)
 		endPhys := MapAddrWithMapping(end, m)
 		if modPhys <= addrPhys && addrPhys < endPhys {
 			// return Os9StringWithMapping(name, m), Word(addrPhys - modPhys)
-			return ModuleId(mod, modPhys, m), Word(addrPhys - modPhys)
+			return ModuleId(begin, modPhys, m), Word(addrPhys - modPhys)
 		}
 	}
 	return "", 0 // No module found for the addr.
 }
 
-func ModuleId(mod Word, mp int, m Mapping) string {
-	name := mod + PeekWWithMapping(mod+4, m)
+func ModuleId(begin Word, mp int, m Mapping) string {
+	name := begin + PeekWWithMapping(begin+4, m)
 	modname := Os9StringWithMapping(name, m)
-	sz := int(PeekWWithMapping(mod+2, m))
+	sz := int(PeekWWithMapping(begin+2, m))
 	return fmt.Sprintf("%s.%04x%02x%02x%02x", strings.ToLower(modname), sz, mem[mp+sz-3], mem[mp+sz-2], mem[mp+sz-1])
 }
 
@@ -650,8 +650,8 @@ func MemoryModules() {
 	L("\n#MemoryModules(")
 	var buf bytes.Buffer
 	for ; i < limit; i += 4 + modulePointerOffset {
-		mod := PeekW(i + modulePointerOffset)
-		if mod == 0 {
+		begin := PeekW(i + modulePointerOffset)
+		if begin == 0 {
 			continue
 		}
 
@@ -660,10 +660,10 @@ func MemoryModules() {
 			continue
 		}
 		m := GetMapping(moduleDatImagePtr)
-		end := mod + PeekWWithMapping(mod+2, m)
-		name := mod + PeekWWithMapping(mod+4, m)
+		end := begin + PeekWWithMapping(begin+2, m)
+		name := begin + PeekWWithMapping(begin+4, m)
 
-		Z(&buf, "%s %x:%x [%x:%x,%x,%x,%x] %v\n", Os9StringWithMapping(name, m), mod, end, i, PeekW(i), PeekW(i+2), PeekW(i+4), PeekW(i+6), m)
+		Z(&buf, "%s %x:%x [%x:%x,%x,%x,%x] %v\n", Os9StringWithMapping(name, m), begin, end, i, PeekW(i), PeekW(i+2), PeekW(i+4), PeekW(i+6), m)
 	}
 	L("%s", buf.String())
 	L("#MemoryModules)")

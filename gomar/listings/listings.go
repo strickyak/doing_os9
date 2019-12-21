@@ -68,7 +68,7 @@ func LoadFile(filename string) *ModSrc {
 				log.Panicf("Should have been a hex integer: %q: %v", hexaddr, err)
 			}
 			d[uint(addr)] = line
-			log.Printf("FILE %s ADDR %x LINE %q", filename, addr, line)
+			//log.Printf("FILE %s ADDR %x LINE %q", filename, addr, line)
 		}
 		m = parseSection.FindStringSubmatch(text)
 		if m != nil {
@@ -80,6 +80,7 @@ func LoadFile(filename string) *ModSrc {
 			inOtherSection = false
 		}
 	}
+	log.Printf("BORGES: Loaded Source: %q", filename)
 	return &ModSrc{
 		Src:      d,
 		Filename: filename,

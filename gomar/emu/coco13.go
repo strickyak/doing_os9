@@ -11,6 +11,19 @@ import (
 	"strings"
 )
 
+var InitialModules []*ModuleFound
+
+type ModuleFound struct {
+	Addr uint32
+	Len  uint32
+	CRC  uint32
+	Name string
+}
+
+func (m ModuleFound) Id() string {
+	return strings.ToLower(fmt.Sprintf("%s.%04x%06x", m.Name, m.Len, m.CRC))
+}
+
 func AddressInDeviceSpace(addr Word) bool {
 	return (addr&0xFF00) == 0xFF00 && (addr&0xFFF0) != 0xFFF0
 }
@@ -388,17 +401,6 @@ func DoDumpAllMemory() {
 		L("%s\n", buf.String())
 	}
 	L("#DumpAllMemory)\n")
-}
-
-type ModuleFound struct {
-	Addr uint32
-	Len  uint32
-	CRC  uint32
-	Name string
-}
-
-func (m ModuleFound) Id() string {
-	return strings.ToLower(fmt.Sprintf("%s.%04x%06x", m.Name, m.Len, m.CRC))
 }
 
 func ScanRamForOs9Modules() []*ModuleFound {

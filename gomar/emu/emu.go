@@ -93,6 +93,8 @@ var fdump int
 var Steps uint64
 var DebugString string
 
+var Os9Description = make(map[int]string) // Describes OS9 kernel call at this big stack addr.
+
 /* 6809 registers */
 var ccreg, dpreg byte
 var xreg, yreg, ureg, sreg, pcreg Word
@@ -123,6 +125,7 @@ var irqs_pending byte
 
 var instructionTable []func()
 
+/*
 var PcVisitedK [64]byte
 
 func init() {
@@ -130,6 +133,7 @@ func init() {
 		PcVisitedK[i] = '.'
 	}
 }
+*/
 
 func GetAReg() byte  { return Hi(dreg) }
 func GetBReg() byte  { return Lo(dreg) }
@@ -974,12 +978,6 @@ func ModuleName(module_loc Word) string {
 	return Os9String(name_loc)
 }
 
-type Callback func(*Completion)
-type Completion struct {
-	callback Callback
-	service  byte
-}
-
 func Regs() string {
 	var buf bytes.Buffer
 	Z(&buf, "a=%02x b=%02x x=%04x:%04x y=%04x:%04x u=%04x:%04x s=%04x:%04x,%04x cc=%s dp=%02x #%d",
@@ -987,132 +985,103 @@ func Regs() string {
 	return buf.String()
 }
 
-var Os9SysCallCompletion [0x10000]Completion
-
-func DefaultCompleter(cp *Completion) {
-	if Word(cp.service-1) == sym.F_NProc {
-		return // F$NProc does not return to its caller.
-	}
-	name, ok := sym.SysCallNames[cp.service-1]
-	if !ok {
-		name = "UNKNOWN"
-	}
-
-	if (ccreg & 1 /* carry bit indicates error */) != 0 {
-		errcode := GetBReg()
-		L("Kernel 0x%02x:%s: -> ERROR [%02x] %s", cp.service-1, name, errcode, DecodeOs9Error(errcode))
-		L("    regs: %s  #%d", Regs(), Steps)
-		L("\t%s", ExplainMMU())
-	} else {
-		L("Kernel 0x%02x:%s: -> okay", cp.service-1, name)
-		L("    regs: %s  #%d", Regs(), Steps)
-		L("\t%s", ExplainMMU())
-		if cp.service-1 == 0x8B {
-			var buf bytes.Buffer
-			for i := Word(0); i < yreg; i++ {
-				buf.WriteRune(rune(PeekB(xreg + i)))
-			}
-			L("ReadLn returns: [%x] %q", buf.Len(), buf.String())
-		}
-	}
-	// TODO: move this to the "rti" instruction, and track by SP.  (would be better with re-entrant code.)
-}
-
-func DecodeOs9Opcode(b byte) {
-	var buf bytes.Buffer
+// Returns a string and whether this operation typically returns to caller.
+func DecodeOs9Opcode(b byte) (string, bool) {
 	MemoryModules()
-	s := ""
+	s, p := "", ""
+	returns := true
 	switch b {
 	case 0x00:
 		s = "F$Link   : Link to Module"
-		Z(&buf, "type/lang=%02x module/file='%s'", GetAReg(), Os9String(xreg))
+		p = F("type/lang=%02x module/file='%s'", GetAReg(), Os9String(xreg))
 
 	case 0x01:
 		s = "F$Load   : Load Module from File"
-		Z(&buf, "type/lang=%02x filename='%s'", GetAReg(), Os9String(xreg))
+		p = F("type/lang=%02x filename='%s'", GetAReg(), Os9String(xreg))
 
 	case 0x02:
 		s = "F$UnLink : Unlink Module"
-		Z(&buf, "u=%04x magic=%04x module='%s'", ureg, PeekW(ureg), ModuleName(ureg))
+		p = F("u=%04x magic=%04x module='%s'", ureg, PeekW(ureg), ModuleName(ureg))
 
 	case 0x03:
 		s = "F$Fork   : Start New Process"
-		Z(&buf, "Module/file='%s' param=%q lang/type=%x pages=%x", Os9String(xreg), Os9StringN(ureg, yreg), GetAReg(), GetBReg())
+		p = F("Module/file='%s' param=%q lang/type=%x pages=%x", Os9String(xreg), Os9StringN(ureg, yreg), GetAReg(), GetBReg())
 
 	case 0x04:
 		s = "F$Wait   : Wait for Child Process to Die"
 
 	case 0x05:
 		s = "F$Chain  : Chain Process to New Module"
-		Z(&buf, "Module/file='%s' param=%q lang/type=%x pages=%x", Os9String(xreg), Os9StringN(ureg, yreg), GetAReg(), GetBReg())
+		p = F("Module/file='%s' param=%q lang/type=%x pages=%x", Os9String(xreg), Os9StringN(ureg, yreg), GetAReg(), GetBReg())
 
 	case 0x06:
 		s = "F$Exit   : Terminate Process"
-		Z(&buf, "status=%x", GetBReg())
+		p = F("status=%x", GetBReg())
+		returns = false
 
 	case 0x07:
 		s = "F$Mem    : Set Memory Size"
-		Z(&buf, "desired_size=%x", dreg)
+		p = F("desired_size=%x", dreg)
 
 	case 0x08:
 		s = "F$Send   : Send Signal to Process"
-		Z(&buf, "pid=%02x signal=%02x", GetAReg(), GetBReg())
+		p = F("pid=%02x signal=%02x", GetAReg(), GetBReg())
 
 	case 0x09:
 		s = "F$Icpt   : Set Signal Intercept"
-		Z(&buf, "routine=%04x storage=%04x", xreg, ureg)
+		p = F("routine=%04x storage=%04x", xreg, ureg)
 
 	case 0x0A:
-		s = "F$Sleep  : Suspend Process"
-		Z(&buf, "ticks=%04x", xreg)
+		s = "F$Sleep  : Suspend Process with Sleep"
+		p = F("ticks=%04x", xreg)
 
 	case 0x0B:
-		s = "F$SSpd   : Suspend Process"
+		s = "F$SSpd   : Suspend Process with SSpd (unused?)"
 
 	case 0x0C:
 		s = "F$ID     : Return Process ID"
 
 	case 0x0D:
 		s = "F$SPrior : Set Process Priority"
-		Z(&buf, "pid=%02x priority=%02x", GetAReg(), GetBReg())
+		p = F("pid=%02x priority=%02x", GetAReg(), GetBReg())
 
 	case 0x0E:
 		s = "F$SSWI   : Set Software Interrupt"
-		Z(&buf, "code=%02x addr=%04x", GetAReg(), xreg)
+		p = F("code=%02x addr=%04x", GetAReg(), xreg)
 
 	case 0x0F:
 		s = "F$PErr   : Print Error"
 
 	case 0x10:
 		s = "F$PrsNam : Parse Pathlist Name"
-		Z(&buf, "path='%s'", Os9String(xreg))
+		p = F("path='%s'", Os9String(xreg))
 	case 0x11:
 		s = "F$CmpNam : Compare Two Names"
-		Z(&buf, "first=%q second=%q", Os9StringN(xreg, Word(GetBReg())), Os9String(yreg))
+		p = F("first=%q second=%q", Os9StringN(xreg, Word(GetBReg())), Os9String(yreg))
 
 	case 0x12:
 		s = "F$SchBit : Search Bit Map"
-		Z(&buf, "bitmap=%04x end=%04x first=%x count=%x", xreg, ureg, dreg, yreg)
+		p = F("bitmap=%04x end=%04x first=%x count=%x", xreg, ureg, dreg, yreg)
 
 	case 0x13:
 		s = "F$AllBit : Allocate in Bit Map"
-		Z(&buf, "bitmap=%04x first=%x count=%x", xreg, dreg, yreg)
+		p = F("bitmap=%04x first=%x count=%x", xreg, dreg, yreg)
 
 	case 0x14:
 		s = "F$DelBit : Deallocate in Bit Map"
-		Z(&buf, "bitmap=%04x first=%x count=%x", xreg, dreg, yreg)
+		p = F("bitmap=%04x first=%x count=%x", xreg, dreg, yreg)
 
 	case 0x15:
 		s = "F$Time   : Get Current Time"
-		Z(&buf, "buf=%x", xreg)
+		p = F("buf=%x", xreg)
 
 	case 0x16:
 		s = "F$STime  : Set Current Time"
-		Z(&buf, "y%d m%d d%d h%d m%d s%d", PeekB(xreg+0), PeekB(xreg+1), PeekB(xreg+2), PeekB(xreg+3), PeekB(xreg+4), PeekB(xreg+5))
+		p = F("y%d m%d d%d h%d m%d s%d", PeekB(xreg+0), PeekB(xreg+1), PeekB(xreg+2), PeekB(xreg+3), PeekB(xreg+4), PeekB(xreg+5))
 
 	case 0x17:
 		s = "F$CRC    : Generate CRC ($1"
-		Z(&buf, "addr=%04x len=%04x buf=%04x", xreg, yreg, ureg)
+		p = F("addr=%04x len=%04x buf=%04x", xreg, yreg, ureg)
 
 	// NitrOS9:
 
@@ -1121,7 +1090,7 @@ func DecodeOs9Opcode(b byte) {
 
 	case 0x28:
 		s = "F$SRqMem : System Memory Request"
-		Z(&buf, "size=%x", dreg)
+		p = F("size=%x", dreg)
 
 	case 0x29:
 		s = "F$SRtMem : System Memory Return"
@@ -1131,26 +1100,27 @@ func DecodeOs9Opcode(b byte) {
 
 	case 0x2B:
 		s = "F$IOQu   : Enter I/O Queue"
-		Z(&buf, "pid=%02x", GetAReg())
+		p = F("pid=%02x", GetAReg())
 
 	case 0x2C:
 		s = "F$AProc  : Enter Active Process Queue"
-		Z(&buf, "proc=%x\n", xreg)
+		p = F("proc=%x\n", xreg)
 
 	case 0x2D:
 		s = "F$NProc  : Start Next Process"
+		returns = false
 
 	case 0x2E:
 		s = "F$VModul : Validate Module"
-		Z(&buf, "addr=%04x=%q", xreg, ModuleName(xreg))
+		p = F("addr=%04x=%q", xreg, ModuleName(xreg))
 
 	case 0x2F:
 		s = "F$Find64 : Find Process/Path Descriptor"
-		Z(&buf, "base=%04x id=%x", xreg, GetAReg())
+		p = F("base=%04x id=%x", xreg, GetAReg())
 
 	case 0x30:
 		s = "F$All64  : Allocate Process/Path Descriptor"
-		Z(&buf, "table=%x", xreg)
+		p = F("table=%x", xreg)
 
 	case 0x31:
 		s = "F$Ret64  : Return Process/Path Descriptor"
@@ -1165,84 +1135,84 @@ func DecodeOs9Opcode(b byte) {
 
 	case 0x38:
 		s = "F$Move   : Move data (low bound first)"
-		Z(&buf, "srcTask=%x destTask=%x srcPtr=%04x destPtr=%04x size=%04x", GetAReg(), GetBReg(), xreg, ureg, yreg)
+		p = F("srcTask=%x destTask=%x srcPtr=%04x destPtr=%04x size=%04x", GetAReg(), GetBReg(), xreg, ureg, yreg)
 
 	case 0x39:
 		s = "F$AllRAM : Allocate RAM blocks"
-		Z(&buf, "numBlocks=%x", GetBReg())
+		p = F("numBlocks=%x", GetBReg())
 
 	case 0x3A:
 		s = "F$AllImg : Allocate Image RAM blocks"
-		Z(&buf, "beginBlock=%x numBlocks=%x processDesc=%04x", GetAReg(), GetBReg(), xreg)
+		p = F("beginBlock=%x numBlocks=%x processDesc=%04x", GetAReg(), GetBReg(), xreg)
 
 	case 0x3B:
 		s = "F$DelImg : Deallocate Image RAM blocks"
-		Z(&buf, "beginBlock=%x numBlocks=%x processDesc=%04x", GetAReg(), GetBReg(), xreg)
+		p = F("beginBlock=%x numBlocks=%x processDesc=%04x", GetAReg(), GetBReg(), xreg)
 
 	case 0x3F:
 		s = "F$AllTsk : Allocate process Task number"
-		Z(&buf, "processDesc=%04x", xreg)
+		p = F("processDesc=%04x", xreg)
 
 	case 0x44:
 		s = "F$DATLog : Convert DAT block/offset to Logical Addr"
-		Z(&buf, "DatImageOffset=%x blockOffset=%x", GetBReg(), xreg)
+		p = F("DatImageOffset=%x blockOffset=%x", GetBReg(), xreg)
 
 	case 0x4B:
 		s = "F$AllPrc : Allocate Process descriptor"
 
 	case 0x4F:
 		s = "F$MapBlk   : Map specific block"
-		Z(&buf, "beginningBlock=%x numBlocks=%x", xreg, GetBReg())
+		p = F("beginningBlock=%x numBlocks=%x", xreg, GetBReg())
 
 	case 0x50:
 		s = "F$ClrBlk : Clear specific Block"
-		Z(&buf, "numBlocks=%x firstBlock=%x", GetBReg(), ureg)
+		p = F("numBlocks=%x firstBlock=%x", GetBReg(), ureg)
 
 	case 0x51:
 		s = "F$DelRam : Deallocate RAM blocks"
-		Z(&buf, "numBlocks=%x firstBlock=%x", GetBReg(), xreg)
+		p = F("numBlocks=%x firstBlock=%x", GetBReg(), xreg)
 
 	// IOMan:
 
 	case 0x80:
 		s = "I$Attach : Attach I/O Device"
-		Z(&buf, "%04x='%s'", xreg, Os9String(xreg))
+		p = F("%04x='%s'", xreg, Os9String(xreg))
 
 	case 0x81:
 		s = "I$Detach : Detach I/O Device"
-		Z(&buf, "%04x", ureg)
+		p = F("%04x", ureg)
 
 	case 0x82:
 		s = "I$Dup    : Duplicate Path"
-		Z(&buf, "%02x", GetAReg())
+		p = F("%02x", GetAReg())
 
 	case 0x83:
 		s = "I$Create : Create New File"
-		Z(&buf, "%04x='%s'", xreg, Os9String(xreg))
+		p = F("%04x='%s'", xreg, Os9String(xreg))
 
 	case 0x84:
 		s = "I$Open   : Open Existing File"
-		Z(&buf, "%04x='%s'", xreg, Os9String(xreg))
+		p = F("%04x='%s'", xreg, Os9String(xreg))
 
 	case 0x85:
 		s = "I$MakDir : Make Directory File"
-		Z(&buf, "%04x='%s'", xreg, Os9String(xreg))
+		p = F("%04x='%s'", xreg, Os9String(xreg))
 
 	case 0x86:
 		s = "I$ChgDir : Change Default Directory"
-		Z(&buf, "%04x='%s'", xreg, Os9String(xreg))
+		p = F("%04x='%s'", xreg, Os9String(xreg))
 
 	case 0x87:
 		s = "I$Delete : Delete File"
-		Z(&buf, "%04x='%s'", xreg, Os9String(xreg))
+		p = F("%04x='%s'", xreg, Os9String(xreg))
 
 	case 0x88:
 		s = "I$Seek   : Change Current Position"
-		Z(&buf, "path=%x pos=%04x%04x", GetAReg(), xreg, ureg)
+		p = F("path=%x pos=%04x%04x", GetAReg(), xreg, ureg)
 
 	case 0x89:
 		s = "I$Read   : Read Data"
-		Z(&buf, "path=%x buf=%04x size=%x", GetAReg(), xreg, yreg)
+		p = F("path=%x buf=%04x size=%x", GetAReg(), xreg, yreg)
 
 	case 0x8A:
 		s = "I$Write  : Write Data"
@@ -1252,17 +1222,18 @@ func DecodeOs9Opcode(b byte) {
 			path := PeekB(proc + P_Path + Word(path_num))
 			pathDBT := PeekW(sym.D_PthDBT)
 			q := PeekW(pathDBT + (Word(path) >> 2))
-			Z(&buf, "path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
+			p = F("path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
 			if q != 0 {
 				pd := q + 64*(Word(path)&3)
 				dev := PeekW(pd + sym.PD_DEV)
-				Z(&buf, "pd=%x dev=%x ", pd, dev)
+				p += F("pd=%x dev=%x ", pd, dev)
 				desc := PeekW(dev + sym.V_DESC)
 				name := ModuleName(PeekW(dev + sym.V_DESC))
-				Z(&buf, "desc=%x=%s ", desc, name)
+				p += F("desc=%x=%s ", desc, name)
 				if name == "Term" {
 					addy := MapAddr(xreg, true)
-					fmt.Printf("%s", string(mem[addy:addy+int(uint(yreg))]))
+					//fmt.Printf("%s", string(mem[addy:addy+int(uint(yreg))]))
+					p += F(" Term: %q", string(mem[addy:addy+int(uint(yreg))]))
 				}
 			}
 		}
@@ -1272,7 +1243,7 @@ func DecodeOs9Opcode(b byte) {
 
 	case 0x8C:
 		s = "I$WritLn : Write Line of ASCII Data"
-		Z(&buf, "%q ", EscapeStringThruCrOrMax(xreg, yreg))
+		p = F("%q ", EscapeStringThruCrOrMax(xreg, yreg))
 
 		if false {
 			if true || !hyp {
@@ -1281,16 +1252,17 @@ func DecodeOs9Opcode(b byte) {
 				path := PeekB(proc + P_Path + Word(path_num))
 				pathDBT := PeekW(sym.D_PthDBT)
 				q := PeekW(pathDBT + (Word(path) >> 2))
-				Z(&buf, "path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
+				p += F("path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
 				if q != 0 {
 					pd := q + 64*(Word(path)&3)
 					dev := PeekW(pd + sym.PD_DEV)
-					Z(&buf, "pd=%x dev=%x ", pd, dev)
+					p += F("pd=%x dev=%x ", pd, dev)
 					desc := PeekW(dev + sym.V_DESC)
 					name := ModuleName(PeekW(dev + sym.V_DESC))
-					Z(&buf, "desc=%x=%s ", desc, name)
+					p += F("desc=%x=%s ", desc, name)
 					if name == "Term" {
-						fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
+						//fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
+						p += F(" Term: %q", PrintableStringThruCrOrMax(xreg, yreg))
 					}
 				}
 			}
@@ -1302,15 +1274,15 @@ func DecodeOs9Opcode(b byte) {
 
 	case 0x8D:
 		s = "I$GetStt : Get Path Status"
-		Z(&buf, "path=%x %s", GetAReg(), DecodeOs9GetStat(GetBReg()))
+		p = F("path=%x %s", GetAReg(), DecodeOs9GetStat(GetBReg()))
 
 	case 0x8E:
 		s = "I$SetStt : Set Path Status"
-		Z(&buf, "path=%x %s", GetAReg(), DecodeOs9GetStat(GetBReg()))
+		p = F("path=%x %s", GetAReg(), DecodeOs9GetStat(GetBReg()))
 
 	case 0x8F:
 		s = "I$Close  : Close Path"
-		Z(&buf, "path=%x", GetAReg())
+		p = F("path=%x", GetAReg())
 
 	case 0x90:
 		s = "I$DeletX : Delete from current exec dir"
@@ -1319,25 +1291,8 @@ func DecodeOs9Opcode(b byte) {
 	if s == "" {
 		s, _ = sym.SysCallNames[b]
 	}
-	L("Kernel 0x%02x:%s: {%s}\n", b, s, buf.String())
-	L("    regs: %s  #%d", Regs(), Steps)
-	L("\t%s", ExplainMMU())
-
-	cp := &Os9SysCallCompletion[pcreg+1]
-	cp.callback = DefaultCompleter
-	cp.service = PeekB(pcreg) + 1
+	return F("OS9$%02x {%s} {%s} #%d", b, s, p, Steps), returns
 }
-
-/*
-void DefaultCompleter(struct Completion* cp) {
-  if (ccreg&1) { // carry bit indicates error
-    byte errcode = *breg;
-    fprintf(stderr, "Kernel 0x%02x -> ERROR [%02x] %s\n", cp->service-1, errcode, DecodeOs9Error(errcode));
-  } else {
-    fprintf(stderr, "Kernel 0x%02x -> okay\n", cp->service-1);
-  }
-}
-*/
 
 const KB_NORMAL = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ{}[] 0123456789:;,-./\r\b\000\000\000\000\000\000"
 const KB_SHIFT = "@abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?\000\000\000\000\000\000\000\000"
@@ -2273,6 +2228,8 @@ func rts() {
 }
 
 func rti() {
+	stack := MapAddr(sreg, true /*quiet*/)
+	describe := Os9Description[stack]
 	var buf bytes.Buffer
 
 	entire := ccreg & CC_ENTIRE
@@ -2314,6 +2271,32 @@ func rti() {
 		PullWord(&ureg)
 	}
 	PullWord(&pcreg)
+
+	back3 := B(pcreg - 3)
+	back2 := B(pcreg - 2)
+	back1 := B(pcreg - 3)
+	if back3 == 0x10 && back2 == 0x3f && describe != "" {
+		if (ccreg & 1 /* carry bit indicates error */) != 0 {
+			errcode := GetBReg()
+			L("RETURN ERROR $%x(%v): OS9KERNEL %s: %v", errcode, DecodeOs9Error(errcode), describe)
+			L("\tregs: %s  #%d", Regs(), Steps)
+			L("\t%s", ExplainMMU())
+		} else {
+			L("RETURN OKAY: OS9KERNEL %s", describe)
+			L("\tregs: %s  #%d", Regs(), Steps)
+			L("\t%s", ExplainMMU())
+
+			if back1 == 0x8B {
+				var buf bytes.Buffer
+				for i := Word(0); i < yreg; i++ {
+					buf.WriteRune(rune(PeekB(xreg + i)))
+				}
+				L("ReadLn returns: [$%x] %q", buf.Len(), buf.String())
+			}
+		}
+
+		Os9Description[stack] = "" // Clear description
+	}
 }
 
 type Mapping [8]Word
@@ -2350,8 +2333,6 @@ func PeekWWithMapping(addr Word, m Mapping) Word {
 var swi_name = []string{"swi", "swi2", "swi3"}
 
 func swi() {
-	swi_num := iflag + 1 // 1, 2, or 3 for SWI, SWI2, or SWI3.
-
 	Dis_inst(swi_name[iflag], "", 5)
 	Dis_len(3 /* Often an extra byte after the SWI opcode */)
 
@@ -2365,21 +2346,30 @@ func swi() {
 	PushByte(ccreg)
 
 	var handler Word
-	switch swi_num {
-	case 1: /* SWI */
+	switch iflag {
+	case 0: /* SWI */
 		ccreg |= 0xd0
 		handler = W(0xfffa)
-	case 2: /* SWI2 */
-		// assert(GETBYTE(pcreg+0) == 0x3F);
-		// fprintf(stderr, "pcreg=%x\n", pcreg);
-		DecodeOs9Opcode(B(pcreg))
+	case 1: /* SWI2 */
+		describe, returns := DecodeOs9Opcode(B(pcreg))
+		L("OS9KERNEL: %s", describe)
+		L("\tregs: %s", Regs())
+		L("\t%s", ExplainMMU())
+
+		stack := MapAddr(sreg, true /*quiet*/)
+		if returns {
+			Os9Description[stack] = describe
+		} else {
+			Os9Description[stack] = ""
+		}
 
 		handler = W(0xfff4)
-	case 3: /* SWI3 */
+	case 2: /* SWI3 */
 		handler = W(0xfff2)
 	default:
-		log.Panicf("bad swi_num: %d", swi_num)
+		log.Panicf("bad swi iflag=: %d", iflag)
 	}
+
 	if paranoid {
 		if handler < 256 {
 			log.Panicf("FATAL: Attempted SWI%d with small handler: 0x%04x", handler)
@@ -2388,11 +2378,17 @@ func swi() {
 			log.Panicf("FATAL: Attempted SWI%d with large handler: 0x%04x", handler)
 		}
 	}
+
 	syscall := B(pcreg)
-	if hyp && swi_num == 2 {
-		Os9HypervisorCall(syscall)
+	handled := false
+
+	if hyp && iflag == 1 {
+		handled = Os9HypervisorCall(syscall)
 	}
-	pcreg = handler // TODO
+
+	if !handled {
+		pcreg = handler
+	}
 }
 
 const (
@@ -2402,7 +2398,7 @@ const (
 	AttachModeReadWrite
 )
 
-func Os9HypervisorCall(syscall byte) {
+func Os9HypervisorCall(syscall byte) bool {
 	handled := false
 	L("Hyp::%x", syscall)
 	switch Word(syscall) {
@@ -2411,12 +2407,6 @@ func Os9HypervisorCall(syscall byte) {
 			access_mode := GetAReg()
 			dev_name := Os9String(xreg)
 			L("Hyp I_Attach %q mode %d", dev_name, access_mode)
-			/*
-				ureg = 0  // TODO: create device table entry?
-				ccreg &= ^1
-				SetBReg(0)
-				handled = true
-			*/
 		}
 	case sym.I_ChgDir:
 	case sym.I_Close:
@@ -2445,6 +2435,7 @@ func Os9HypervisorCall(syscall byte) {
 		PullWord(&pcreg)
 		pcreg++
 	}
+	return handled
 }
 
 func tfr() {
@@ -3044,9 +3035,8 @@ func Main() {
 			early = EarlyAction()
 		}
 
-		PcVisitedK[63&(pcreg>>10)] = 'A' + (15 & byte(pcreg>>10))
-		// println("loop", Steps, pcreg_prev, pcreg)
-		log.Printf("loop: Steps=%d prev=%04x pc=%04x <%s>", Steps, pcreg_prev, pcreg, string(PcVisitedK[:]))
+		// PcVisitedK[63&(pcreg>>10)] = 'A' + (15 & byte(pcreg>>10))
+		// log.Printf("loop: Steps=%d prev=%04x pc=%04x <%s>", Steps, pcreg_prev, pcreg, string(PcVisitedK[:]))
 		pcreg_prev = pcreg
 
 		if stepsUntilTimer == 0 {
@@ -3087,7 +3077,7 @@ func Main() {
 			Trace()
 		}
 
-		if paranoid && Steps > 100000 {
+		if paranoid && !early {
 			if pcreg < 0x005E /* D.BtDbg */ {
 				log.Panicf("PC in page 0: 0x%x", pcreg)
 			}

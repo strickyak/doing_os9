@@ -49,7 +49,8 @@ func Trace() {
 			Z(&buf, "  ")
 		}
 	}
-	Z(&buf, " %-5s %-17s [%02d] ", dinst.String(), dops.String(), cycles)
+	//Z(&buf, " {%-5s %-17s}  %02dc ", dinst.String(), dops.String(), cycles)
+	Z(&buf, " {%-5s %-17s}  ", dinst.String(), dops.String())
 	log.Printf("%s%s", buf.String(), Regs())
 	dis_length = 0
 
@@ -57,7 +58,8 @@ func Trace() {
 	if module != "" {
 		moduleLower := strings.ToLower(module)
 		text := listings.Lookup(moduleLower, uint(offset))
-		log.Printf("%q+%04x :::: %s", module, offset, text)
+		// log.Printf("%q+%04x {{{ %s }}}", module, offset, text)
+		log.Printf("\t\t{{ %s }}", text)
 	}
 
 	log.Printf("\t%s debug=%q", ExplainMMU(), DebugString)
@@ -148,8 +150,6 @@ func DumpAllPathDescs() { DoDumpAllPathDescs() }
 func LogIO(f string, args ...interface{}) {
 	L(f, args...)
 }
-
-var InitialModules []*ModuleFound
 
 // Call this before each instruction until it returns false.
 func EarlyAction() bool {

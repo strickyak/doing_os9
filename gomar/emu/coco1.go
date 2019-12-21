@@ -138,7 +138,6 @@ func DoDumpPageZero()      {}
 func DoDumpProcesses()     {}
 func DoDumpAllPathDescs()  {}
 
-// TODO -- get rid of this from emu.c
 func MapAddr(logical Word, quiet bool) int {
 	return int(logical)
 }
