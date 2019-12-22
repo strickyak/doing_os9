@@ -307,6 +307,8 @@ func PutIOByte(a Word, b byte) {
 				initEmudsk()
 				lsn := (uint64(PeekB(0xFF80)) << 16) | (uint64(PeekB(0xFF81)) << 8) | uint64(PeekB(0xFF82))
 				ptr := (uint64(PeekB(0xFF84)) << 8) | uint64(PeekB(0xFF85))
+				log.Printf("emudsk: ReadSector: lsn=$%x ptr=$%x", lsn, ptr)
+
 				_, err := fileEmudsk.Seek(int64(lsn*256), 0)
 				if err != nil {
 					log.Panicf("Cannot seek to sector %d on %q: %v", lsn, *flagEmudsk, err)
@@ -322,15 +324,33 @@ func PutIOByte(a Word, b byte) {
 				for i, e := range bb {
 					PokeB(Word(ptr)+Word(i), e)
 				}
+
+				{
+					var buf bytes.Buffer
+					var last byte
+					for _, e := range bb {
+						if e < ' ' || e > '~' {
+							e = '.'
+						}
+						if last != e {
+							buf.WriteRune(rune(e))
+						}
+						last = e
+					}
+					log.Printf("emudsk: ReadSector: %q", buf.String())
+				}
+
 				PokeB(0xFF83, 0) // OK
 			}
 		case emudskWriteSector:
 			initEmudsk()
-			log.Fatalf("writing not yet supported on emudisk")
+			log.Fatalf("emudsk: writing not yet supported on emudsk")
 		case emudskCloseDevice:
 			initEmudsk()
 			PokeB(0xFF83, 0) // OK
-			log.Fatalf("closing not yet supported on emudisk")
+			log.Fatalf("emudsk: closing not yet supported on emudsk")
+		default:
+			log.Fatalf("emudsk: *default* not yet supported on emudsk")
 		}
 	}
 }

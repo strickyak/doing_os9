@@ -2278,11 +2278,11 @@ func rti() {
 	if back3 == 0x10 && back2 == 0x3f && describe != "" {
 		if (ccreg & 1 /* carry bit indicates error */) != 0 {
 			errcode := GetBReg()
-			L("RETURN ERROR $%x(%v): OS9KERNEL %s: %v", errcode, DecodeOs9Error(errcode), describe)
+			L("RETURN ERROR: $%x(%v): OS9KERNEL %s #%d", errcode, DecodeOs9Error(errcode), describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)
 			L("\t%s", ExplainMMU())
 		} else {
-			L("RETURN OKAY: OS9KERNEL %s", describe)
+			L("RETURN OKAY: OS9KERNEL %s #%d", describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)
 			L("\t%s", ExplainMMU())
 
