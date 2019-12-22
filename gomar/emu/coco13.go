@@ -72,12 +72,14 @@ func GetIOByte(a Word) byte {
 		return z
 
 	case 0xFF92: /* GIME IRQ */
+		log.Printf("GIME -- Read FF92 (IRQ)")
 		switch Level {
 		case 2:
 			return 0x08
 		}
 		return 0
 	case 0xFF93: /* GIME FIRQ */
+		log.Printf("GIME -- Read FF93 (FIRQ)")
 		return 0
 
 	case 0xFF83: /* emudsk */
@@ -105,6 +107,9 @@ func LogicalSector(sector, side, track byte) int64 {
 }
 
 func PutIOByte(a Word, b byte) {
+	PokeB(a, b)
+	log.Printf("#PutIOByte: $%04x <- $%02x", a, b)
+
 	if 0xFF90 <= a && a < 0xFFC0 {
 		PutGimeIOByte(a, b)
 		return
@@ -296,9 +301,37 @@ func PutIOByte(a Word, b byte) {
 		0xFF82,
 		0xFF83,
 		0xFF84,
-		0xFF85:
+		0xFF85,
+		0xFF86:
 		EmudskPutIOByte(a, b)
 	}
+}
+
+func DumpHexLines(label string, bb []byte) {
+	for i := 0; i < len(bb); i += 32 {
+		DumpHexLine(F("%s$%04x", label, i), bb[i:i+32])
+	}
+}
+
+func DumpHexLine(label string, bb []byte) {
+	var buf bytes.Buffer
+	buf.WriteString(label)
+	for i, b := range bb {
+		if i&1 == 0 {
+			buf.WriteByte(' ')
+		}
+		fmt.Fprintf(&buf, "%02x", b)
+	}
+	buf.WriteRune(' ')
+	for _, b := range bb {
+		c := b & 127
+		if ' ' <= c && c <= '~' {
+			buf.WriteByte(c)
+		} else {
+			buf.WriteByte('.')
+		}
+	}
+	log.Print(buf.String())
 }
 
 func DoDumpAllMemory() {

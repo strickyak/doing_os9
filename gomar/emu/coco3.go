@@ -476,7 +476,13 @@ func WithMmu(task byte, fn func()) {
 	fn()
 }
 
+func LPeekB(a Word) uint64 {
+	return uint64(PeekB(a))
+}
+
 func PutGimeIOByte(a Word, b byte) {
+	PokeB(a, b)
+
 	switch a {
 	default:
 		log.Panicf("UNKNOWN PutIOByte address: 0x%04x", a)
@@ -526,19 +532,54 @@ func PutGimeIOByte(a Word, b byte) {
 			log.Panicf("GIME FIRQ Enable for unsupported emulated bits: %04x %02x", a, b)
 		}
 
-	case 0xFF94,
-		0xFF95,
-		0xFF96,
-		0xFF97,
-		0xFF98,
-		0xFF99,
-		0xFF9A,
-		0xFF9B,
-		0xFF9C,
-		0xFF9D,
-		0xFF9E,
-		0xFF9F:
+	case 0xFF94:
 		L("GIME %x <= %02x", a, b)
+	case 0xFF95:
+		L("GIME %x <= %02x", a, b)
+	case 0xFF96:
+		L("GIME %x <= %02x", a, b)
+	case 0xFF97:
+		L("GIME %x <= %02x", a, b)
+	case 0xFF98:
+		L("GIME %x <= %02x", a, b)
+	case 0xFF99:
+		L("GIME %x <= %02x", a, b)
+		L("GIME\t\tLinesPerField=%x HRES=%x CRES=%x",
+			(b>>5)&3,
+			(b>>2)&7,
+			b&3)
+
+	case 0xFF9A:
+		L("GIME %x <= %02x", a, b)
+		L("GIME\t\tBorder: R=%x G=%x B=%x",
+			((b&0x20)>>4)|((b&0x04)>>2),
+			((b&0x10)>>4)|((b&0x02)>>1),
+			((b&0x08)>>4)|((b&0x01)>>0))
+	case 0xFF9B:
+		L("GIME %x <= %02x", a, b)
+		L("GIME\t\tNot Used")
+	case 0xFF9C:
+		L("GIME %x <= %02x", a, b)
+		L("GIME\t\tVirt Scroll (alpha) = %x", b&15)
+		L("GIME\t\tVirtOffsetAddr=%x",
+			(((LPeekB(0xFF9C)>>4)&7)<<16)|
+				(((LPeekB(0xFF9D))&255)<<8)|
+				(((LPeekB(0xFF9E))&255)<<0))
+	case 0xFF9D:
+		L("GIME %x <= %02x", a, b)
+		L("GIME\t\tVirtOffsetAddr=%x",
+			(((LPeekB(0xFF9C)>>4)&7)<<16)|
+				(((LPeekB(0xFF9D))&255)<<8)|
+				(((LPeekB(0xFF9E))&255)<<0))
+	case 0xFF9E:
+		L("GIME %x <= %02x", a, b)
+		L("GIME\t\tVirtOffsetAddr=%x",
+			(((LPeekB(0xFF9C)>>4)&7)<<16)|
+				(((LPeekB(0xFF9D))&255)<<8)|
+				(((LPeekB(0xFF9E))&255)<<0))
+	case 0xFF9F:
+		L("GIME %x <= %02x", a, b)
+		L("GIME\t\tHVEN=%x HorzOffsetAddr=%x", (b >> 7), b&127)
 
 	case 0xFFA0,
 		0xFFA1,

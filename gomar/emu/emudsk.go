@@ -7,7 +7,10 @@ import (
 	"os"
 )
 
-var flagEmudsk = flag.String("emudsk", "", "emudsk Emulation Disk")
+var flagH0 = flag.String("h0", "", "emudsk /H0 disk image")
+var flagH1 = flag.String("h1", "", "emudsk /H1 disk image")
+
+const kNumHDrives = 2
 
 const (
 	kEmudskReadSector byte = iota
@@ -15,19 +18,30 @@ const (
 	kEmudskCloseDevice
 )
 
-var fileEmudsk *os.File
+var fileEmudsk [kNumHDrives]*os.File
+var nameEmudsk [kNumHDrives]string
 
-func initEmudsk() {
-	if fileEmudsk != nil {
+func initEmudsk(i byte) {
+	if i >= kNumHDrives {
+		log.Panicf("initEmudsk: bad drive num: $%x", i)
+	}
+
+	if fileEmudsk[i] != nil {
 		return // Already initialized.
 	}
-	if *flagEmudsk == "" {
+
+	nameEmudsk = [kNumHDrives]string{
+		*flagH0,
+		*flagH1,
+	}
+
+	if nameEmudsk[i] == "" {
 		log.Panicf("Flag --emudsk required")
 	}
 	var err error
-	fileEmudsk, err = os.OpenFile(*flagEmudsk, os.O_RDWR, 0666)
+	fileEmudsk[i], err = os.OpenFile(nameEmudsk[i], os.O_RDWR, 0666)
 	if err != nil {
-		log.Fatalf("Cannot open emudsk %q: %v", *flagEmudsk, err)
+		log.Fatalf("Cannot open emudsk %q: %v", nameEmudsk[i], err)
 	}
 }
 
@@ -56,20 +70,25 @@ func EmudskPutIOByte(a Word, b byte) {
 	case 0xFF80,
 		0xFF81,
 		0xFF82:
-		log.Printf("emudsk: LogicalSectorNumber: %x <- %x", a, b)
+		log.Printf("emudsk: LogicalSectorNumber: $%x <- $%x", a, b)
 		// Emulated Disk: Logical Sector Number: let it save in ram.
 
 	case 0xFF84,
 		0xFF85:
-		log.Printf("emudsk: Buffer: %x <- %x", a, b)
+		log.Printf("emudsk: Buffer: $%x <- $%x", a, b)
 		// Emulated Disk: Buffer Location: let it save in ram.
 
+	case 0xFF86:
+		log.Printf("emudsk: Drive Number: $%x <- $%x", a, b)
+		// Emulated Disk: Drive Number: let it save in ram.
+
 	case 0xFF83:
-		log.Printf("emudsk: Action: %x <- %x", a, b)
-		if *flagEmudsk == "" {
+		drive := PeekB(0xFF86)
+		log.Printf("emudsk[$%x]: Action: $%x <- $%x", drive, a, b)
+		initEmudsk(drive)
+		if nameEmudsk[drive] == "" {
 			log.Panicf("No --emudsk flag")
 		}
-		initEmudsk()
 		switch b {
 		default:
 			log.Fatalf("emudsk: *default* not yet supported on emudsk")
@@ -78,23 +97,24 @@ func EmudskPutIOByte(a Word, b byte) {
 				lsn, ptr := EmudskLogicalSectorNumberAndBufferLocation()
 				log.Printf("emudsk: ReadSector: lsn=$%x ptr=$%x", lsn, ptr)
 
-				_, err := fileEmudsk.Seek(int64(lsn)*256, 0)
+				_, err := fileEmudsk[drive].Seek(int64(lsn)*256, 0)
 				if err != nil {
-					log.Panicf("Cannot seek to sector $%x on %q: %v", lsn, *flagEmudsk, err)
+					log.Panicf("Cannot seek to sector $%x on %q: %v", lsn, nameEmudsk[drive], err)
 				}
 				bb := make([]byte, 256)
-				cc, err := fileEmudsk.Read(bb)
+				cc, err := fileEmudsk[drive].Read(bb)
 				if err != nil {
-					log.Panicf("Cannot read sector $%x on %q: %v", lsn, *flagEmudsk, err)
+					log.Panicf("Cannot read sector $%x on %q: %v", lsn, nameEmudsk[drive], err)
 				}
 				if cc != 256 {
-					log.Panicf("Short read sector $%x on %q: %d. bytes", lsn, *flagEmudsk, cc)
+					log.Panicf("Short read sector $%x on %q: %d. bytes", lsn, nameEmudsk[drive], cc)
 				}
 				for i, e := range bb {
 					PokeB(Word(ptr)+Word(i), e)
 				}
 
-				{ // Verbosity:
+				DumpHexLines(F("READ($%x)", lsn), bb)
+				if false { // Verbosity:
 					var buf bytes.Buffer
 					var last byte
 					for _, e := range bb {
@@ -117,21 +137,22 @@ func EmudskPutIOByte(a Word, b byte) {
 				lsn, ptr := EmudskLogicalSectorNumberAndBufferLocation()
 				log.Printf("emudsk: WriteSector: lsn=$%x ptr=$%x", lsn, ptr)
 
-				_, err := fileEmudsk.Seek(int64(lsn)*256, 0)
+				_, err := fileEmudsk[drive].Seek(int64(lsn)*256, 0)
 				if err != nil {
-					log.Panicf("Cannot seek to sector $%x on %q: %v", lsn, *flagEmudsk, err)
+					log.Panicf("Cannot seek to sector $%x on %q: %v", lsn, nameEmudsk[drive], err)
 				}
 				ptrPhys := MapAddr(Word(ptr), false)
 				bb := mem[ptrPhys : ptrPhys+256]
-				cc, err := fileEmudsk.Write(bb)
+				cc, err := fileEmudsk[drive].Write(bb)
 				if err != nil {
-					log.Panicf("Cannot write sector $%x on %q: %v", lsn, *flagEmudsk, err)
+					log.Panicf("Cannot write sector $%x on %q: %v", lsn, nameEmudsk[drive], err)
 				}
 				if cc != 256 {
-					log.Panicf("Short read sector $%x on %q: %d bytes", lsn, *flagEmudsk, cc)
+					log.Panicf("Short read sector $%x on %q: %d bytes", lsn, nameEmudsk[drive], cc)
 				}
 
-				{ // Verbosity:
+				DumpHexLines(F("WRITE($%x)", lsn), bb)
+				if false { // Verbosity:
 					var buf bytes.Buffer
 					var last byte
 					for _, e := range bb {
@@ -150,7 +171,6 @@ func EmudskPutIOByte(a Word, b byte) {
 			}
 
 		case kEmudskCloseDevice:
-			initEmudsk()
 			PokeB(0xFF83, 0) // OK
 
 		}
