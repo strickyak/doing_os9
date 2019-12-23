@@ -480,6 +480,37 @@ func LPeekB(a Word) uint64 {
 	return uint64(PeekB(a))
 }
 
+func ExplainColor(b byte) string {
+	return F("rgb=$%02x=(%x,%x,%x)", b&63,
+		((b&0x20)>>4)|((b&0x04)>>2),
+		((b&0x10)>>3)|((b&0x02)>>1),
+		((b&0x08)>>2)|((b&0x01)>>0))
+}
+
+func ExplainBits(b byte, meanings []string) string {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "$%02x=", b)
+	mask := byte(128)
+	for i := 0; i < 8; i++ {
+		if b&mask != 0 {
+			buf.WriteString(meanings[i])
+		}
+		if i < 7 {
+			buf.WriteByte('|')
+		}
+		mask >>= 1
+	}
+	return buf.String()
+}
+
+var FF92Bits = []string{
+	"?", "?", "TimerIRQ", "HorzIRQ", "VertIRQ", "SerialIRQ", "KbdIRQ", "CartIRQ"}
+var FF93Bits = []string{
+	"?", "?", "TimerFIRQ", "HorzFIRQ", "VertFIRQ", "SerialFIRQ", "KbdFIRQ", "CartFIRQ"}
+
+var GimeLinesPerField = []int{192, 200, 210, 225}
+var GimeLinesPerCharRow = []int{1, 2, 3, 8, 9, 10, 12, -1}
+
 func PutGimeIOByte(a Word, b byte) {
 	PokeB(a, b)
 
@@ -503,10 +534,10 @@ func PutGimeIOByte(a Word, b byte) {
 		0xFFBD,
 		0xFFBE,
 		0xFFBF:
-		L("B0: palettes <- %0x2", b)
+		L("GIME\t\t$%x: palette[$%x] <- %s", a, a&15, ExplainColor(b))
 
 	case 0xFFD9:
-		L("D9: Cpu Speed <- %0x2", b)
+		L("GIME\t\t$%x: Cpu Speed <- %02x", a, b)
 
 	case 0xFF90:
 		MmuEnable = 0 != (b & 0x40)
@@ -517,6 +548,7 @@ func PutGimeIOByte(a Word, b byte) {
 		L("GIME MmuTask <- %v; clock rate <- %v", MmuTask, 0 != (b&0x40))
 
 	case 0xFF92:
+		L("GIME\t\tIRQ bits: %s", ExplainBits(b, FF92Bits))
 		// 0x08: Vertical IRQ.  0x01: Cartridge.
 		if (b &^ 0x09) != 0 {
 			log.Panicf("GIME IRQ Enable for unsupported emulated bits: %04x %02x", a, b)
@@ -528,52 +560,55 @@ func PutGimeIOByte(a Word, b byte) {
 		}
 
 	case 0xFF93:
+		L("GIME\t\tFIRQ bits: %s", ExplainBits(b, FF93Bits))
 		if b != 0 {
 			log.Panicf("GIME FIRQ Enable for unsupported emulated bits: %04x %02x", a, b)
 		}
 
 	case 0xFF94:
 		L("GIME %x <= %02x", a, b)
+		L("GIME\t\tTimer=$%x Start!", HiLo(PeekB(0xFF94), PeekB(0xFF95)))
 	case 0xFF95:
 		L("GIME %x <= %02x", a, b)
+		L("GIME\t\tTimer=$%x", HiLo(PeekB(0xFF94), PeekB(0xFF95)))
 	case 0xFF96:
 		L("GIME %x <= %02x", a, b)
+		L("GIME\t\treserved")
 	case 0xFF97:
 		L("GIME %x <= %02x", a, b)
+		L("GIME\t\treserved")
 	case 0xFF98:
 		L("GIME %x <= %02x", a, b)
+		L("GIME\t\tGraphicsNotAlpha=%x AttrsIfAlpha=%x Artifacting=%x Monochrome=%x 50Hz=%x LinesPerCharRow=%x=%d.",
+			(b>>7)&1,
+			(b>>6)&1,
+			(b>>5)&1,
+			(b>>4)&1,
+			(b>>3)&1,
+			(b & 7),
+			GimeLinesPerCharRow[b&7])
 	case 0xFF99:
 		L("GIME %x <= %02x", a, b)
-		L("GIME\t\tLinesPerField=%x HRES=%x CRES=%x",
+		L("GIME\t\tLinesPerField=%x=%d. HRES=%x CRES=%x",
 			(b>>5)&3,
+			GimeLinesPerField[(b>>5)&3],
 			(b>>2)&7,
 			b&3)
 
 	case 0xFF9A:
 		L("GIME %x <= %02x", a, b)
-		L("GIME\t\tBorder: R=%x G=%x B=%x",
-			((b&0x20)>>4)|((b&0x04)>>2),
-			((b&0x10)>>4)|((b&0x02)>>1),
-			((b&0x08)>>4)|((b&0x01)>>0))
+		L("GIME\t\tBorder: ", ExplainColor(b))
 	case 0xFF9B:
 		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tNot Used")
 	case 0xFF9C:
 		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tVirt Scroll (alpha) = %x", b&15)
-		L("GIME\t\tVirtOffsetAddr=%x",
-			(((LPeekB(0xFF9C)>>4)&7)<<16)|
-				(((LPeekB(0xFF9D))&255)<<8)|
-				(((LPeekB(0xFF9E))&255)<<0))
-	case 0xFF9D:
+		fallthrough
+	case 0xFF9D,
+		0xFF9E:
 		L("GIME %x <= %02x", a, b)
-		L("GIME\t\tVirtOffsetAddr=%x",
-			(((LPeekB(0xFF9C)>>4)&7)<<16)|
-				(((LPeekB(0xFF9D))&255)<<8)|
-				(((LPeekB(0xFF9E))&255)<<0))
-	case 0xFF9E:
-		L("GIME %x <= %02x", a, b)
-		L("GIME\t\tVirtOffsetAddr=%x",
+		L("GIME\t\tVirtOffsetAddr=$%05x",
 			(((LPeekB(0xFF9C)>>4)&7)<<16)|
 				(((LPeekB(0xFF9D))&255)<<8)|
 				(((LPeekB(0xFF9E))&255)<<0))
