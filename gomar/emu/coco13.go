@@ -9,6 +9,14 @@ import (
 	"strings"
 )
 
+// Named VDG even if really SAM
+var VdgFx byte
+var VdgMx byte // Memory size for SAM.
+var VdgRx byte // Clock speed for SAM.
+var VdgVx byte
+var VdgRomMode byte
+var VdgSamPage byte
+
 var InitialModules []*ModuleFound
 
 type ModuleFound struct {
@@ -106,6 +114,26 @@ func LogicalSector(sector, side, track byte) int64 {
 	panic(0)
 }
 
+var FF22Bits = []string{
+	"VdgGraphics", "VdgGM2", "VdgGM1/invert", "VdgGM0/shiftToggle",
+	"VdgColorSet", "RamSize/Input", "SingleBitSound/Out", "Rs232/Input"}
+
+func ExplainBits(b byte, meanings []string) string {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "$%02x=", b)
+	mask := byte(128)
+	for i := 0; i < 8; i++ {
+		if b&mask != 0 {
+			buf.WriteString(meanings[i])
+		}
+		if i < 7 {
+			buf.WriteByte('|')
+		}
+		mask >>= 1
+	}
+	return buf.String()
+}
+
 func PutIOByte(a Word, b byte) {
 	PokeB(a, b)
 	log.Printf("#PutIOByte: $%04x <- $%02x", a, b)
@@ -128,10 +156,12 @@ func PutIOByte(a Word, b byte) {
 
 		0xFF20,
 		0xFF21,
-		0xFF22,
 		0xFF23:
 		L("TODO: Put IO byte 0x%04x\n", a)
 		return
+
+	case 0xFF22:
+		L("VDG: %s", ExplainBits(b, FF22Bits))
 
 	case 0xFF40: /* CONTROL */
 		{
@@ -268,33 +298,130 @@ func PutIOByte(a Word, b byte) {
 
 		}
 
-	/* VDG */
-	case 0xFFC0,
-		0xFFC1,
-		0xFFC2,
-		0xFFC3,
-		0xFFC4,
-		0xFFC5,
-		0xFFC6,
-		0xFFC7,
-		0xFFC8,
-		0xFFC9,
-		0xFFCA,
-		0xFFCB,
-		0xFFCC,
-		0xFFCD,
-		0xFFCE,
-		0xFFCF,
+		/* VDG */
+	case 0xFFC0:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgVx &^= 1
+		L("VDG VdgVx <- $%x", VdgVx)
+	case 0xFFC1:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgVx |= 1
+		L("VDG VdgVx <- $%x", VdgVx)
+	case 0xFFC2:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgVx &^= 2
+		L("VDG VdgVx <- $%x", VdgVx)
+	case 0xFFC3:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgVx |= 2
+		L("VDG VdgVx <- $%x", VdgVx)
+	case 0xFFC4:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgVx &^= 4
+		L("VDG VdgVx <- $%x", VdgVx)
+	case 0xFFC5:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgVx |= 4
+		L("VDG VdgVx <- $%x", VdgVx)
 
-		0xFFD0,
-		0xFFD1,
-		0xFFD2,
-		0xFFD3,
-		0xFFD9,
-		0xFFDF:
-		{
-			L("VDG PutByte OK: %x <- %x\n", a, b)
-		}
+	case 0xFFC6:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx &^= 1
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFC7:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx |= 1
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFC8:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx &^= 2
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFC9:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx |= 2
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFCA:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx &^= 4
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFCB:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx |= 4
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFCC:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx &^= 8
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFCD:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx |= 8
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFCE:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx &^= 16
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFCF:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx |= 16
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFD0:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx &^= 32
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFD1:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx |= 32
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFD2:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx &^= 64
+		L("VDG VdgFx <- $%x", VdgFx)
+	case 0xFFD3:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgFx |= 64
+		L("VDG VdgFx <- $%x", VdgFx)
+
+	case 0xFFD4:
+		VdgSamPage = 0
+		L("VDG VdgSamPage <- $%x", VdgSamPage)
+	case 0xFFD5:
+		VdgSamPage = 1
+		L("VDG VdgSamPage <- $%x", VdgSamPage)
+
+	case 0xFFD6:
+		VdgRx &^= 1
+		L("VDG VdgRx <- $%x", VdgRx)
+	case 0xFFD7:
+		VdgRx |= 1
+		L("VDG VdgRx <- $%x", VdgRx)
+	case 0xFFD8:
+		VdgRx &^= 2
+		L("VDG VdgRx <- $%x", VdgRx)
+	case 0xFFD9:
+		VdgRx |= 2
+		L("VDG VdgRx <- $%x", VdgRx)
+
+	case 0xFFDA:
+		VdgMx &^= 1
+		L("VDG VdgMx <- $%x", VdgMx)
+	case 0xFFDB:
+		VdgMx |= 1
+		L("VDG VdgMx <- $%x", VdgMx)
+	case 0xFFDC:
+		VdgMx &^= 2
+		L("VDG VdgMx <- $%x", VdgMx)
+	case 0xFFDD:
+		VdgMx |= 2
+		L("VDG VdgMx <- $%x", VdgMx)
+
+	case 0xFFDE:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgRomMode = 1
+		L("VDG VdgRomMode <- $%x", VdgRomMode)
+	case 0xFFDF:
+		L("VDG PutByte OK: %x <- %x\n", a, b)
+		VdgRomMode = 0
+		L("VDG VdgRomMode <- $%x", VdgRomMode)
 
 	case 0xFF80,
 		0xFF81,
@@ -334,7 +461,15 @@ func DumpHexLine(label string, bb []byte) {
 	log.Print(buf.String())
 }
 
+func DoDumpVdgBits() {
+	L("VDG/SAM BITS: F=%x M=%x R=%x V=%x RomMode=%x SamPage=%x",
+		VdgFx, VdgMx, VdgRx, VdgVx, VdgRomMode, VdgSamPage)
+}
+
 func DoDumpAllMemory() {
+	DoDumpVdgBits()
+	DumpGimeStatus()
+	L("ExplainMMU: %s", ExplainMMU())
 	var i, j int
 	var buf bytes.Buffer
 	L("\n#DumpAllMemory(\n")

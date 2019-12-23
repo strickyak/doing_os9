@@ -201,7 +201,7 @@ func DoDumpAllMemoryPhys() {
 	n := len(mem)
 	for i = 0; i < n; i += 32 {
 		if i&0x1FFF == 0 {
-			L("[%02x] %06x:", i>>13, i)
+			L("P [%02x] %06x:", i>>13, i)
 		}
 		// Look ahead for something interesting on this line.
 		something := false
@@ -219,7 +219,7 @@ func DoDumpAllMemoryPhys() {
 		}
 
 		buf.Reset()
-		Z(&buf, "%06x: ", i)
+		Z(&buf, "P %06x: ", i)
 		for j = 0; j < 32; j += 8 {
 			Z(&buf,
 				"%02x%02x %02x%02x %02x%02x %02x%02x  ",
@@ -487,22 +487,6 @@ func ExplainColor(b byte) string {
 		((b&0x08)>>2)|((b&0x01)>>0))
 }
 
-func ExplainBits(b byte, meanings []string) string {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "$%02x=", b)
-	mask := byte(128)
-	for i := 0; i < 8; i++ {
-		if b&mask != 0 {
-			buf.WriteString(meanings[i])
-		}
-		if i < 7 {
-			buf.WriteByte('|')
-		}
-		mask >>= 1
-	}
-	return buf.String()
-}
-
 var FF92Bits = []string{
 	"?", "?", "TimerIRQ", "HorzIRQ", "VertIRQ", "SerialIRQ", "KbdIRQ", "CartIRQ"}
 var FF93Bits = []string{
@@ -510,6 +494,50 @@ var FF93Bits = []string{
 
 var GimeLinesPerField = []int{192, 200, 210, 225}
 var GimeLinesPerCharRow = []int{1, 2, 3, 8, 9, 10, 12, -1}
+
+func DumpGimeStatus() {
+	for i := Word(0); i < 16; i += 4 {
+		L("GIME/palette[%x..%x]: %s %s %s %s", i, i+3,
+			ExplainColor(PeekB(0xFFB0+i)),
+			ExplainColor(PeekB(0xFFB1+i)),
+			ExplainColor(PeekB(0xFFB2+i)),
+			ExplainColor(PeekB(0xFFB3+i)))
+	}
+	L("GIME/CpuSpeed: %x", PeekB(0xFFD9))
+	L("GIME/MmuEnable: %v", PeekB(0xFF90)&0x40 != 0)
+	L("GIME/MmuTask: %v; clock rate: %v", MmuTask, 0 != (PeekB(0xFF91)&0x40))
+	L("GIME/IRQ bits: %s", ExplainBits(PeekB(0xFF92), FF92Bits))
+	L("GIME/FIRQ bits: %s", ExplainBits(PeekB(0xFF93), FF93Bits))
+	L("GIME/Timer=$%x", HiLo(PeekB(0xFF94), PeekB(0xFF95)))
+	b := PeekB(0xFF98)
+	L("GIME/GraphicsNotAlpha=%x AttrsIfAlpha=%x Artifacting=%x Monochrome=%x 50Hz=%x LinesPerCharRow=%x=%d.",
+		(b>>7)&1,
+		(b>>6)&1,
+		(b>>5)&1,
+		(b>>4)&1,
+		(b>>3)&1,
+		(b & 7),
+		GimeLinesPerCharRow[b&7])
+	b = PeekB(0xFF99)
+	L("GIME/LinesPerField=%x=%d. HRES=%x CRES=%x",
+		(b>>5)&3,
+		GimeLinesPerField[(b>>5)&3],
+		(b>>2)&7,
+		b&3)
+
+	b = PeekB(0xFF9C)
+	L("GIME/Virt Scroll (alpha) = %x", b&15)
+	L("GIME/VirtOffsetAddr=$%05x",
+		uint64(HiLo(PeekB(0xFF9D), PeekB(0xFF9E)))<<3)
+	/*
+		L("GIME/VirtOffsetAddr=$%05x",
+				(((LPeekB(0xFF9C)>>4)&7)<<16)|
+					(((LPeekB(0xFF9D))&255)<<8)|
+					(((LPeekB(0xFF9E))&255)<<0))
+	*/
+	b = PeekB(0xFF9F)
+	L("GIME/HVEN=%x HorzOffsetAddr=%x", (b >> 7), b&127)
+}
 
 func PutGimeIOByte(a Word, b byte) {
 	PokeB(a, b)
@@ -604,14 +632,11 @@ func PutGimeIOByte(a Word, b byte) {
 	case 0xFF9C:
 		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tVirt Scroll (alpha) = %x", b&15)
-		fallthrough
 	case 0xFF9D,
 		0xFF9E:
 		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tVirtOffsetAddr=$%05x",
-			(((LPeekB(0xFF9C)>>4)&7)<<16)|
-				(((LPeekB(0xFF9D))&255)<<8)|
-				(((LPeekB(0xFF9E))&255)<<0))
+			uint64(HiLo(PeekB(0xFF9D), PeekB(0xFF9E)))<<3)
 	case 0xFF9F:
 		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tHVEN=%x HorzOffsetAddr=%x", (b >> 7), b&127)

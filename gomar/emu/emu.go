@@ -146,7 +146,7 @@ const NMI_PENDING = CC_ENTIRE /* borrow this bit */
 const IRQ_PENDING = CC_INHIBIT_IRQ
 const FIRQ_PENDING = CC_INHIBIT_FIRQ
 
-const IRQ_FREQ = (50 * 1000)
+const IRQ_FREQ = (500 * 1000)
 
 const CC_INHIBIT_IRQ = 0x10
 const CC_INHIBIT_FIRQ = 0x40
@@ -3040,6 +3040,11 @@ func Main() {
 		pcreg_prev = pcreg
 
 		if stepsUntilTimer == 0 {
+			log.Printf("# pre timer interrupt #")
+			DoDumpAllMemory()
+			log.Printf("# pre timer interrupt #")
+			DoDumpAllMemoryPhys()
+			log.Printf("# pre timer interrupt #")
 			FireTimerInterrupt()
 			stepsUntilTimer = IRQ_FREQ
 		} else {
