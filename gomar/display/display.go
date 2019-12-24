@@ -7,6 +7,9 @@ import (
 	"image/color"
 	"log"
 	"math"
+	"os"
+	"runtime"
+	"runtime/pprof"
 	"time"
 
 	"github.com/tfriedel6/canvas"
@@ -58,20 +61,32 @@ func (d *Display) PutChar(b byte) {
 }
 
 func (d *Display) Loop() {
-	wnd, cv, err := sdlcanvas.CreateWindow(1280, 800, "gomar/display")
+	var coco *CocoDisplayParams
+	var ft *canvas.Font
+	w, h := float64(WIDTH), float64(HEIGHT) // Used portion of canvas.
+
+	wnd, cv, err := sdlcanvas.CreateWindow(WIDTH, HEIGHT, "GOMAR")
 	if err != nil {
-		log.Println(err)
+		log.Fatalf("cannot selcanvas.CreateWindow: %v", err)
 		return
 	}
 	defer wnd.Destroy()
 
-	var mx, my, action float64
-
 	wnd.MouseMove = func(x, y int) {
-		mx, my = float64(x), float64(y)
+		mx, my := float64(x)/w, float64(y)/h
+		MouseMutex.Lock()
+		MouseX, MouseY = mx, my
+		MouseMutex.Unlock()
 	}
 	wnd.MouseDown = func(button, x, y int) {
-		action = 1
+		MouseMutex.Lock()
+		MouseDown = true
+		MouseMutex.Unlock()
+	}
+	wnd.MouseUp = func(button, x, y int) {
+		MouseMutex.Lock()
+		MouseDown = false
+		MouseMutex.Unlock()
 	}
 	wnd.KeyUp = func(scancode int, rn rune, name string) {
 		println("KeyUp", scancode, rn, name)
@@ -107,11 +122,9 @@ func (d *Display) Loop() {
 		d.PutChar(byte(rn))
 	}
 
-	lastTime := time.Now()
+	var z *image.RGBA
+	var zxlen, zylen int
 
-	var ft *canvas.Font
-
-	var coco *CocoDisplayParams
 	wnd.MainLoop(func() {
 		var err error
 		time.Sleep(20 * time.Millisecond)
@@ -132,17 +145,9 @@ func (d *Display) Loop() {
 			log.Printf("DISPLAY: coco: %#v", *coco)
 		}
 
-		now := time.Now()
-		diff := now.Sub(lastTime)
-		lastTime = now
-		action -= diff.Seconds() * 3
-		action = math.Max(0, action)
-
-		w, h := float64(cv.Width()), float64(cv.Height())
-
 		// Clear the screen
 		cv.SetFillStyle("#000")
-		cv.FillRect(0, 0, w, h)
+		cv.FillRect(0, 0, float64(WIDTH), float64(HEIGHT))
 
 		// yak: TRY FONTS
 		if ft == nil {
@@ -161,25 +166,30 @@ func (d *Display) Loop() {
 			const N = 4
 			p := coco.VirtOffsetAddr
 			bpr := coco.GraphicsBytesPerRow
-			cbpb := coco.GraphicsColorBitsPerByte
+			colorBits := coco.GraphicsColorBits
 
-			xlen := (8 * bpr) / cbpb
+			xlen := (8 * bpr) / colorBits
 			ylen := coco.LinesPerField
-			z := image.NewRGBA(image.Rect(0, 0, N*xlen, N*ylen))
+			if z == nil || xlen != zxlen || ylen != zylen {
+				z = image.NewRGBA(image.Rect(0, 0, N*xlen, N*ylen))
+				zxlen, zylen = xlen, ylen
+			}
+			// For interpreting mouse position:
+			w, h = float64(N*xlen), float64(N*ylen)
 
-			shift := 8 - cbpb
-			mask := ^(byte(0xFF) << uint(cbpb))
+			shift := 8 - colorBits
+			mask := ^(byte(0xFF) << uint(colorBits))
 			for y := 0; y < coco.LinesPerField; y++ {
 				endRow := p + bpr
 				m := d.Mem[p]
-				// for x := 0; x < xlen; x++ {
+				// for x := 0; x < xlen; x++ ///
 				for x := 0; p < endRow; x++ {
 					pixel := (m >> uint(shift)) & mask
-					log.Printf("DISPLAY: y=%x x=%x p=%x shift=%x mask=%x pixel=%x", y, x, p, shift, mask, pixel)
-					shift -= cbpb
+					// log.Printf("DISPLAY: y=%x x=%x p=%x shift=%x mask=%x pixel=%x", y, x, p, shift, mask, pixel)
+					shift -= colorBits
 					if shift < 0 {
-						shift = 8 - cbpb
-						mask = ^(byte(0xFF) << uint(cbpb))
+						shift = 8 - colorBits
+						mask = ^(byte(0xFF) << uint(colorBits))
 						p++
 						m = d.Mem[p]
 					}
@@ -187,7 +197,7 @@ func (d *Display) Loop() {
 					r := ((clr & 0x20) >> 4) | ((clr & 0x04) >> 2)
 					g := ((clr & 0x10) >> 3) | ((clr & 0x02) >> 1)
 					b := ((clr & 0x08) >> 2) | ((clr & 0x01) >> 0)
-					log.Printf("DISPLAY:   clr=%x r=%x g=%x b=%", clr, r, g, b)
+					// log.Printf("DISPLAY:   clr=%x r=%x g=%x b=%", clr, r, g, b)
 					colour := color.RGBA{r << 6, g << 6, b << 6, 255}
 					for j := 0; j < N; j++ {
 						for i := 0; i < N; i++ {
@@ -196,10 +206,10 @@ func (d *Display) Loop() {
 					}
 				}
 				if p != endRow {
-					log.Fatalf("p=%x endRow=%x len=%x,%x %x,%x,%x,%x", p, endRow, xlen, ylen, bpr, cbpb, shift, mask)
+					log.Fatalf("p=%x endRow=%x len=%x,%x %x,%x,%x,%x", p, endRow, xlen, ylen, bpr, colorBits, shift, mask)
 				}
 			}
-			cv.DrawImage(z, 10, 10)
+			cv.DrawImage(z, 0, 0)
 		} else {
 			// Alpha
 			for y := 0; y < d.NumRows; y++ {
@@ -207,14 +217,18 @@ func (d *Display) Loop() {
 			}
 		}
 
-		if false {
-			// Draw a circle around the cursor
-			cv.SetStrokeStyle("#F00")
-			cv.SetLineWidth(6)
+		{ // draw mouse
+			if MouseDown {
+				cv.SetStrokeStyle("#F33")
+			} else {
+				cv.SetStrokeStyle("#33F")
+			}
+			cv.SetLineWidth(3)
 			cv.BeginPath()
-			cv.Arc(mx, my, 24+action*24, 0, math.Pi*2, false)
+			cv.Arc(MouseX*w, MouseY*h, 10, 0, math.Pi*2, false)
 			cv.Stroke()
 		}
 
+		runtime.GC()
 	})
 }

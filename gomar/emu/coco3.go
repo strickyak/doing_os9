@@ -525,7 +525,7 @@ x0=No color attributes
 x1=Color attributes enabled
 */
 
-var GraphicsColorBitsPerByteCRES = []int{1, 2, 4, 8}
+var GraphicsColorBitsCRES = []int{1, 2, 4, 8}
 var AlphaHasAttrsCRES = []bool{false, true, false, true}
 
 var FF92Bits = []string{
@@ -557,7 +557,7 @@ func GetCocoDisplayParams() *display.CocoDisplayParams {
 	}
 	if z.Graphics {
 		z.GraphicsBytesPerRow = GraphicsBytesPerRowHRES[z.HRES]
-		z.GraphicsColorBitsPerByte = GraphicsColorBitsPerByteCRES[z.CRES]
+		z.GraphicsColorBits = GraphicsColorBitsCRES[z.CRES]
 	} else {
 		z.AlphaCharsPerRow = AlphaCharsPerRowHRES[z.HRES]
 		z.AlphaHasAttrs = AlphaHasAttrsCRES[z.CRES]

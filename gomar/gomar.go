@@ -78,10 +78,12 @@ import (
 	"flag"
 	"log"
 	"os"
+	"runtime"
 	"runtime/pprof"
 )
 
 var FlagCpuProfile = flag.String("cpuprofile", "", "write cpu profile to file")
+var FlagMemProfile = flag.String("memprofile", "", "write cpu profile to file")
 
 func main() {
 	log.SetFlags(0)
@@ -92,9 +94,22 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		defer f.Close()
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
 
 	emu.Main()
+
+	if *FlagMemProfile != "" {
+		f, err := os.Create(*FlagMemProfile)
+		if err != nil {
+			log.Fatalf("could not create memory profile: %v", err)
+		}
+		defer f.Close()
+		runtime.GC() // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatalf("could not write memory profile: %v", err)
+		}
+	}
 }
