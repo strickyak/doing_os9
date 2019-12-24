@@ -177,7 +177,7 @@ func (d *Display) Loop() {
 					pixel := (m >> uint(shift)) & mask
 					log.Printf("DISPLAY: y=%x x=%x p=%x shift=%x mask=%x pixel=%x", y, x, p, shift, mask, pixel)
 					shift -= cbpb
-					if shift < 1 {
+					if shift < 0 {
 						shift = 8 - cbpb
 						mask = ^(byte(0xFF) << uint(cbpb))
 						p++
