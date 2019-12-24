@@ -3,6 +3,7 @@ package emu
 // See credits.go
 
 import (
+	"github.com/strickyak/doing_os9/gomar/display"
 	"github.com/strickyak/doing_os9/gomar/sym"
 
 	"bytes"
@@ -88,6 +89,9 @@ func TfrReg(b byte) EA {
 	}
 	return DRegEA + EA(b)
 }
+
+var CocodChan chan *display.CocoDisplayParams
+var Disp *display.Display
 
 var fdump int
 var Steps uint64
@@ -1268,7 +1272,14 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 			}
 		} else {
 			WithMmu(1, func() {
-				fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
+				// fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
+				s := PrintableStringThruCrOrMax(xreg, yreg)
+				fmt.Printf("%s", s)
+				for _, ch := range s {
+					if ch < 256 && Disp != nil {
+						Disp.PutChar(byte(ch))
+					}
+				}
 			})
 		}
 
@@ -2973,6 +2984,9 @@ func Main() {
 	keystrokes := make(chan byte, 0)
 	go InputRoutine(keystrokes)
 
+	CocodChan := make(chan *display.CocoDisplayParams, 50)
+	Disp = display.NewDisplay(mem[:], 80, 25, CocodChan, keystrokes)
+
 	{
 		// Open disk image.
 		fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
@@ -3063,6 +3077,7 @@ func Main() {
 			if (irqs_pending&IRQ_PENDING) != 0 && !(ccreg&CC_INHIBIT_IRQ != 0) {
 
 				irq(keystrokes)
+				CocodChan <- GetCocoDisplayParams()
 				continue
 			}
 		}

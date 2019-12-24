@@ -3,6 +3,7 @@
 package emu
 
 import (
+	"github.com/strickyak/doing_os9/gomar/display"
 	"github.com/strickyak/doing_os9/gomar/sym"
 
 	"bytes"
@@ -487,6 +488,46 @@ func ExplainColor(b byte) string {
 		((b&0x08)>>2)|((b&0x01)>>0))
 }
 
+/*
+HRES:
+	http://users.axess.com/twilight/sock/gime.html
+Horizontal resolution using graphics:
+000=16 bytes per row
+001=20 bytes per row
+010=32 bytes per row
+011=40 bytes per row
+100=64 bytes per row
+101=80 bytes per row
+110=128 bytes per row
+111=160 bytes per row
+
+When using text:
+0x0=32 characters per row
+0x1=40 characters per row
+1x0=64 characters per row
+1x1=80 characters per row
+*/
+
+var GraphicsBytesPerRowHRES = []int{16, 20, 32, 40, 64, 80, 128, 160}
+var AlphaCharsPerRowHRES = []int{32, 40, 32, 40, 64, 80, 64, 80}
+
+/*
+CRES:
+	http://users.axess.com/twilight/sock/gime.html
+Color Resolution using graphics:
+00=2 colors (8 pixels per byte)
+01=4 colors (4 pixels per byte)
+10=16 colors (2 pixels per byte)
+11=Undefined (would have been 256 colors)
+
+When using text:
+x0=No color attributes
+x1=Color attributes enabled
+*/
+
+var GraphicsColorBitsPerByteCRES = []int{1, 2, 4, 8}
+var AlphaHasAttrsCRES = []bool{false, true, false, true}
+
 var FF92Bits = []string{
 	"?", "?", "TimerIRQ", "HorzIRQ", "VertIRQ", "SerialIRQ", "KbdIRQ", "CartIRQ"}
 var FF93Bits = []string{
@@ -494,6 +535,38 @@ var FF93Bits = []string{
 
 var GimeLinesPerField = []int{192, 200, 210, 225}
 var GimeLinesPerCharRow = []int{1, 2, 3, 8, 9, 10, 12, -1}
+
+func GetCocoDisplayParams() *display.CocoDisplayParams {
+	a := PeekB(0xFF98)
+	b := PeekB(0xFF99)
+	c := PeekB(0xFF9C)
+	d := PeekB(0xFF9F)
+	z := &display.CocoDisplayParams{
+		Gime:            true,
+		Graphics:        (a>>7)&1 != 0,
+		AttrsIfAlpha:    (a>>6)&1 != 0,
+		VirtOffsetAddr:  int(HiLo(PeekB(0xFF9D), PeekB(0xFF9E))) << 3,
+		HorzOffsetAddr:  int(d & 127),
+		VirtScroll:      int(c & 15),
+		LinesPerField:   GimeLinesPerField[(b>>5)&3],
+		LinesPerCharRow: GimeLinesPerCharRow[a&7],
+		Monochrome:      (a>>4)&1 != 0,
+		HRES:            int((b >> 2) & 7),
+		CRES:            int(b & 3),
+		HVEN:            d>>7 != 0,
+	}
+	if z.Graphics {
+		z.GraphicsBytesPerRow = GraphicsBytesPerRowHRES[z.HRES]
+		z.GraphicsColorBitsPerByte = GraphicsColorBitsPerByteCRES[z.CRES]
+	} else {
+		z.AlphaCharsPerRow = AlphaCharsPerRowHRES[z.HRES]
+		z.AlphaHasAttrs = AlphaHasAttrsCRES[z.CRES]
+	}
+	for i := 0; i < 16; i++ {
+		z.ColorMap[i] = PeekB(0xFFB0 + Word(i))
+	}
+	return z
+}
 
 func DumpGimeStatus() {
 	for i := Word(0); i < 16; i += 4 {
@@ -537,6 +610,7 @@ func DumpGimeStatus() {
 	*/
 	b = PeekB(0xFF9F)
 	L("GIME/HVEN=%x HorzOffsetAddr=%x", (b >> 7), b&127)
+	L("GIME/GetCocoDisplayParams = %#v", *GetCocoDisplayParams())
 }
 
 func PutGimeIOByte(a Word, b byte) {
