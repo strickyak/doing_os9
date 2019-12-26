@@ -5,6 +5,7 @@ package emu
 import (
 	"bytes"
 	"fmt"
+	"github.com/strickyak/doing_os9/gomar/display"
 	"log"
 	"strings"
 )
@@ -40,19 +41,43 @@ func GetIOByte(a Word) byte {
 	/* PIA 0 */
 	case 0xFF00:
 		z = 255
-		if kbd_ch != 0 {
-			z = keypress(kbd_probe, kbd_ch)
-			L("KEYBOARD: %02x %q -> %02x\n", kbd_probe, string(rune(kbd_ch)), z)
+
+		if PeekB(0xFF02) == 0xFF {
+			// Not strobing keyboard, so answer mouse buttons.
+			if display.MouseDown {
+				z = 0xF0 // try pressing all 4 buttons. TODO
+				z = 0xFD // just 02 result. TODO
+			}
 		} else {
-			L("KEYBOARD: %02x      -> %02x\n", kbd_probe, z)
+			// Strobing keyboard.
+			if kbd_ch != 0 {
+				z = keypress(kbd_probe, kbd_ch)
+				L("KEYBOARD: %02x %q -> %02x\n", kbd_probe, string(rune(kbd_ch)), z)
+			} else {
+				L("KEYBOARD: %02x      -> %02x\n", kbd_probe, z)
+			}
 		}
+
+		dac := float64(PeekB(0xFF20)) / 256.0
+		var mouse float64
+		if PeekB(0xFF01)&0x08 == 0 {
+			mouse = display.MouseX // or vice versa
+		} else {
+			mouse = display.MouseY // or vice versa
+		}
+		if mouse <= dac {
+			z &= 0x7F
+		} else {
+			z |= 0x80
+		}
+		L("PIA: Get IO byte $%04x -> $%02x\n", a, z)
 		return z
 	case 0xFF01:
 		return 0
 	case 0xFF02:
-		return kbd_probe /* Reset IRQ when this is read. TODO: multiple sources of IRQ. */
+		return kbd_probe // Reset IRQ when this is read. TODO: multiple sources of IRQ.
 	case 0xFF03:
-		return 0x80 /* Negative bit set: Yes the PIA caused IRQ. */
+		return 0x80 // Negative bit set: Yes the PIA caused IRQ.
 
 	/* PIA 1 */
 	case 0xFF22:
@@ -149,19 +174,28 @@ func PutIOByte(a Word, b byte) {
 
 	case 0xFF02:
 		kbd_probe = b
+		L("PIA0: Put IO byte $%04x <- $%02x\n", a, b)
+		return
 
 	case 0xFF00,
 		0xFF01,
-		0xFF03,
+		0xFF03:
+		if a == 0xFF03 && b == 0x80 {
+			*FlagTraceAfter = 1 // Enable trace TODO ddt
+		}
+		L("PIA0: Put IO byte $%04x <- $%02x\n", a, b)
+		return
 
-		0xFF20,
+	case 0xFF20,
 		0xFF21,
 		0xFF23:
-		L("TODO: Put IO byte 0x%04x\n", a)
+		L("PIA1: Put IO byte $%04x <- $%02x\n", a, b)
 		return
 
 	case 0xFF22:
 		L("VDG: %s", ExplainBits(b, FF22Bits))
+		L("PIA1: Put IO byte $%04x <- $%02x\n", a, b)
+		return
 
 	case 0xFF40: /* CONTROL */
 		{

@@ -59,10 +59,14 @@ func Trace() {
 		moduleLower := strings.ToLower(module)
 		text := listings.Lookup(moduleLower, uint(offset))
 		// log.Printf("%q+%04x {{{ %s }}}", module, offset, text)
-		log.Printf("\t\t{{ %s }}", text)
+		log.Printf("\t\t\t\t\t{{ %s }}", text)
 	}
 
-	log.Printf("\t%s debug=%q", ExplainMMU(), DebugString)
+	if pcreg < pcreg_prev || pcreg > pcreg_prev+4 {
+		log.Printf("")
+		log.Printf("\t%s debug=%q", ExplainMMU(), DebugString)
+		log.Printf("")
+	}
 }
 
 func Finish() {

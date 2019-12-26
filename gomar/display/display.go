@@ -3,13 +3,13 @@
 package display
 
 import (
+	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"log"
 	"math"
-	"os"
 	"runtime"
-	"runtime/pprof"
 	"time"
 
 	"github.com/tfriedel6/canvas"
@@ -89,24 +89,51 @@ func (d *Display) Loop() {
 		MouseMutex.Unlock()
 	}
 	wnd.KeyUp = func(scancode int, rn rune, name string) {
-		println("KeyUp", scancode, rn, name)
+		log.Printf("KeyUp: %d,%d,%q", scancode, rn, name)
 		switch name {
 		case "ControlLeft", "ControlRight":
 			d.ctrl = false
 		}
 	}
 	wnd.KeyDown = func(scancode int, rn rune, name string) {
-		println("KeyDown", scancode, rn, name)
+		log.Printf("KeyDown: %d,%d,%q", scancode, rn, name)
 		switch name {
 		case "Escape":
 			wnd.Close()
 			log.Panic("\n*Escape*")
-		case "Delete", "Backspace":
+		case "Backspace":
 			d.Inkey <- 8
+			d.PutChar('#')
+		case "Delete":
+			d.Inkey <- 127
 			d.PutChar('#')
 		case "Enter":
 			d.Inkey <- 13
 			d.PutChar(13)
+		case "Up":
+			d.Inkey <- 0204
+			d.PutChar('|')
+		case "Down":
+			d.Inkey <- 0205
+			d.PutChar('|')
+		case "Left":
+			d.Inkey <- 0206
+			d.PutChar('|')
+		case "Right":
+			d.Inkey <- 0207
+			d.PutChar('|')
+		case "Home":
+			d.Inkey <- 0200 // Clear
+			d.PutChar('|')
+		case "F1":
+			d.Inkey <- 0201
+			d.PutChar('|')
+		case "F2":
+			d.Inkey <- 0201
+			d.PutChar('|')
+		case "End":
+			d.Inkey <- 0204 // Break
+			d.PutChar('|')
 		case "ControlLeft", "ControlRight":
 			d.ctrl = true
 		}
@@ -117,7 +144,7 @@ func (d *Display) Loop() {
 		}
 	}
 	wnd.KeyChar = func(rn rune) {
-		println("KeyChar", rn)
+		log.Printf("KeyChar: %d", rn)
 		d.Inkey <- byte(rn)
 		d.PutChar(byte(rn))
 	}
@@ -212,8 +239,38 @@ func (d *Display) Loop() {
 			cv.DrawImage(z, 0, 0)
 		} else {
 			// Alpha
-			for y := 0; y < d.NumRows; y++ {
-				cv.FillText(string(d.Rows[y]), 10, float64((y+1)*30))
+			if coco == nil {
+				cv.FillText("(nil)", 10, 10)
+				/*
+					for y := 0; y < d.NumRows; y++ {
+						cv.FillText(string(d.Rows[y]), 10, float64((y+1)*30))
+					}
+				*/
+			} else {
+
+				numRows := coco.LinesPerField / coco.LinesPerCharRow
+				numCols := coco.AlphaCharsPerRow
+				p := coco.VirtOffsetAddr
+				stride := 1
+				if coco.AlphaHasAttrs {
+					stride = 2
+				}
+
+				for y := 0; y < numRows; y++ {
+					var buf bytes.Buffer
+					for x := 0; x < numCols; x++ {
+						ch := d.Mem[p]
+						p += stride
+						if ch == 127 {
+							buf.WriteByte('_')
+						} else if 32 <= ch && ch < 128 {
+							buf.WriteByte(ch)
+						} else {
+							fmt.Fprintf(&buf, "{%d}", ch)
+						}
+					}
+					cv.FillText(buf.String(), 10, float64((y)*30))
+				}
 			}
 		}
 

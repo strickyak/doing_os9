@@ -1305,8 +1305,10 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 	return F("OS9$%02x {%s} {%s} #%d", b, s, p, Steps), returns
 }
 
-const KB_NORMAL = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ{}[] 0123456789:;,-./\r\b\000\000\000\000\000\000"
-const KB_SHIFT = "@abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?\000\000\000\000\000\000\000\000"
+// 200 = 0x80 = CLEAR; 033=ESC;  201=F1, 202=F2, 203=BREAK
+// 204=up 205=dn 206=left 207=right
+const KB_NORMAL = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ\204\205\206\207 0123456789:;,-./\r\200\033\000\000\201\202\000"
+const KB_SHIFT = "@abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?___\000\000__\000"
 
 func keypress(probe byte, ch byte) byte {
 	shifted := false
@@ -1330,6 +1332,7 @@ func keypress(probe byte, ch byte) byte {
 	if shifted && (probe&0x80) != 0 {
 		sense |= 0x40 // Shift key.
 	}
+	log.Printf("keypress: probe %x char %x sense %x shifted %v", probe, ch, sense, shifted)
 	return ^sense
 }
 
@@ -1420,7 +1423,6 @@ func printableChar(ch byte) string {
 }
 */
 
-// var remember_ch byte
 func irq(keystrokes <-chan byte) {
 	kbd_cycle++
 	L("INTERRUPTING with IRQ (kbd_cycle = %d)", kbd_cycle)
@@ -1428,24 +1430,19 @@ func irq(keystrokes <-chan byte) {
 
 	if (kbd_cycle & 1) == 0 {
 		ch := inkey(keystrokes)
-		if ch == 10 || ch == 13 {
-			kbd_ch = 13
-		} else if 0 < ch && ch < 127 {
-			kbd_ch = ch
-		} else {
-			kbd_ch = 0
+		kbd_ch = ch
+		if kbd_ch != 0 {
+			log.Printf("key/irq $%x=%d.", kbd_ch, kbd_ch)
 		}
-		// remember_ch = kbd_ch
+
 		L("getchar -> ch %x %q kbd_ch %x %q (kbd_cycle = %d)\n", ch, string(rune((ch))), kbd_ch, string(rune((kbd_ch))), kbd_cycle)
-		// } else if (kbd_cycle & 7) < 4 {
-		// kbd_ch = remember_ch
 	} else {
 		kbd_ch = 0
 	}
 	L("irq -> kbd_ch %x %q (kbd_cycle = %d)\n", kbd_ch, string(rune(kbd_ch)), kbd_cycle)
 
 	interrupt(VECTOR_IRQ)
-	irqs_pending &= ^byte(IRQ_PENDING)
+	irqs_pending &^= IRQ_PENDING
 }
 
 func H(ch byte) byte {
