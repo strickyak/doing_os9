@@ -210,8 +210,24 @@ func SaveListingCopy(readpath, outdir, id string) {
 	}
 }
 
+func HasListSuffix(path string) bool {
+	if strings.HasSuffix(path, ".lst") {
+		return true
+	}
+	if strings.HasSuffix(path, ".list") {
+		return true
+	}
+	if strings.HasSuffix(path, ".list+") {
+		return true
+	}
+	if strings.HasSuffix(path, ".listing") {
+		return true
+	}
+	return false
+}
+
 func Walker(path string, info os.FileInfo, err error) error {
-	if strings.HasSuffix(path, ".list") || strings.HasSuffix(path, ".listing") {
+	if HasListSuffix(path) {
 		if info.Mode().IsRegular() {
 			module := LoadFile(path)
 			if module == nil {
