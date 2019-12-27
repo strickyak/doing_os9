@@ -49,7 +49,7 @@ func Trace() {
 			Z(&buf, "  ")
 		}
 	}
-	//Z(&buf, " {%-5s %-17s}  %02dc ", dinst.String(), dops.String(), cycles)
+
 	Z(&buf, " {%-5s %-17s}  ", dinst.String(), dops.String())
 	log.Printf("%s%s", buf.String(), Regs())
 	dis_length = 0
@@ -57,8 +57,9 @@ func Trace() {
 	module, offset := MemoryModuleOf(pcreg_prev)
 	if module != "" {
 		moduleLower := strings.ToLower(module)
-		text := listings.Lookup(moduleLower, uint(offset))
-		// log.Printf("%q+%04x {{{ %s }}}", module, offset, text)
+		text := listings.Lookup(moduleLower, uint(offset), func() {
+			*FlagTraceAfter = 1
+		})
 		log.Printf("\t\t\t\t\t{{ %s }}", text)
 	}
 
@@ -86,7 +87,7 @@ func where(addr Word) string {
 		if name != "" {
 			return F("%q+%04x ", name, offset)
 		} else {
-			return "? "
+			return "\"\" "
 		}
 	}
 	// TODO -- did this ever work for Level 1?

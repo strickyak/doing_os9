@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	//"strings"
+	"strings"
 )
 
 var Borges = flag.String("borges", "", "dir with source module listings")
+var FlagTraceOnModule = flag.String("trace_on_module", "", "start tracing when loading this module")
 
 type ModSrc struct {
 	Src      map[uint]string
@@ -21,7 +22,7 @@ type ModSrc struct {
 
 var Listings = make(map[string]*ModSrc)
 
-func Lookup(module string, offset uint) string {
+func Lookup(module string, offset uint, startTrace func()) string {
 	if *Borges == "" {
 		return ""
 	}
@@ -31,6 +32,11 @@ func Lookup(module string, offset uint) string {
 		filename := filepath.Join(*Borges, module)
 		m = LoadFile(filename)
 		Listings[module] = m
+
+		words := strings.Split(module, ".")
+		if words[0] == strings.ToLower(*FlagTraceOnModule) {
+			startTrace()
+		}
 	}
 
 	if m.Err != nil {

@@ -196,6 +196,9 @@ func PeekWPhys(addr int) Word {
 //////// DUMP
 
 func DoDumpAllMemoryPhys() {
+	if !V['p'] {
+		return
+	}
 	var i, j int
 	var buf bytes.Buffer
 	L("\n#DumpAllMemoryPhys(\n")
@@ -773,23 +776,22 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 	}()
 
 	for ; i < limit; i += 4 + modulePointerOffset {
-		begin := PeekW(i + modulePointerOffset)
-		if begin == 0 {
+		moduleDatImagePtr := PeekW(i + 0)
+		if moduleDatImagePtr == 0 {
 			continue
 		}
 
-		moduleDatImagePtr := PeekW(i + 0)
-		if moduleDatImagePtr < 256 {
-			continue
-		}
 		m := GetMapping(moduleDatImagePtr)
+		begin := PeekW(i + modulePointerOffset)
 		end := begin + PeekWWithMapping(begin+2, m)
-		//name := begin + PeekWWithMapping(begin+4, m)
 
 		modPhys := MapAddrWithMapping(begin, m)
 		endPhys := MapAddrWithMapping(end, m)
+
+		ddt := ModuleId(begin, modPhys, m)
+		log.Printf("DDT: try module=%s %x (%x) %x", ddt, modPhys, addrPhys, endPhys)
+
 		if modPhys <= addrPhys && addrPhys < endPhys {
-			// return Os9StringWithMapping(name, m), Word(addrPhys - modPhys)
 			return ModuleId(begin, modPhys, m), Word(addrPhys - modPhys)
 		}
 	}
@@ -825,20 +827,23 @@ func MemoryModules() {
 	L("\n#MemoryModules(")
 	var buf bytes.Buffer
 	for ; i < limit; i += 4 + modulePointerOffset {
-		begin := PeekW(i + modulePointerOffset)
-		if begin == 0 {
+		moduleDatImagePtr := PeekW(i + 0)
+		if moduleDatImagePtr == 0 {
+			Z(&buf, "MOD -- --:-- [%x:%x,%x,%x,%x] --\n", i, PeekW(i), PeekW(i+2), PeekW(i+4), PeekW(i+6))
 			continue
 		}
 
-		moduleDatImagePtr := PeekW(i + 0)
-		if moduleDatImagePtr < 256 {
-			continue
-		}
+		begin := PeekW(i + modulePointerOffset)
+		/*
+			if moduleDatImagePtr < 256 {
+				continue
+			}
+		*/
 		m := GetMapping(moduleDatImagePtr)
 		end := begin + PeekWWithMapping(begin+2, m)
 		name := begin + PeekWWithMapping(begin+4, m)
 
-		Z(&buf, "%s %x:%x [%x:%x,%x,%x,%x] %v\n", Os9StringWithMapping(name, m), begin, end, i, PeekW(i), PeekW(i+2), PeekW(i+4), PeekW(i+6), m)
+		Z(&buf, "MOD %s %x:%x [%x:%x,%x,%x,%x] %v\n", Os9StringWithMapping(name, m), begin, end, i, PeekW(i), PeekW(i+2), PeekW(i+4), PeekW(i+6), m)
 	}
 	L("%s", buf.String())
 	L("#MemoryModules)")

@@ -501,6 +501,9 @@ func DoDumpVdgBits() {
 }
 
 func DoDumpAllMemory() {
+	if !V['m'] {
+		return
+	}
 	DoDumpVdgBits()
 	DumpGimeStatus()
 	L("ExplainMMU: %s", ExplainMMU())
@@ -527,7 +530,7 @@ func DoDumpAllMemory() {
 		}
 
 		buf.Reset()
-		Z(&buf, "%04x: ", i)
+		Z(&buf, "M %04x: ", i)
 		for j = 0; j < 32; j += 8 {
 			Z(&buf,
 				"%02x%02x %02x%02x %02x%02x %02x%02x  ",

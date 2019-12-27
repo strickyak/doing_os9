@@ -18,6 +18,9 @@ var FlagBootImageFilename = flag.String("boot", "boot.mem", "")
 var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagStressTest = flag.String("stress", "", "If nonempty, string to repeat")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
+var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
+
+const IRQ_FREQ = (500 * 1000)
 
 const paranoid = false // Do paranoid checks.
 const hyp = true       // Use hyperviser code.
@@ -44,6 +47,7 @@ func Z(w *bytes.Buffer, format string, args ...interface{}) {
 //	'd' I/O devices
 //	'i' instructions
 //	'm' memory get/put
+//	'p' physical memory get/put
 var V [128]bool                                                            // Verbosity bits
 var FlagInitialVerbosity = flag.String("v", "", "Initial verbosity chars") // Initial Verbosity
 var FlagTraceVerbosity = flag.String("vv", "", "Trace verbosity chars")    // Trace Verbosity
@@ -129,16 +133,6 @@ var irqs_pending byte
 
 var instructionTable []func()
 
-/*
-var PcVisitedK [64]byte
-
-func init() {
-	for i := 0; i < 64; i++ {
-		PcVisitedK[i] = '.'
-	}
-}
-*/
-
 func GetAReg() byte  { return Hi(dreg) }
 func GetBReg() byte  { return Lo(dreg) }
 func PutAReg(x byte) { dreg = HiLo(x, Lo(dreg)) }
@@ -149,8 +143,6 @@ func PutBReg(x byte) { dreg = HiLo(Hi(dreg), x) }
 const NMI_PENDING = CC_ENTIRE /* borrow this bit */
 const IRQ_PENDING = CC_INHIBIT_IRQ
 const FIRQ_PENDING = CC_INHIBIT_FIRQ
-
-const IRQ_FREQ = (500 * 1000)
 
 const CC_INHIBIT_IRQ = 0x10
 const CC_INHIBIT_FIRQ = 0x40
@@ -2238,32 +2230,8 @@ func rts() {
 func rti() {
 	stack := MapAddr(sreg, true /*quiet*/)
 	describe := Os9Description[stack]
-	var buf bytes.Buffer
 
 	entire := ccreg & CC_ENTIRE
-	for i := Word(0); i < 12; i++ {
-		if entire != 0 {
-			switch i {
-			case 0:
-				Z(&buf, "(cc) ")
-			case 1:
-				Z(&buf, "(d) ")
-			case 3:
-				Z(&buf, "(dp) ")
-			case 4:
-				Z(&buf, "(x) ")
-			case 6:
-				Z(&buf, "(y) ")
-			case 8:
-				Z(&buf, "(u) ")
-			case 10:
-				Z(&buf, "(pc) ")
-			}
-		}
-		Z(&buf, "%02x ", PeekB(sreg+i))
-	}
-	L("pre-rti stack: %s", buf.String())
-
 	if entire == 0 {
 		Dis_inst("rti", "", 6)
 	} else {
@@ -3039,15 +3007,13 @@ func Main() {
 	if *FlagMaxSteps > 0 {
 		max = *FlagMaxSteps
 	}
-	stepsUntilTimer := uint(IRQ_FREQ)
+	stepsUntilTimer := *FlagClock
 	early := true
 	for Steps = uint64(0); Steps < max; Steps++ {
 		if early {
 			early = EarlyAction()
 		}
 
-		// PcVisitedK[63&(pcreg>>10)] = 'A' + (15 & byte(pcreg>>10))
-		// log.Printf("loop: Steps=%d prev=%04x pc=%04x <%s>", Steps, pcreg_prev, pcreg, string(PcVisitedK[:]))
 		pcreg_prev = pcreg
 
 		if stepsUntilTimer == 0 {
@@ -3057,7 +3023,7 @@ func Main() {
 			DoDumpAllMemoryPhys()
 			log.Printf("# pre timer interrupt #")
 			FireTimerInterrupt()
-			stepsUntilTimer = IRQ_FREQ
+			stepsUntilTimer = *FlagClock
 		} else {
 			stepsUntilTimer--
 		}
