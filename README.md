@@ -1,6 +1,19 @@
 # doing_os9
 
-github.com/strickyak/doing_os9/grok_os9_disk/grok_os9_disk.go
+## gomar/ 
+
+A M6809 emulator in GoLang with Coco1/3 NitrOS9 Level1/2 personalities.
+
+It used "sbc09" (in C) as its starting point.
+
+It's named for OMAR, my homegrown wire-wrapped 6809 system,
+built in 1983 in Professor John Peatman's Microprocessor-Based Design lab at Georgia Tech.
+
+## ninth/
+
+Starting a FORTH for 6809, with "relative" pointers, for position-independant code.
+
+## github.com/strickyak/doing_os9/grok_os9_disk/grok_os9_disk.go
 ```
 /*
   2   Grok and extract the contnts of a Microware OS-9 (or NitrOS9) disk image (at least, for Motorola 6809).
