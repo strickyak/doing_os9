@@ -86,7 +86,7 @@ func LoadFile(filename string) *ModSrc {
 			inOtherSection = false
 		}
 	}
-	log.Printf("BORGES: Loaded Source: %q", filename)
+	log.Printf("BORGES: Loaded Source: %q (%d)", filename, len(d))
 	return &ModSrc{
 		Src:      d,
 		Filename: filename,

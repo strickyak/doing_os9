@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"regexp"
 )
 
 var FlagBootImageFilename = flag.String("boot", "boot.mem", "")
@@ -19,6 +20,11 @@ var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagStressTest = flag.String("stress", "", "If nonempty, string to repeat")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
+
+var FlagTriggerPc = flag.Uint64("trigger_pc", 0xC00D, "")
+var FlagTriggerOp = flag.Uint64("trigger_op", 0x17, "")
+var FlagTraceOnOS9 = flag.String("trigger_os9", "", "")
+var RegexpTraceOnOS9 *regexp.Regexp
 
 const IRQ_FREQ = (500 * 1000)
 
@@ -132,6 +138,20 @@ var Waiting bool
 var irqs_pending byte
 
 var instructionTable []func()
+
+// For using page 0 for system variables.
+func SysMemW(a Word) Word {
+	if a >= 0x2000 {
+		log.Panicf("SysMemW: addr too big: %x", a)
+	}
+	return HiLo(mem[a], mem[a+1])
+}
+func SysMemB(a Word) byte {
+	if a >= 0x2000 {
+		log.Panicf("SysMemW: addr too big: %x", a)
+	}
+	return mem[a]
+}
 
 func GetAReg() byte  { return Hi(dreg) }
 func GetBReg() byte  { return Lo(dreg) }
@@ -1263,16 +1283,16 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 				}
 			}
 		} else {
-			WithMmu(1, func() {
-				// fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
-				s := PrintableStringThruCrOrMax(xreg, yreg)
-				fmt.Printf("%s", s)
-				for _, ch := range s {
-					if ch < 256 && Disp != nil {
-						Disp.PutChar(byte(ch))
-					}
+			/* WithMmu(1, func() { */
+			// fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
+			s := PrintableStringThruCrOrMax(xreg, yreg)
+			fmt.Printf("%s", s)
+			for _, ch := range s {
+				if ch < 256 && Disp != nil {
+					Disp.PutChar(byte(ch))
 				}
-			})
+			}
+			/* }) */
 		}
 
 	case 0x8D:
@@ -2231,6 +2251,15 @@ func rti() {
 	stack := MapAddr(sreg, true /*quiet*/)
 	describe := Os9Description[stack]
 
+	if *FlagTraceOnOS9 != "" && describe != "" {
+		if RegexpTraceOnOS9 == nil {
+			RegexpTraceOnOS9 = regexp.MustCompile(*FlagTraceOnOS9)
+		}
+		if RegexpTraceOnOS9.MatchString(describe) {
+			*FlagTraceAfter = 1
+		}
+	}
+
 	entire := ccreg & CC_ENTIRE
 	if entire == 0 {
 		Dis_inst("rti", "", 6)
@@ -2271,39 +2300,10 @@ func rti() {
 			}
 		}
 
-		Os9Description[stack] = "" // Clear description
-	}
-}
+		// Os9Description[stack] = "" // Clear description
+		delete(Os9Description, stack)
 
-type Mapping [8]Word
-
-func GetMapping(addr Word) Mapping {
-	return Mapping{
-		0x3F & PeekW(addr),
-		0x3F & PeekW(addr+2),
-		0x3F & PeekW(addr+4),
-		0x3F & PeekW(addr+6),
-		0x3F & PeekW(addr+8),
-		0x3F & PeekW(addr+10),
-		0x3F & PeekW(addr+12),
-		0x3F & PeekW(addr+14),
 	}
-}
-func PeekBWithMapping(addr Word, m Mapping) byte {
-	logBlock := (addr >> 13) & 7
-	physBlock := m[logBlock]
-	ptr := int(addr&0x1FFF) | (int(physBlock) << 13)
-	if ptr < len(mem) {
-		return mem[ptr]
-	} else {
-		log.Printf("Warning: PeekBWithMapping(%x, %v) -> mem[too big: %x]", addr, m, ptr)
-		return 0
-	}
-}
-func PeekWWithMapping(addr Word, m Mapping) Word {
-	hi := PeekBWithMapping(addr, m)
-	lo := PeekBWithMapping(addr+1, m)
-	return (Word(hi) << 8) | Word(lo)
 }
 
 var swi_name = []string{"swi", "swi2", "swi3"}
@@ -3049,6 +3049,13 @@ func Main() {
 		cycles = 0
 
 		ireg = B(pcreg)
+		if pcreg == Word(*FlagTriggerPc) && ireg == byte(*FlagTriggerOp) {
+			*FlagTraceAfter = 1
+			SetVerbosityBits(*FlagTraceVerbosity)
+			log.Printf("TRIGGERED")
+			MemoryModules()
+			DoDumpAllMemory()
+		}
 		pcreg++
 
 		// Process insstruction

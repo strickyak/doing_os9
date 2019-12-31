@@ -85,6 +85,66 @@ func Coco3Contract() {
 	}
 }
 
+type Mapping [8]Word
+
+func GetMapping(addr Word) Mapping {
+	// Mappings are in SysMem (block 0).
+	return Mapping{
+		// TODO: drop the "0x3F &".
+		0x3F & SysMemW(addr),
+		0x3F & SysMemW(addr+2),
+		0x3F & SysMemW(addr+4),
+		0x3F & SysMemW(addr+6),
+		0x3F & SysMemW(addr+8),
+		0x3F & SysMemW(addr+10),
+		0x3F & SysMemW(addr+12),
+		0x3F & SysMemW(addr+14),
+	}
+}
+
+/*
+func InTask0(fn func()) {
+	tmp := MmuTask
+	MmuTask = 0
+	defer func() {
+		MmuTask = tmp
+	}()
+	fn()
+}
+*/
+
+func GetMappingTask0(addr Word) Mapping {
+	// Use Task 0 for the mapping.
+	tmp := MmuTask
+	MmuTask = 0
+	defer func() {
+		MmuTask = tmp
+	}()
+
+	return Mapping{
+		// TODO: drop the "0x3F &".
+		0x3F & PeekW(addr),
+		0x3F & PeekW(addr+2),
+		0x3F & PeekW(addr+4),
+		0x3F & PeekW(addr+6),
+		0x3F & PeekW(addr+8),
+		0x3F & PeekW(addr+10),
+		0x3F & PeekW(addr+12),
+		0x3F & PeekW(addr+14),
+	}
+}
+func PeekBWithMapping(addr Word, m Mapping) byte {
+	logBlock := (addr >> 13) & 7
+	physBlock := m[logBlock]
+	ptr := int(addr&0x1FFF) | (int(physBlock) << 13)
+	return mem[ptr]
+}
+func PeekWWithMapping(addr Word, m Mapping) Word {
+	hi := PeekBWithMapping(addr, m)
+	lo := PeekBWithMapping(addr+1, m)
+	return (Word(hi) << 8) | Word(lo)
+}
+
 func ExplainMMU() string {
 	return F("mmu:%d task:%d [[ %02x %02x %02x %02x  %02x %02x %02x %02x || %02x %02x %02x %02x  %02x %02x %02x %02x ]]",
 		CondI(MmuEnable, 1, 0),
@@ -368,8 +428,8 @@ func DoDumpAllPathDescs() {
 
 		for i := Word(0); i < 32; i++ {
 			q := W(p + i*2)
-			L("PathDesc[%x]: %x", i, q)
 			if q != 0 {
+				L("PathDesc[%x]: %x", i, q)
 
 				for j := Word(0); j < 4; j++ {
 					k := i*4 + j
@@ -386,6 +446,12 @@ func DoDumpAllPathDescs() {
 }
 
 func DoDumpProcDesc(a Word) {
+	tmp := MmuTask
+	MmuTask = 0
+	defer func() {
+		MmuTask = tmp
+	}()
+
 	L("a=%04x", a)
 	switch Level {
 	case 1, 2:
@@ -399,7 +465,7 @@ func DoDumpProcDesc(a Word) {
 					name_str = Os9String(name)
 					mod_str = F("%q @%04x", name_str, begin)
 				} else if Level == 2 {
-					m := GetMapping(a + sym.P_DATImg)
+					m := GetMappingTask0(a + sym.P_DATImg)
 					modPhys := MapAddrWithMapping(begin, m)
 					modPhysPlus4 := PeekWPhys(modPhys + 4)
 					if modPhysPlus4 > 0 {
@@ -427,6 +493,8 @@ func DoDumpProcDesc(a Word) {
 				// If current proc, it has no queue.
 				// Other procs are in a queue.
 				if W(sym.D_Proc) != a {
+					log.Printf("BUG printing PROC: %x", a)
+					return
 					DoDumpProcDesc(W(a + sym.P_Queue))
 				}
 			}
@@ -469,15 +537,6 @@ func DoDumpProcesses() {
 		L("D_SProcQ: Sleep")
 		DoDumpProcDesc(W(sym.D_SProcQ))
 	}
-}
-
-func WithMmu(task byte, fn func()) {
-	t := MmuTask
-	MmuTask = task
-	defer func() {
-		MmuTask = t
-	}()
-	fn()
 }
 
 func LPeekB(a Word) uint64 {
@@ -751,6 +810,11 @@ func PutGimeIOByte(a Word, b byte) {
 	}
 }
 func MemoryModuleOf(addr Word) (name string, offset Word) {
+	// TODO: speed up with cacheing.
+	if addr >= 0xFE00 {
+		return "", 0 // No module found for the addr.
+	}
+
 	addrPhys := MapAddr(addr, true)
 	addr32 := uint32(addrPhys)
 
@@ -761,89 +825,101 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 		}
 	}
 
-	modulePointerOffset := Word(4)
-	start := PeekW(sym.D_ModDir)
-	limit := PeekW(sym.D_ModDir + 2)
-	i := start
-
-	mmut := MmuTask
-	MmuTask = 0
-	map00 := MmuMap[0][0]
-	MmuMap[0][0] = 0
-	defer func() {
-		MmuTask = mmut
-		MmuMap[0][0] = map00
-	}()
-
-	for ; i < limit; i += 4 + modulePointerOffset {
-		moduleDatImagePtr := PeekW(i + 0)
-		if moduleDatImagePtr == 0 {
+	dirStart := SysMemW(sym.D_ModDir)
+	dirLimit := SysMemW(sym.D_ModEnd)
+	for i := dirStart; i < dirLimit; i += 8 {
+		datPtr := SysMemW(i + 0)
+		// usedBytes := SysMemW(i + 2)
+		begin := SysMemW(i + 4)
+		links := SysMemW(i + 6)
+		if datPtr == 0 {
 			continue
 		}
 
-		m := GetMapping(moduleDatImagePtr)
-		begin := PeekW(i + modulePointerOffset)
-		end := begin + PeekWWithMapping(begin+2, m)
+		m := GetMapping(datPtr)
+		magic := PeekWWithMapping(begin, m)
+		if magic != 0x87CD {
+			panic(i)
+		}
+		//log.Printf("DDT: TRY i=%x begin=%x %q .....", i, begin, ModuleId(begin, m))
 
-		modPhys := MapAddrWithMapping(begin, m)
-		endPhys := MapAddrWithMapping(end, m)
+		// Module offset 2 is module size.
+		remaining := int(PeekWWithMapping(begin+2, m))
+		// Module offset 4 is offset to name string.
+		// namePtr := begin + PeekWWithMapping(begin+4, m)
 
-		ddt := ModuleId(begin, modPhys, m)
-		log.Printf("DDT: try module=%s %x (%x) %x", ddt, modPhys, addrPhys, endPhys)
+		//-------------
+		// beginP := MapAddrWithMapping(begin, m)
 
-		if modPhys <= addrPhys && addrPhys < endPhys {
-			return ModuleId(begin, modPhys, m), Word(addrPhys - modPhys)
+		region := begin
+		offset := Word(0) // offset into module.
+		for remaining > 0 {
+			// If module crosses paged blocks, it has more than one region.
+			regionP := MapAddrWithMapping(region, m)
+			endOfRegionBlockP := 1 + (regionP | 0x1FFF)
+			regionSize := remaining
+			if int(regionSize) > endOfRegionBlockP-regionP {
+				// A smaller region of the module.
+				regionSize = endOfRegionBlockP - regionP
+			}
+
+			//log.Printf("DDT: try %x (%x) %x", regionP, addrPhys, regionP+int(regionSize))
+			if regionP <= addrPhys && addrPhys < regionP+int(regionSize) {
+				if links == 0 {
+					log.Panicf("in unlinked module: i=%x addr=%x", i, addr)
+				}
+				id := ModuleId(begin, m)
+				delta := offset + Word(int(addrPhys)-regionP)
+				//log.Printf("DDT: FOUND %q+%x", id, delta)
+				return id, delta
+			}
+			remaining -= regionSize
+			regionP += regionSize
+			region += Word(regionSize)
+			offset += Word(regionSize)
+			//log.Printf("DDT: advanced remaining=%x regionSize=%x", remaining, regionSize)
 		}
 	}
+	//log.Printf("DDT: NOT FOUND")
 	return "", 0 // No module found for the addr.
 }
 
-func ModuleId(begin Word, mp int, m Mapping) string {
-	name := begin + PeekWWithMapping(begin+4, m)
-	modname := Os9StringWithMapping(name, m)
-	sz := int(PeekWWithMapping(begin+2, m))
-	return fmt.Sprintf("%s.%04x%02x%02x%02x", strings.ToLower(modname), sz, mem[mp+sz-3], mem[mp+sz-2], mem[mp+sz-1])
+func ModuleId(begin Word, m Mapping) string {
+	namePtr := begin + PeekWWithMapping(begin+4, m)
+	modname := strings.ToLower(Os9StringWithMapping(namePtr, m))
+	sz := PeekWWithMapping(begin+2, m)
+	crc1 := PeekBWithMapping(begin+sz-3, m)
+	crc2 := PeekBWithMapping(begin+sz-2, m)
+	crc3 := PeekBWithMapping(begin+sz-1, m)
+	return fmt.Sprintf("%s.%04x%02x%02x%02x", modname, sz, crc1, crc2, crc3)
 }
 
 func MemoryModules() {
-	mmut := MmuTask
-	MmuTask = 0
-	map00 := MmuMap[0][0]
-	MmuMap[0][0] = 0
-	defer func() {
-		MmuTask = mmut
-		MmuMap[0][0] = map00
-	}()
-
-	modulePointerOffset := Word(4)
-	start := PeekW(sym.D_ModDir)
-	limit := PeekW(sym.D_ModDir + 2)
-	i := start
-
 	DumpAllMemory()
 	DumpPageZero()
 	DumpProcesses()
 	DumpAllPathDescs()
 	L("\n#MemoryModules(")
+
 	var buf bytes.Buffer
-	for ; i < limit; i += 4 + modulePointerOffset {
-		moduleDatImagePtr := PeekW(i + 0)
-		if moduleDatImagePtr == 0 {
-			Z(&buf, "MOD -- --:-- [%x:%x,%x,%x,%x] --\n", i, PeekW(i), PeekW(i+2), PeekW(i+4), PeekW(i+6))
+	Z(&buf, "MOD name begin:end(len/blocklen) [addr:dat,blocklen,begin,links] dat\n")
+
+	dirStart := SysMemW(sym.D_ModDir)
+	dirLimit := SysMemW(sym.D_ModEnd)
+	for i := dirStart; i < dirLimit; i += 8 {
+		datPtr := SysMemW(i + 0)
+		usedBytes := SysMemW(i + 2)
+		begin := SysMemW(i + 4)
+		links := SysMemW(i + 6)
+		if datPtr == 0 {
 			continue
 		}
 
-		begin := PeekW(i + modulePointerOffset)
-		/*
-			if moduleDatImagePtr < 256 {
-				continue
-			}
-		*/
-		m := GetMapping(moduleDatImagePtr)
+		m := GetMapping(datPtr)
 		end := begin + PeekWWithMapping(begin+2, m)
 		name := begin + PeekWWithMapping(begin+4, m)
 
-		Z(&buf, "MOD %s %x:%x [%x:%x,%x,%x,%x] %v\n", Os9StringWithMapping(name, m), begin, end, i, PeekW(i), PeekW(i+2), PeekW(i+4), PeekW(i+6), m)
+		Z(&buf, "MOD %s %x:%x(%x/%x) [%x:%x,%x,%x,%x] %v\n", Os9StringWithMapping(name, m), begin, end, end-begin, usedBytes, i, datPtr, usedBytes, begin, links, m)
 	}
 	L("%s", buf.String())
 	L("#MemoryModules)")
