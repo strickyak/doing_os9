@@ -1200,7 +1200,7 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 
 	case 0x82:
 		s = "I$Dup    : Duplicate Path"
-		p = F("%02x", GetAReg())
+		p = F("$%x", GetAReg())
 
 	case 0x83:
 		s = "I$Create : Create New File"
@@ -1285,7 +1285,7 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 			//				}
 			//			}
 		} else {
-			InMmuTask(1, func() {
+			WithMmuTask(1, func() {
 				s := PrintableStringThruCrOrMax(xreg, yreg)
 				fmt.Printf("%s", s)
 				for _, ch := range []byte(s) {
@@ -2280,15 +2280,19 @@ func rti() {
 
 	back3 := B(pcreg - 3)
 	back2 := B(pcreg - 2)
-	back1 := B(pcreg - 3)
+	back1 := B(pcreg - 1)
 	if back3 == 0x10 && back2 == 0x3f && describe != "" {
 		if (ccreg & 1 /* carry bit indicates error */) != 0 {
 			errcode := GetBReg()
-			L("RETURN ERROR: $%x(%v): OS9KERNEL %s #%d", errcode, DecodeOs9Error(errcode), describe, Steps)
+			L("RETURN ERROR: $%x(%v): OS9KERNEL%d %s #%d", errcode, DecodeOs9Error(errcode), MmuTask, describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)
 			L("\t%s", ExplainMMU())
 		} else {
-			L("RETURN OKAY: OS9KERNEL %s #%d", describe, Steps)
+			switch back1 {
+			case 0x82, 0x83, 0x84: // I$Dup, I$Create, I$Open
+				describe += F(" -> path $%x", GetAReg())
+			}
+			L("RETURN OKAY: OS9KERNEL%d %s #%d", MmuTask, describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)
 			L("\t%s", ExplainMMU())
 
@@ -2329,7 +2333,7 @@ func swi() {
 		handler = W(0xfffa)
 	case 1: /* SWI2 */
 		describe, returns := DecodeOs9Opcode(B(pcreg))
-		L("OS9KERNEL: %s", describe)
+		L("OS9KERNEL%d: %s", MmuTask, describe)
 		L("\tregs: %s", Regs())
 		L("\t%s", ExplainMMU())
 

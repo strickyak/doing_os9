@@ -11,6 +11,8 @@ import (
 
 const P_Path = sym.P_PATH
 
+var MmuTask byte // but not used in coco1.
+
 const TraceMem = false // TODO: restore this some day.
 
 func EmitHardware() {}
@@ -66,7 +68,7 @@ func PutB(addr Word, x byte) {
 	}
 }
 
-func InMmuTask(task byte, fn func()) {
+func WithMmuTask(task byte, fn func()) {
 	fn()
 }
 

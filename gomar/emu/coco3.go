@@ -102,7 +102,7 @@ func GetMapping(addr Word) Mapping {
 	}
 }
 
-func InMmuTask(task byte, fn func()) {
+func WithMmuTask(task byte, fn func()) {
 	tmp := MmuTask
 	MmuTask = task
 	defer func() {
