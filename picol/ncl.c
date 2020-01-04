@@ -1,16 +1,17 @@
-/* ncl: Modified for cmoc for NitrOS9/OS9 by strick */
+/* ncl: Modified for cmoc for NitrOS9/OS9 by strick.  BSD licensed */
 
-/* Tcl in ~ 500 lines of code by Salvatore antirez Sanfilippo. BSD licensed */
+/* Tcl in ~ 500 lines of code by Salvatore antirez Sanfilippo.  BSD licensed */
 
 #define RAM_SIZE 12000
 #define BUF_SIZE 200            /* instead of 1024 */
 #define MAX_SCRIPT_SIZE 500     /* instead of 8K or 16K */
 
-typedef unsigned char byte;
-typedef unsigned int uint;
 #define NULL 0
 #define false 0
 #define true 1
+
+typedef unsigned char byte;
+typedef unsigned int uint;
 
 extern int Error(struct picolInterp *i, char *argv0, int err);
 extern int ResultD(struct picolInterp *i, int x);
@@ -545,7 +546,6 @@ struct picolVar {
   struct picolVar *next;
 };
 
-struct picolInterp;             /* forward declaration */
 typedef int (*picolCmdFunc)(struct picolInterp * i, int argc, char **argv,
                             void *privdata);
 
@@ -1522,6 +1522,7 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "wait", picolCommandWait, NULL);
   picolRegisterCommand(i, "dup", picolCommandDup, NULL);
   picolRegisterCommand(i, "close", picolCommandClose, NULL);
+  picolRegisterCommand(i, "sleep", picolCommandSleep, NULL);
 }
 
 void ReduceBigraphs(char *s)
@@ -1560,7 +1561,6 @@ int main()
   puts(" *gamma*");
 
   while (1) {
-    int retcode;
     puts(" >NCL> ");
     bzero(line, sizeof line);
     int bytes_read;
@@ -1570,12 +1570,13 @@ int main()
       break;
     }
     ReduceBigraphs(line);
-    retcode = picolEval(&interp, line);
+    e = picolEval(&interp, line);
     if (interp.result[0] != '\0') {
-      snprintf_d(line, 80, "[%d] <<", retcode);
-      puts(line);
+      if (e) {
+        puts(" ERROR: ");
+      }
       puts(interp.result);
-      puts(">>\r");
+      puts("\r");
     }
   }
   exit(0);
