@@ -46,19 +46,24 @@ func Lookup(module string, offset uint, startTrace func()) string {
 	return s // Empty if offset not found.
 }
 
-var parse = regexp.MustCompile(`^([0-9A-F]{4}) [0-9A-F]+ +[(].*?[)]:[0-9]{5} +(.*)$`)
+//var parse = regexp.MustCompile(`^([0-9A-F]{4}) [0-9A-F]+ +[(].*?[)]:[0-9]{5} +(.*)$`)
+var parse = regexp.MustCompile(`^([0-9A-F]{4}) [0-9A-F]+ +[(].*?[)]:[0-9]{5}         (.*)$`)
 var parseSection = regexp.MustCompile(`^ +[(].*?[)]:[0-9]{5} +(?i:section) +([A-Za-z0-9_]+)`)
 var parseEndSection = regexp.MustCompile(`^ +[(].*?[)]:[0-9]{5} +(?i:endsection)`)
 
 func LoadFile(filename string) *ModSrc {
 	d := make(map[uint]string)
-	fd, err := os.Open(filename)
+	// Try overriding filename with ".mod" instead of version suffix.
+	fd, err := os.Open(filename[:len(filename)-11] + ".mod")
 	if err != nil {
-		log.Printf("BAD: Cannot open listing %q: %v", filename, err)
-		return &ModSrc{
-			Src:      nil,
-			Filename: filename,
-			Err:      err,
+		fd, err = os.Open(filename)
+		if err != nil {
+			log.Printf("BAD: Cannot open listing %q: %v", filename, err)
+			return &ModSrc{
+				Src:      nil,
+				Filename: filename,
+				Err:      err,
+			}
 		}
 	}
 	defer fd.Close()
