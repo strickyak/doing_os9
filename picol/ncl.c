@@ -546,8 +546,7 @@ struct picolVar {
   struct picolVar *next;
 };
 
-typedef int (*picolCmdFunc)(struct picolInterp * i, int argc, char **argv,
-                            void *privdata);
+typedef int (*picolCmdFunc)(struct picolInterp * i, int argc, char **argv, void *privdata);
 
 struct picolCmd {
   char *name;
@@ -593,8 +592,7 @@ int picolParseSep(struct picolParser *p)
 int picolParseEol(struct picolParser *p)
 {
   p->start = p->p;
-  while (*p->p == ' ' || *p->p == '\t' || *p->p == '\n' || *p->p == '\r'
-         || *p->p == ';') {
+  while (*p->p == ' ' || *p->p == '\t' || *p->p == '\n' || *p->p == '\r' || *p->p == ';') {
     p->p++;
     p->len--;
   }
@@ -692,8 +690,7 @@ int picolParseBrace(struct picolParser *p)
 
 int picolParseString(struct picolParser *p)
 {
-  int newword = (p->type == PT_SEP || p->type == PT_EOL
-                 || p->type == PT_STR);
+  int newword = (p->type == PT_SEP || p->type == PT_EOL || p->type == PT_STR);
   if (newword && *p->p == '{')
     return picolParseBrace(p);
   else if (newword && *p->p == '"') {
@@ -800,8 +797,7 @@ TOP:
 void picolInitInterp(struct picolInterp *i)
 {
   i->level = 0;
-  i->callframe =
-      (struct picolCallFrame *) malloc(sizeof(struct picolCallFrame));
+  i->callframe = (struct picolCallFrame *) malloc(sizeof(struct picolCallFrame));
   i->callframe->vars = NULL;
   i->callframe->parent = NULL;
   i->commands = NULL;
@@ -852,8 +848,7 @@ struct picolCmd *picolGetCommand(struct picolInterp *i, const char *name)
   return NULL;
 }
 
-int picolRegisterCommand(struct picolInterp *i, const char *name,
-                         picolCmdFunc f, void *privdata)
+int picolRegisterCommand(struct picolInterp *i, const char *name, picolCmdFunc f, void *privdata)
 {
   struct picolCmd *c = picolGetCommand(i, name);
   char errbuf[BUF_SIZE];
@@ -972,8 +967,7 @@ int picolArityErr(struct picolInterp *i, char *name)
   return PICOL_ERR;
 }
 
-int picolCommandMath(struct picolInterp *i, int argc, char **argv,
-                     void *pd)
+int picolCommandMath(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   char buf[8];
   int a, b, c;
@@ -1028,8 +1022,7 @@ int picolCommandSet(struct picolInterp *i, int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
-int picolCommandPuts(struct picolInterp *i, int argc, char **argv,
-                     void *pd)
+int picolCommandPuts(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   char *argv0 = argv[0];
   byte nonewline = false;
@@ -1095,8 +1088,7 @@ int picolCommandOr(struct picolInterp *i, int argc, char **argv, void *pd)
   return ResultD(i, 0);
 }
 
-int picolCommandWhile(struct picolInterp *i, int argc, char **argv,
-                      void *pd)
+int picolCommandWhile(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 3)
     return picolArityErr(i, argv[0]);
@@ -1119,8 +1111,7 @@ int picolCommandWhile(struct picolInterp *i, int argc, char **argv,
   }
 }
 
-int picolCommandRetCodes(struct picolInterp *i, int argc, char **argv,
-                         void *pd)
+int picolCommandRetCodes(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 1)
     return picolArityErr(i, argv[0]);
@@ -1146,13 +1137,10 @@ void picolDropCallFrame(struct picolInterp *i)
   free(cf);
 }
 
-int picolCommandCallProc(struct picolInterp *i, int argc, char **argv,
-                         void *pd)
+int picolCommandCallProc(struct picolInterp *i, int argc, char **argv, void *pd)
 {
-  char **x = (char **) pd, *alist = x[0], *body = x[1], *p =
-      strdup(alist), *tofree;
-  struct picolCallFrame *cf =
-      (struct picolCallFrame *) malloc(sizeof(*cf));
+  char **x = (char **) pd, *alist = x[0], *body = x[1], *p = strdup(alist), *tofree;
+  struct picolCallFrame *cf = (struct picolCallFrame *) malloc(sizeof(*cf));
   int arity = 0, done = 0, errcode = PICOL_OK;
   char errbuf[BUF_SIZE];
   cf->vars = NULL;
@@ -1189,15 +1177,13 @@ int picolCommandCallProc(struct picolInterp *i, int argc, char **argv,
   picolDropCallFrame(i);        /* remove the called proc callframe */
   return errcode;
 arityerr:
-  snprintf_s(errbuf, BUF_SIZE, "Proc '%s' called with wrong arg num",
-             argv[0]);
+  snprintf_s(errbuf, BUF_SIZE, "Proc '%s' called with wrong arg num", argv[0]);
   picolSetResult(i, errbuf);
   picolDropCallFrame(i);        /* remove the called proc callframe */
   return PICOL_ERR;
 }
 
-int picolCommandProc(struct picolInterp *i, int argc, char **argv,
-                     void *pd)
+int picolCommandProc(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   char **procdata = (char **) malloc(sizeof(char *) * 2);
   if (argc != 4)
@@ -1207,8 +1193,7 @@ int picolCommandProc(struct picolInterp *i, int argc, char **argv,
   return picolRegisterCommand(i, argv[1], picolCommandCallProc, procdata);
 }
 
-int picolCommandReturn(struct picolInterp *i, int argc, char **argv,
-                       void *pd)
+int picolCommandReturn(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 1 && argc != 2)
     return picolArityErr(i, argv[0]);
@@ -1216,8 +1201,7 @@ int picolCommandReturn(struct picolInterp *i, int argc, char **argv,
   return PICOL_RETURN;
 }
 
-int picolCommandExit(struct picolInterp *i, int argc, char **argv,
-                     void *pd)
+int picolCommandExit(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 1 && argc != 2)
     return picolArityErr(i, argv[0]);
@@ -1225,8 +1209,7 @@ int picolCommandExit(struct picolInterp *i, int argc, char **argv,
   return PICOL_OK;
 }
 
-int picolCommandInfo(struct picolInterp *i, int argc, char **argv,
-                     void *pd)
+int picolCommandInfo(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   puts(" procs: ");
   struct picolCmd *c;
@@ -1326,8 +1309,7 @@ int SplitList(char *s, int *argcP, char ***argvP)
   return PICOL_OK;
 }
 
-int picolCommandCatch(struct picolInterp *i, int argc, char **argv,
-                      void *pd)
+int picolCommandCatch(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 2 && argc != 3)
     return picolArityErr(i, argv[0]);
@@ -1340,8 +1322,24 @@ int picolCommandCatch(struct picolInterp *i, int argc, char **argv,
   return ResultD(i, e);
 }
 
-int picolCommandForEach(struct picolInterp *i, int argc, char **argv,
-                        void *pd)
+int picolCommandListIndex(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 3)
+    return picolArityErr(i, argv[0]);
+  char *list = argv[1];
+  int k = atoi(argv[2]);
+
+  int c = 0;
+  char **v = NULL;
+  int err = SplitList(list, &c, &v);
+
+  if (0 <= k && k < c) {
+    picolSetResult(i, v[k]);
+  }
+  return PICOL_OK;
+}
+
+int picolCommandForEach(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 4)
     return picolArityErr(i, argv[0]);
@@ -1386,8 +1384,7 @@ char *FormList(int argc, char **argv)
   return b;
 }
 
-int picolCommandList(struct picolInterp *i, int argc, char **argv,
-                     void *pd)
+int picolCommandList(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   char *s = FormList(argc - 1, argv + 1);
   picolSetResult(i, s);
@@ -1412,8 +1409,7 @@ int ResultD(struct picolInterp *i, int x)
   return PICOL_OK;
 }
 
-int picolCommandChain(struct picolInterp *i, int argc, char **argv,
-                      void *pd)
+int picolCommandChain(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc < 2) {
     picolSetResult(i, "chain: too few args");
@@ -1427,8 +1423,7 @@ int picolCommandChain(struct picolInterp *i, int argc, char **argv,
   return Error(i, argv[0], e);
 }
 
-int picolCommandFork(struct picolInterp *i, int argc, char **argv,
-                     void *pd)
+int picolCommandFork(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc < 2) {
     picolSetResult(i, "fork: too few args");
@@ -1444,8 +1439,7 @@ int picolCommandFork(struct picolInterp *i, int argc, char **argv,
   return ResultD(i, child_id);
 }
 
-int picolCommandWait(struct picolInterp *i, int argc, char **argv,
-                     void *pd)
+int picolCommandWait(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 1)
     return picolArityErr(i, argv[0]);
@@ -1468,8 +1462,7 @@ int picolCommandDup(struct picolInterp *i, int argc, char **argv, void *pd)
   return ResultD(i, new_path);
 }
 
-int picolCommandClose(struct picolInterp *i, int argc, char **argv,
-                      void *pd)
+int picolCommandClose(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 2)
     return picolArityErr(i, argv[0]);
@@ -1481,8 +1474,7 @@ int picolCommandClose(struct picolInterp *i, int argc, char **argv,
   return PICOL_OK;
 }
 
-int picolCommandSleep(struct picolInterp *i, int argc, char **argv,
-                      void *pd)
+int picolCommandSleep(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 2)
     return picolArityErr(i, argv[0]);
@@ -1497,8 +1489,7 @@ int picolCommandSleep(struct picolInterp *i, int argc, char **argv,
 void picolRegisterCoreCommands(struct picolInterp *i)
 {
   int j;
-  const char *name[] =
-      { "+", "-", "*", "/", ">", ">=", "<", "<=", "==", "!=" };
+  const char *name[] = { "+", "-", "*", "/", ">", ">=", "<", "<=", "==", "!=" };
   for (j = 0; j < (int) (sizeof(name) / sizeof(char *)); j++)
     picolRegisterCommand(i, name[j], picolCommandMath, NULL);
   picolRegisterCommand(i, "set", picolCommandSet, NULL);
@@ -1515,6 +1506,7 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "foreach", picolCommandForEach, NULL);
   picolRegisterCommand(i, "catch", picolCommandCatch, NULL);
   picolRegisterCommand(i, "list", picolCommandList, NULL);
+  picolRegisterCommand(i, "lindex", picolCommandListIndex, NULL);
   // low-level os9 commands.
   picolRegisterCommand(i, "exit", picolCommandExit, NULL);
   picolRegisterCommand(i, "chain", picolCommandChain, NULL);
@@ -1571,12 +1563,18 @@ int main()
     }
     ReduceBigraphs(line);
     e = picolEval(&interp, line);
-    if (interp.result[0] != '\0') {
-      if (e) {
-        puts(" ERROR: ");
+    if (e) {
+      puts(" ERROR: ");
+      if (e > 1) {
+        printf_d("CODE=%d: ", e);
       }
       puts(interp.result);
       puts("\r");
+    } else {
+      if (interp.result[0] != '\0') {
+        puts(interp.result);
+        puts("\r");
+      }
     }
   }
   exit(0);
