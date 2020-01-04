@@ -1248,8 +1248,10 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 				p += F("desc=%x=%s ", desc, name)
 				if name == "Term" {
 					addy := MapAddr(xreg, true)
+					sz := int(yreg)
 					//fmt.Printf("%s", string(mem[addy:addy+int(uint(yreg))]))
-					p += F(" Term: %q", string(mem[addy:addy+int(uint(yreg))]))
+					p += F(" Term: %q", string(mem[addy:addy+sz]))
+					fmt.Printf("(%d)<[%s]>", sz, string(mem[addy:addy+sz])) // Bug: if crosses mem block.
 				}
 			}
 		}
@@ -1259,40 +1261,39 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 
 	case 0x8C:
 		s = "I$WritLn : Write Line of ASCII Data"
-		p = F("%q ", EscapeStringThruCrOrMax(xreg, yreg))
+		// p = F("%q ", EscapeStringThruCrOrMax(xreg, yreg))
 
 		if false {
-			if true || !hyp {
-				path_num := GetAReg()
-				proc := PeekW(sym.D_Proc)
-				path := PeekB(proc + P_Path + Word(path_num))
-				pathDBT := PeekW(sym.D_PthDBT)
-				q := PeekW(pathDBT + (Word(path) >> 2))
-				p += F("path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
-				if q != 0 {
-					pd := q + 64*(Word(path)&3)
-					dev := PeekW(pd + sym.PD_DEV)
-					p += F("pd=%x dev=%x ", pd, dev)
-					desc := PeekW(dev + sym.V_DESC)
-					name := ModuleName(PeekW(dev + sym.V_DESC))
-					p += F("desc=%x=%s ", desc, name)
-					if name == "Term" {
-						//fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
-						p += F(" Term: %q", PrintableStringThruCrOrMax(xreg, yreg))
+			//			if true || !hyp {
+			//				path_num := GetAReg()
+			//				proc := PeekW(sym.D_Proc)
+			//				path := PeekB(proc + P_Path + Word(path_num))
+			//				pathDBT := PeekW(sym.D_PthDBT)
+			//				q := PeekW(pathDBT + (Word(path) >> 2))
+			//				p += F("path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
+			//				if q != 0 {
+			//					pd := q + 64*(Word(path)&3)
+			//					dev := PeekW(pd + sym.PD_DEV)
+			//					p += F("pd=%x dev=%x ", pd, dev)
+			//					desc := PeekW(dev + sym.V_DESC)
+			//					name := ModuleName(PeekW(dev + sym.V_DESC))
+			//					p += F("desc=%x=%s ", desc, name)
+			//					if name == "Term" {
+			//						//fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
+			//						p += F(" Term: %q", PrintableStringThruCrOrMax(xreg, yreg))
+			//					}
+			//				}
+			//			}
+		} else {
+			InMmuTask(1, func() {
+				s := PrintableStringThruCrOrMax(xreg, yreg)
+				fmt.Printf("%s", s)
+				for _, ch := range []byte(s) {
+					if Disp != nil {
+						Disp.PutChar(ch)
 					}
 				}
-			}
-		} else {
-			/* WithMmu(1, func() { */
-			// fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
-			s := PrintableStringThruCrOrMax(xreg, yreg)
-			fmt.Printf("%s", s)
-			for _, ch := range s {
-				if ch < 256 && Disp != nil {
-					Disp.PutChar(byte(ch))
-				}
-			}
-			/* }) */
+			})
 		}
 
 	case 0x8D:

@@ -102,16 +102,14 @@ func GetMapping(addr Word) Mapping {
 	}
 }
 
-/*
-func InTask0(fn func()) {
+func InMmuTask(task byte, fn func()) {
 	tmp := MmuTask
-	MmuTask = 0
+	MmuTask = task
 	defer func() {
 		MmuTask = tmp
 	}()
 	fn()
 }
-*/
 
 func GetMappingTask0(addr Word) Mapping {
 	// Use Task 0 for the mapping.
@@ -810,9 +808,15 @@ func PutGimeIOByte(a Word, b byte) {
 	}
 }
 func MemoryModuleOf(addr Word) (name string, offset Word) {
-	// TODO: speed up with cacheing.
+	// TODO: speed up with caching.
+	if addr >= 0xFF00 {
+		log.Panicf("PC in IO page: $%x", addr)
+	}
 	if addr >= 0xFE00 {
-		return "", 0 // No module found for the addr.
+		return "(FE)", 0 // No module found for the addr.
+	}
+	if addr < 0x0100 {
+		return "(00)", 0 // No module found for the addr.
 	}
 
 	addrPhys := MapAddr(addr, true)

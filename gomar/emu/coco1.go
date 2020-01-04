@@ -66,7 +66,7 @@ func PutB(addr Word, x byte) {
 	}
 }
 
-func WithMmu(task byte, fn func()) {
+func InMmuTask(task byte, fn func()) {
 	fn()
 }
 
