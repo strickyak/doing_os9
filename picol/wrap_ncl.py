@@ -48,7 +48,7 @@ atrv     set   ReEnt+rev
 rev      set   $00
 edition  set   1
 
-    mod   eom,name,tylg,atrv,start,$A000
+    mod   eom,name,tylg,atrv,start,$8000
 name
     fcs /NCL/
     fcb edition
