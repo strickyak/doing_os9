@@ -3,10 +3,25 @@
 asm void stkcheck() {
 	asm {
 		pshs x
-		ldx 2,s   ; get the return PC
+		ldx 2,s   ; get the supposed return PC
+
+		tfr s,d   ; going to subtract from S.
+		addd ,x   ; add the max stack size.
+		subd _ram_brk,y   ; sub the brk.
+		bcs stkcheckBAD
 		leax 2,x  ; add 2 to it
 		stx 2,s   ; put it back
 		puls x,pc ; and use it to return.
+
+stkcheckBAD	leax stkcheckMSG,pcr
+		ldy #(stkcheckNUL-stkcheckMSG)
+		lda #2    ; stderr
+		os9 I_WritLn
+		ldb #57
+		os9 F_Exit
+
+stkcheckMSG	fcc / *stack oom* /
+stkcheckNUL	fcb 0
 	}
 }
 
