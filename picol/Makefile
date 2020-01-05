@@ -14,7 +14,7 @@ all:
 	: OKAY
 
 indent:
-	indent -kr -nut -i2 -l100 ncl.c
+	indent -kr -nut -i2 -l100 *.c
 
 clean:
 	rm -f *.s *.asm *.list *.map *.bin *.c~

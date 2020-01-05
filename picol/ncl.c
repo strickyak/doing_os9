@@ -15,519 +15,18 @@ typedef unsigned int uint;
 
 extern int Error(struct picolInterp *i, char *argv0, int err);
 extern int ResultD(struct picolInterp *i, int x);
+extern void *malloc(int);
 
-// *INDENT-OFF*
+// In order to get all code into a single assembly listing for the module,
+// we include these C files instead of using the linker to link the usual stuff.
 
-asm void stkcheck() {
-	asm {
-		pshs x
-		ldx 2,s   ; get the return PC
-		leax 2,x  ; add 2 to it
-		stx 2,s   ; put it back
-		puls x,pc ; and use it to return.
-	}
-}
+#include "os9.c"
 
-asm void exit(int status) {
-	asm {
-		ldd 2,s      ; status code in b.
-		os9 F_Exit
-	}
-}
+#include "puthex.c"
 
-asm int Os9ReadLn(int path, char* buf, int buflen, int* bytes_read) {
-	asm {
-		pshs y,u
-		lda 7,s      ; path
-		ldx 8,s      ; buf
-		ldy 10,s      ; buflen
-		os9 I_ReadLn
-		bcs Os9Err
-		sty [12,s]   ; bytes_read
-		ldd #0
-		puls y,u,pc
-	}
-}
+#include "std.c"
 
-asm int Os9WritLn(int path, const char* buf, int max, int* bytes_written) {
-	asm {
-		pshs y,u
-		lda 7,s      ; path
-		ldx 8,s      ; buf
-		ldy 10,s      ; max
-		os9 I_WritLn
-		bcs Os9Err
-		sty [12,s]   ; bytes_written
-		ldd #0
-		puls y,u,pc
-	}
-}
-
-asm char* gets(char* buf) {
-	asm {
-		pshs y,u
-		clra         ; path 0
-		ldy #200
-		ldx 6,s
-		os9 I_ReadLn
-		bcs returnNULL
-		ldd 6,s      ; return buf
-		puls y,u,pc
-returnNULL	clra         ; return NULL
-		clrb
-		puls y,u,pc
-	}
-}
-
-asm void puts(const char* s) {
-	asm {
-		pshs y,u
-		ldx 6,s      ; arg1: string to write, for strlen.
-		pshs x       ; push arg1 for strlen
-		lbsr _strlen  ; see how much to puts.
-		leas 2,s      ; drop 1 arg after strlen
-		tfr d,y       ; max size (strlen) in y
-		ldx 6,s      ; arg1: string to write.
-		clra         ; a = path ...
-		inca         ; a = path 1
-		os9 I_WritLn
-		puls y,u,pc
-	}
-	// TODO: error checking.
-}
-
-asm int Os9Dup(int path, int* new_path) {
-	asm {
-		pshs y,u
-		lda 7,s  ; old path.
-		os9 0x82 ; I$Dup
-		bcs Os9Err
-		tfr a,b  ; new path.
-		sex
-		std [8,s]
-		ldd #0
-		puls y,u,pc
-	}
-}
-
-asm int Os9Close(int path) {
-	asm {
-		pshs y,u
-		lda 7,s  ; path.
-		os9 0x8F ; I$Close
-		bcs Os9Err
-		ldd #0
-		puls y,u,pc
-	}
-}
-
-asm int Os9Sleep(int secs) {
-	asm {
-		pshs y,u
-		ldx 6,s  ; ticks
-		os9 0x0A ; I$Sleep
-		bcs Os9Err
-		ldd #0
-		puls y,u,pc
-Os9Err
-		sex
-		puls y,u,pc
-	}
-}
-
-/*
- * OS9 F$Wait
-MACHINE CODE: 103F 04
-INPUT: None
-OUTPUT: (A) = Deceased child process’ process ID
-(B) = Child process’ exit status code
-*/
-
-asm int Os9Wait(int* child_id) {
-	asm {
-		pshs y,u
-		os9 0x04 ; F$Wait
-		bcs Os9Err
-		tfr a,b
-		sex
-		std [6,s]
-		ldd #0
-		puls y,u,pc
-	}
-}
-
-/*
-   OS9 F$Fork
-MACHINE CODE: 103F 03
-INPUT: (X) = Address of module name or file name.
-(Y) = Parameter area size.
-(U) = Beginning address of the parameter area.
-(A) = Language / Type code.
-(B) = Optional data area size (pages).
-OUTPUT: (X) = Updated past the name string.
-(A) = New process ID number.
-ERROR OUTPUT: (CC) = C bit set. (B) = Appropriate error code.
-*/
-
-asm int Os9Fork(char* program, char* params, int paramlen, int lang_type, int mem_size, int* child_id) {
-	asm {
-		pshs y,u
-		ldx 6,s  ; program
-		ldu 8,s  ; params
-		ldy 10,s ; paramlen
-		lda 13,s  ; lang_type
-		ldb 15,s  ; mem_size
-		os9 0x03  ; F$Fork
-		bcs Os9Err
-		tfr a,b    ; move child id to D
-		clra
-		std [16,s]  ; Store D to *child_id
-		clrb        ; return D=0 no error
-		puls y,u,pc
-	}
-}
-
-asm int Os9Chain(char* program, char* params, int paramlen, int lang_type, int mem_size) {
-	asm {
-		pshs y,u
-		ldx 6,s  ; program
-		ldu 8,s  ; params
-		ldy 10,s ; paramlen
-		lda 13,s  ; lang_type
-		ldb 15,s  ; mem_size
-		os9 0x05  ; F$Chain -- if returns, then it is an error.
-		sex         ; extend error B to D
-		puls y,u,pc
-	}
-}
-
-// *INDENT-ON*
-
-char hexchar(byte i)
-{
-  if (0 <= i && i <= 9)
-    return (char) ('0' + i);
-  if (10 <= i && i <= 15)
-    return (char) ('A' + i - 10);
-  return '?';
-}
-
-// puthex prints a prefix and a hex number, like `(p=1234)`,
-// only using a small buffer.  Quick and reliable for debugging.
-void puthex(char prefix, int a)
-{
-  char buf[9];
-  uint x = (uint) a;
-  buf[8] = '\0';
-  buf[7] = ')';
-  buf[6] = hexchar((byte) (x & 15));
-  x = (x >> 4);
-  buf[5] = hexchar((byte) (x & 15));
-  x = (x >> 4);
-  buf[4] = hexchar((byte) (x & 15));
-  x = (x >> 4);
-  buf[3] = hexchar((byte) (x & 15));
-  buf[2] = '=';
-  buf[1] = prefix;
-  buf[0] = '(';
-  puts(buf);
-}
-
-// panic: print message and exit 5.
-void panic(const char *s)
-{
-  puthex('P', (int) s);
-  puts(s);
-  exit(5);
-}
-
-// Up(c): convert to upper case for 26 ascii letters.
-char Up(char c)
-{
-  return ('a' <= c && c <= 'z') ? c - 32 : c;
-}
-
-int atoi(const char *s)
-{
-  int z = 0;
-  byte neg = false;
-  if (*s == '-') {
-    neg = 1;
-    s++;
-  }
-  if (*s == '0') {
-    s++;
-    if (*s == 'x') {
-      // hex if starts 0x
-      while ('0' <= *s && *s <= '9' || 'A' <= Up(*s) && 'F' <= Up(*s)) {
-        if ('0' <= *s && *s <= '9') {
-          z = z * 16 + (*s - '0');
-        } else {
-          z = z * 16 + (Up(*s) + 10 - 'A');
-        }
-        s++;
-      }
-    } else {
-      // octal if starts 0
-      while ('0' <= *s && *s <= '7') {
-        z = z * 8 + (*s - '0');
-        s++;
-      }
-    }
-  } else {
-    // else decimal
-    while ('0' <= *s && *s <= '9') {
-      z = z * 10 + (*s - '0');
-      s++;
-    }
-  }
-  return neg ? -z : z;
-}
-
-void memcpy(void *d, const void *s, int sz)
-{
-  char *a = (char *) d;
-  const char *b = (const char *) s;
-  int i;
-  for (i = 0; i < sz; i++)
-    *a++ = *b++;
-}
-
-int strcasecmp(const char *a, const char *b)
-{
-  while (*a && *b) {
-    if ((byte) Up(*a) < (byte) Up(*b))
-      return -1;
-    if ((byte) Up(*a) > (byte) Up(*b))
-      return +1;
-    a++;
-    b++;
-  }
-  // at least one is 0.
-  if ((byte) Up(*a) < (byte) Up(*b))
-    return -1;
-  if ((byte) Up(*a) > (byte) Up(*b))
-    return +1;
-  return 0;
-}
-
-void strcpy(char *d, const char *s)
-{
-  while (*s) {
-    *d++ = *s++;
-  }
-  *d = '\0';
-}
-
-int strlen(const char *p)
-{
-  const char *q = p;
-  while (*q)
-    q++;
-  return q - p;
-}
-
-void bzero(char *p, int n)
-{
-  for (int i = 0; i < n; i++)
-    p[i] = 0;
-}
-
-void snprintf_s(char *buf, int max, const char *fmt, const char *s)
-{
-  int flen = strlen(fmt);
-  int slen = strlen(s);
-  if (flen + slen - 1 > max) {  // drop '%s' but add '\0', so net minus 1.
-    puthex('f', flen);
-    puthex('s', slen);
-    puthex('m', max);
-    panic("buf overflow snprintf_s");
-  }
-
-  char *p = buf;
-  while (*fmt) {
-    if (fmt[0] == '%' && 'a' <= fmt[1] && fmt[1] <= 'z') {      // who cares what letter.
-      fmt += 2;
-      while (*s)
-        *p++ = *s++;
-      break;
-    } else {
-      *p++ = *fmt++;
-    }
-  }
-  while (*fmt) {
-    *p++ = *fmt++;
-  }
-  *p = '\0';
-}
-
-void snprintf_d(char *buf, int max, const char *fmt, int x)
-{
-  char tmp[8];
-  const char *z;
-
-  if (x == 0) {
-    z = "0";
-  } else {
-    byte neg = false;
-    char *p = tmp + 7;
-    *p-- = '\0';
-    uint y;
-    if (x < 0) {
-      neg = true;
-      y = -x;
-    } else {
-      y = x;
-    }
-    while (y) {
-      uint r = y % 10;
-      y = y / 10;
-      *p-- = (byte) ('0' + r);
-    }
-    if (neg)
-      *p-- = '-';
-    z = p + 1;
-  }
-
-  snprintf_s(buf, max, fmt, z);
-}
-
-void printf_d(const char *fmt, int x)
-{
-  char buf[BUF_SIZE];
-  snprintf_d(buf, BUF_SIZE, fmt, x);
-  puts(buf);
-}
-
-void printf_s(const char *fmt, const char *s)
-{
-  char buf[BUF_SIZE];
-  snprintf_s(buf, BUF_SIZE, fmt, s);
-  puts(buf);
-}
-
-////////////////////  Malloc & Free
-
-struct Head {
-  char magicA;
-  struct Head *next;
-  int cap;
-  char magicZ;
-};
-
-#define NBUCKETS 12             // 8B to 16KB.
-int ram_used;
-struct Head *ram_roots[NBUCKETS];
-char ram[RAM_SIZE];
-
-void *malloc(int n)
-{
-  //puthex('M', n);
-  int i;
-  int cap = 8;
-  for (i = 0; i < NBUCKETS; i++) {
-    if (n <= cap)
-      break;
-    cap += cap;
-  }
-  if (i >= 10) {
-    puthex('m', n);
-    panic("malloc too big");
-  }
-
-  // Try an existing unused block.
-
-  struct Head *h = ram_roots[i];
-  if (h) {
-    if (h->magicA != 'A')
-      panic("malloc: corrupt magicA");
-    if (h->magicZ != 'Z')
-      panic("malloc: corrupt magicZ");
-    if (h->cap != cap)
-      panic("corrupt cap");
-    ram_roots[i] = h->next;
-    bzero((char *) (h + 1), cap);
-    //puthex('y', (int)(h+1));
-    return (void *) (h + 1);
-  }
-
-  char *p = ram + ram_used;
-  ram_used += cap + sizeof(struct Head);
-  if (ram_used > RAM_SIZE) {
-    puthex('n', n);
-    puthex('c', cap);
-    puthex('u', ram_used);
-    panic(" *oom* ");
-  }
-  h = ((struct Head *) p) - 1;
-  h->magicA = 'A';
-  h->magicZ = 'Z';
-  h->cap = cap;
-  h->next = NULL;
-  //puthex('z', (int)(h+1));
-  return (void *) (h + 1);
-}
-
-void free(void *p)
-{
-  if (!p)
-    return;
-
-  //puthex('F', (int)p);
-  struct Head *h = ((struct Head *) p) - 1;
-  if (h->magicA != 'A')
-    panic("free: corrupt magicA");
-  if (h->magicZ != 'Z')
-    panic("free: corrupt magicZ");
-
-  int i;
-  int cap = 8;
-  for (i = 0; i < 10; i++) {
-    if (h->cap == cap)
-      break;
-    cap += cap;
-  }
-  if (i >= 10) {
-    puthex('c', h->cap);
-    panic("corrupt free");
-  }
-
-  bzero((char *) p, cap);
-
-  h->next = ram_roots[i];
-  ram_roots[i] = h;
-}
-
-void *realloc(void *p, int n)
-{
-  //puthex('R', (int)p);
-  //puthex('n', (int)n);
-  struct Head *h = ((struct Head *) p) - 1;
-  if (n <= h->cap) {
-    //puthex('w', (int)p);
-    return p;
-  }
-
-  void *z = malloc(n);
-  memcpy(z, p, h->cap);
-  //puthex('x', (int)z);
-  return z;
-}
-
-char *strdup(const char *s)
-{
-  int n = strlen(s);
-  char *p = (char *) malloc(n + 1);
-  strcpy(p, s);
-  return p;
-}
-
-void FreeDope(int argc, char **argv)
-{
-  for (int j = 0; j < argc; j++)
-    free(argv[j]);
-  free((char *) argv);
-}
+#include "malloc.c"
 
 //////////////////////////
 
@@ -573,6 +72,13 @@ struct picolInterp {
   struct picolCmd *commands;
   char *result;
 };
+
+void FreeDope(int c, char **v)
+{
+  for (int j = 0; j < c; j++)
+    free(v[j]);                 // Free the strings.
+  free((char *) v);             // Free the vector.
+}
 
 void picolInitParser(struct picolParser *p, char *text)
 {
@@ -976,34 +482,46 @@ int picolArityErr(struct picolInterp *i, char *name)
 
 int picolCommandMath(struct picolInterp *i, int argc, char **argv, void *pd)
 {
+  char m1 = argv[0][0];
+  char m2 = argv[0][1];
   char buf[8];
   int a, b, c;
-  if (argc != 3)
-    return picolArityErr(i, argv[0]);
-  a = atoi(argv[1]);
-  b = atoi(argv[2]);
-  if (argv[0][0] == '+')
-    c = a + b;
-  else if (argv[0][0] == '-')
-    c = a - b;
-  else if (argv[0][0] == '*')
-    c = a * b;
-  else if (argv[0][0] == '/')
-    c = a / b;
-  else if (argv[0][0] == '>' && argv[0][1] == '\0')
-    c = a > b;
-  else if (argv[0][0] == '>' && argv[0][1] == '=')
-    c = a >= b;
-  else if (argv[0][0] == '<' && argv[0][1] == '\0')
-    c = a < b;
-  else if (argv[0][0] == '<' && argv[0][1] == '=')
-    c = a <= b;
-  else if (argv[0][0] == '=' && argv[0][1] == '=')
-    c = a == b;
-  else if (argv[0][0] == '!' && argv[0][1] == '=')
-    c = a != b;
-  else
-    c = 0;                      /* I hate warnings */
+  if (m1 == '+' || m1 == '*') {
+    // + and * allow any number of args.
+    c = (m1 == '+') ? 0 : 1;
+    for (int j = 1; j < argc; j++) {
+      b = atoi(argv[j]);
+      c = (m1 == '+') ? c + b : c * b;
+    }
+  } else {
+    // The rest apply to only 2 numbers.
+    if (argc != 3)
+      return picolArityErr(i, argv[0]);
+    a = atoi(argv[1]);
+    b = atoi(argv[2]);
+    if (m1 == '+')
+      c = a + b;
+    else if (m1 == '-')
+      c = a - b;
+    else if (m1 == '*')
+      c = a * b;
+    else if (m1 == '/')
+      c = a / b;
+    else if (m1 == '>' && m2 == '\0')
+      c = a > b;
+    else if (m1 == '>' && m2 == '=')
+      c = a >= b;
+    else if (m1 == '<' && m2 == '\0')
+      c = a < b;
+    else if (m1 == '<' && m2 == '=')
+      c = a <= b;
+    else if (m1 == '=' && m2 == '=')
+      c = a == b;
+    else if (m1 == '!' && m2 == '=')
+      c = a != b;
+    else
+      c = 0;                    /* I hate warnings */
+  }
   snprintf_d(buf, 8, "%d", c);
   picolSetResult(i, buf);
   return PICOL_OK;
@@ -1031,7 +549,7 @@ int picolCommandSet(struct picolInterp *i, int argc, char **argv, void *pd)
 
 int picolCommandPuts(struct picolInterp *i, int argc, char **argv, void *pd)
 {
-  char *argv0 = argv[0];
+  char *argv0 = argv[0];        // because argv may increment.
   byte nonewline = false;
   // any dash argument must be -nonewline.
   if (argc > 2 && argv[1][0] == '-') {
@@ -1217,7 +735,6 @@ int picolCommandInfo(struct picolInterp *i, int argc, char **argv, void *pd)
       continue;
     puts(c->name);
     puts(" ");
-    c = c->next;
   }
   puts("\r");
 
@@ -1227,7 +744,6 @@ int picolCommandInfo(struct picolInterp *i, int argc, char **argv, void *pd)
       continue;
     puts(c->name);
     puts(" ");
-    c = c->next;
   }
   puts("\r");
 
@@ -1318,7 +834,6 @@ int SplitList(char *s, int *argcP, char ***argvP)
   return PICOL_OK;
 }
 
-// TODO: does this command corrupt memory?  Try `info` afterward.
 int picolCommandEval(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 2)
@@ -1475,8 +990,7 @@ int picolCommand9Exit(struct picolInterp *i, int argc, char **argv, void *pd)
 int picolCommand9Chain(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc < 2) {
-    picolSetResult(i, "chain: too few args");
-    return PICOL_ERR;
+    return picolArityErr(i, argv[0]);
   }
   char *program = argv[1];
   char *params = FormList(argc - 2, argv + 2);
@@ -1489,8 +1003,7 @@ int picolCommand9Chain(struct picolInterp *i, int argc, char **argv, void *pd)
 int picolCommand9Fork(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc < 2) {
-    picolSetResult(i, "fork: too few args");
-    return PICOL_ERR;
+    return picolArityErr(i, argv[0]);
   }
   char *program = argv[1];
   char *params = FormList(argc - 2, argv + 2);
@@ -1551,8 +1064,8 @@ int picolCommand9Sleep(struct picolInterp *i, int argc, char **argv, void *pd)
 
 void picolRegisterCoreCommands(struct picolInterp *i)
 {
-  const char *name[] = { "+", "-", "*", "/", ">", ">=", "<", "<=", "==", "!=", NULL };
-  for (const char **p = name; *p; p++)
+  const char *mathOps[] = { "+", "-", "*", "/", ">", ">=", "<", "<=", "==", "!=", NULL };
+  for (const char **p = mathOps; *p; p++)
     picolRegisterCommand(i, *p, picolCommandMath, NULL);
   picolRegisterCommand(i, "set", picolCommandSet, NULL);
   picolRegisterCommand(i, "puts", picolCommandPuts, NULL);

@@ -48,13 +48,12 @@ atrv     set   ReEnt+rev
 rev      set   $00
 edition  set   1
 
-    mod   eom,name,tylg,atrv,start,$8000
+    mod   eom,name,tylg,atrv,start,$A000
 name
     fcs /NCL/
     fcb edition
-start
-    pshs Y,U   ; Not worrying about args yet, but there is Y.
 
+start  pshs Y,U
 * Need to clear from U to SP.    
 * How many bytes?   SP - U.
     tfr s,d    ; start with SP
@@ -65,7 +64,15 @@ ClearLoop stb ,u+
     leax -1,x
     bne ClearLoop
 
-    puls Y,U   ; Not worrying about args yet, but there is Y.
+    puls Y,U
+    sts _ram_max,U  ;for malloc
+    sts _param_min,U
+    sty _param_max,U
+
+    leax bss_end,U
+    stx _ram_min  ;for malloc
+    stx _ram_brk  ;for malloc
+
     tfr u,y  ; With cmoc, Y points to the start of global memory.
     ldu #0   ; NULL initial frame pointer.
     pshs U
