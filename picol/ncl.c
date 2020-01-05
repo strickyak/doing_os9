@@ -522,6 +522,13 @@ char *strdup(const char *s)
   return p;
 }
 
+void FreeDope(int argc, char **argv)
+{
+  for (int j = 0; j < argc; j++)
+    free(argv[j]);
+  free((char *) argv);
+}
+
 //////////////////////////
 
 //////////////////////////
@@ -1201,14 +1208,6 @@ int picolCommandReturn(struct picolInterp *i, int argc, char **argv, void *pd)
   return PICOL_RETURN;
 }
 
-int picolCommandExit(struct picolInterp *i, int argc, char **argv, void *pd)
-{
-  if (argc != 1 && argc != 2)
-    return picolArityErr(i, argv[0]);
-  exit((argc == 2) ? atoi(argv[1]) : 0);
-  return PICOL_OK;
-}
-
 int picolCommandInfo(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   puts(" procs: ");
@@ -1276,6 +1275,16 @@ char *AppendBuf(char *buf, int buflen, char x)
   return buf;
 }
 
+char *AppendBufS(char *buf, int *buflenP, char *s)
+{
+  while (*s) {
+    buf = AppendBuf(buf, *buflenP, *s);
+    s++;
+    (*buflenP)++;
+  }
+  return buf;
+}
+
 int SplitList(char *s, int *argcP, char ***argvP)
 {
   char **vec = NewVec();
@@ -1309,6 +1318,14 @@ int SplitList(char *s, int *argcP, char ***argvP)
   return PICOL_OK;
 }
 
+// TODO: does this command corrupt memory?  Try `info` afterward.
+int picolCommandEval(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 2)
+    return picolArityErr(i, argv[0]);
+  return picolEval(i, argv[1]);
+}
+
 int picolCommandCatch(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 2 && argc != 3)
@@ -1327,15 +1344,50 @@ int picolCommandListIndex(struct picolInterp *i, int argc, char **argv, void *pd
   if (argc != 3)
     return picolArityErr(i, argv[0]);
   char *list = argv[1];
-  int k = atoi(argv[2]);
+  int j = atoi(argv[2]);
 
   int c = 0;
   char **v = NULL;
   int err = SplitList(list, &c, &v);
 
-  if (0 <= k && k < c) {
-    picolSetResult(i, v[k]);
+  if (0 <= j && j < c) {
+    picolSetResult(i, v[j]);
   }
+  FreeDope(c, v);
+  return PICOL_OK;
+}
+
+char *AppendList(char *list, char *item)
+{
+  int n = strlen(list);
+  if (n) {
+    list = AppendBuf(list, n, ' ');
+    n++;
+  }
+  list = AppendBufS(list, &n, item);
+  return list;
+}
+
+int picolCommandListRange(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 4)
+    return picolArityErr(i, argv[0]);
+  char *list = argv[1];
+  int a = atoi(argv[2]);
+  int b = atoi(argv[3]);
+
+  int c = 0;
+  char **v = NULL;
+  int err = SplitList(list, &c, &v);
+  char *buf = NewBuf();
+  for (int j = 0; j < c; j++) {
+    if (a <= j && j <= b)
+      buf = AppendList(buf, v[j]);
+  }
+
+  picolSetResult(i, buf);
+  free(buf);
+  FreeDope(c, v);
   return PICOL_OK;
 }
 
@@ -1361,6 +1413,7 @@ int picolCommandForEach(struct picolInterp *i, int argc, char **argv, void *pd)
       return e;
   }
 
+  FreeDope(c, v);
   picolSetResult(i, "");
   return PICOL_OK;
 }
@@ -1409,7 +1462,17 @@ int ResultD(struct picolInterp *i, int x)
   return PICOL_OK;
 }
 
-int picolCommandChain(struct picolInterp *i, int argc, char **argv, void *pd)
+// This currently serves as high-level "exit" and low-level "9exit".
+// In the future, if there is cleanup (like flushing IO), a new "exit" will be needed.
+int picolCommand9Exit(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 1 && argc != 2)
+    return picolArityErr(i, argv[0]);
+  exit((argc == 2) ? atoi(argv[1]) : 0);
+  return PICOL_OK;
+}
+
+int picolCommand9Chain(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc < 2) {
     picolSetResult(i, "chain: too few args");
@@ -1423,7 +1486,7 @@ int picolCommandChain(struct picolInterp *i, int argc, char **argv, void *pd)
   return Error(i, argv[0], e);
 }
 
-int picolCommandFork(struct picolInterp *i, int argc, char **argv, void *pd)
+int picolCommand9Fork(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc < 2) {
     picolSetResult(i, "fork: too few args");
@@ -1439,7 +1502,7 @@ int picolCommandFork(struct picolInterp *i, int argc, char **argv, void *pd)
   return ResultD(i, child_id);
 }
 
-int picolCommandWait(struct picolInterp *i, int argc, char **argv, void *pd)
+int picolCommand9Wait(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 1)
     return picolArityErr(i, argv[0]);
@@ -1450,7 +1513,7 @@ int picolCommandWait(struct picolInterp *i, int argc, char **argv, void *pd)
   return ResultD(i, child_id);
 }
 
-int picolCommandDup(struct picolInterp *i, int argc, char **argv, void *pd)
+int picolCommand9Dup(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 2)
     return picolArityErr(i, argv[0]);
@@ -1462,7 +1525,7 @@ int picolCommandDup(struct picolInterp *i, int argc, char **argv, void *pd)
   return ResultD(i, new_path);
 }
 
-int picolCommandClose(struct picolInterp *i, int argc, char **argv, void *pd)
+int picolCommand9Close(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 2)
     return picolArityErr(i, argv[0]);
@@ -1474,7 +1537,7 @@ int picolCommandClose(struct picolInterp *i, int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
-int picolCommandSleep(struct picolInterp *i, int argc, char **argv, void *pd)
+int picolCommand9Sleep(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 2)
     return picolArityErr(i, argv[0]);
@@ -1488,10 +1551,9 @@ int picolCommandSleep(struct picolInterp *i, int argc, char **argv, void *pd)
 
 void picolRegisterCoreCommands(struct picolInterp *i)
 {
-  int j;
-  const char *name[] = { "+", "-", "*", "/", ">", ">=", "<", "<=", "==", "!=" };
-  for (j = 0; j < (int) (sizeof(name) / sizeof(char *)); j++)
-    picolRegisterCommand(i, name[j], picolCommandMath, NULL);
+  const char *name[] = { "+", "-", "*", "/", ">", ">=", "<", "<=", "==", "!=", NULL };
+  for (const char **p = name; *p; p++)
+    picolRegisterCommand(i, *p, picolCommandMath, NULL);
   picolRegisterCommand(i, "set", picolCommandSet, NULL);
   picolRegisterCommand(i, "puts", picolCommandPuts, NULL);
   picolRegisterCommand(i, "if", picolCommandIf, NULL);
@@ -1504,17 +1566,20 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "return", picolCommandReturn, NULL);
   picolRegisterCommand(i, "info", picolCommandInfo, NULL);
   picolRegisterCommand(i, "foreach", picolCommandForEach, NULL);
+  picolRegisterCommand(i, "eval", picolCommandEval, NULL);
   picolRegisterCommand(i, "catch", picolCommandCatch, NULL);
   picolRegisterCommand(i, "list", picolCommandList, NULL);
   picolRegisterCommand(i, "lindex", picolCommandListIndex, NULL);
-  // low-level os9 commands.
-  picolRegisterCommand(i, "exit", picolCommandExit, NULL);
-  picolRegisterCommand(i, "chain", picolCommandChain, NULL);
-  picolRegisterCommand(i, "fork", picolCommandFork, NULL);
-  picolRegisterCommand(i, "wait", picolCommandWait, NULL);
-  picolRegisterCommand(i, "dup", picolCommandDup, NULL);
-  picolRegisterCommand(i, "close", picolCommandClose, NULL);
-  picolRegisterCommand(i, "sleep", picolCommandSleep, NULL);
+  picolRegisterCommand(i, "lrange", picolCommandListRange, NULL);
+  picolRegisterCommand(i, "exit", picolCommand9Exit, NULL);
+  // low-level os9 commands:
+  picolRegisterCommand(i, "9exit", picolCommand9Exit, NULL);
+  picolRegisterCommand(i, "9chain", picolCommand9Chain, NULL);
+  picolRegisterCommand(i, "9fork", picolCommand9Fork, NULL);
+  picolRegisterCommand(i, "9wait", picolCommand9Wait, NULL);
+  picolRegisterCommand(i, "9dup", picolCommand9Dup, NULL);
+  picolRegisterCommand(i, "9close", picolCommand9Close, NULL);
+  picolRegisterCommand(i, "9sleep", picolCommand9Sleep, NULL);
 }
 
 void ReduceBigraphs(char *s)
@@ -1544,19 +1609,16 @@ void ReduceBigraphs(char *s)
 
 int main()
 {
-  char line[80];
   struct picolInterp interp;
-  puts(" *alpha*");
   picolInitInterp(&interp);
-  puts(" *beta*");
   picolRegisterCoreCommands(&interp);
-  puts(" *gamma*");
 
   while (1) {
     puts(" >NCL> ");
+    char line[111];
     bzero(line, sizeof line);
     int bytes_read;
-    int e = Os9ReadLn(0 /*path */ , line, 80, &bytes_read);
+    int e = Os9ReadLn(0 /*path */ , line, 111, &bytes_read);
     if (e) {
       puts(" *EOF*\r");
       break;
