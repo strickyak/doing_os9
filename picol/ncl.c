@@ -82,7 +82,7 @@ void FreeDope(int c, char **v)
 
 void picolInitParser(struct picolParser *p, const char *text)
 {
-  p->text = p->p = (char*)text;
+  p->text = p->p = (char *) text;
   p->len = strlen(text);
   p->start = 0;
   p->end = 0;
@@ -1095,7 +1095,8 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "9sleep", picolCommand9Sleep, NULL);
   picolEval(i, "proc fib x { if { < $x 2 } { return $x } ; + [fib [- $x 1] ] [fib [- $x 2]] }");
   picolEval(i, "proc tri x { if { < $x 2 } { return $x } ; + $x [tri [- $x 1]] }");
-  picolEval(i, "proc iota x { set z {}; set i 0; while {< $i $x} { set z \"$z $i\" ; set i [+ $i 1] }; set z}");
+  picolEval(i,
+            "proc iota x { set z {}; set i 0; while {< $i $x} { set z \"$z $i\" ; set i [+ $i 1] }; set z}");
 }
 
 void ReduceBigraphs(char *s)
