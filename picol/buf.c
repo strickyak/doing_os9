@@ -105,7 +105,7 @@ void BufAppElemS(struct Buf *p, const char *s)
       break;
     }
   }
-  if (clean && *s) {  // empty strings should not be clean.
+  if (clean && *s) {            // empty strings should not be clean.
     for (const char *t = s; *t; t++) {
       BufAppC(p, *t);
     }
