@@ -3,8 +3,7 @@ CMOC=/opt/yak/cmoc
 
 all:
 	$(CMOC)/bin/cmoc --os9 -S ncl.c
-	python  wrap_ncl.py  < ncl.s > ncl.asm 
-	: lwasm -f"os9" --pragma=forwardrefmax -D"OS9" --output=ncl.bin --list="ncl.list" --map="ncl.map" ncl.asm
+	python  wrap.py  < ncl.s > ncl.asm
 	lwasm -f"os9" --pragma=forwardrefmax --output=ncl.bin --list="ncl.list" --map="ncl.map" ncl.asm
 	:
 	cp ncl.list ../borges/ncl.mod
