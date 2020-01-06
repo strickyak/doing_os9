@@ -15,7 +15,10 @@ typedef unsigned int uint;
 
 extern int Error(struct picolInterp *i, char *argv0, int err);
 extern int ResultD(struct picolInterp *i, int x);
-extern void *malloc(int);
+
+extern char *malloc(int);
+extern void free(void *);
+extern char *realloc(void *, int);
 
 // In order to get all code into a single assembly listing for the module,
 // we include these C files instead of using the linker to link the usual stuff.
@@ -27,6 +30,8 @@ extern void *malloc(int);
 #include "std.c"
 
 #include "malloc.c"
+
+#include "buf.c"
 
 //////////////////////////
 
@@ -80,13 +85,14 @@ struct picolInterp {
   char *result;
 };
 
-void FreeDope(int c, char **v)
+void FreeDope(int c, const char **v)
 {
   for (int j = 0; j < c; j++)
-    free(v[j]);                 // Free the strings.
-  free((char *) v);             // Free the vector.
+    free((void *) v[j]);        // Free the strings.
+  free(v);                      // Free the vector.
 }
 
+#if 0
 char **NewVec()
 {
   return (char **) malloc(2);
@@ -94,7 +100,7 @@ char **NewVec()
 
 char **AppendVec(char **vec, int veclen, char *s)
 {
-  vec = (char **) realloc((void *) vec, 2 * (veclen + 1));
+  vec = (char **) realloc(vec, 2 * (veclen + 1));
   vec[veclen] = s;
   return vec;
 }
@@ -108,7 +114,7 @@ char *NewBuf()
 
 char *AppendBuf(char *buf, int buflen, char x)
 {
-  buf = (char *) realloc((void *) buf, buflen + 2);
+  buf = (char *) realloc(buf, buflen + 2);
   buf[buflen] = x;
   buf[buflen + 1] = '\0';
   return buf;
@@ -134,6 +140,7 @@ char *AppendList(char *list, char *item)
   list = AppendBufS(list, &n, item);
   return list;
 }
+#endif
 
 void picolInitParser(struct picolParser *p, const char *text)
 {
@@ -614,17 +621,20 @@ int NotFound(struct picolInterp *i)
 
 int picolCommandArray(struct picolInterp *i, int argc, char **argv, void *pd)
 {
+  struct Buf buf;
+  BufInit(&buf);
+
   switch (argc) {
   default:
     return picolArityErr(i, argv[0]);
 
   case 1:{
       // List arrays.
-      char *list = strdup("");
       for (struct picolArray * p = i->arrays; p; p = p->next) {
-        list = AppendList(list, p->name);
+        BufAppElemS(&buf, p->name);
       }
-      picolMoveToResult(i, list);
+      BufFinish(&buf);
+      picolMoveToResult(i, BufTake(&buf));
     }
     break;
   case 2:{
@@ -636,9 +646,10 @@ int picolCommandArray(struct picolInterp *i, int argc, char **argv, void *pd)
 
       char *list = strdup("");
       for (struct picolVar * q = array->vars; q; q = q->next) {
-        list = AppendList(list, q->name);
+        BufAppElemS(&buf, q->name);
       }
-      picolMoveToResult(i, list);
+      BufFinish(&buf);
+      picolMoveToResult(i, BufTake(&buf));
     }
     break;
   case 3:{
@@ -664,6 +675,40 @@ int picolCommandArray(struct picolInterp *i, int argc, char **argv, void *pd)
         i->arrays = array;
       }
       picolSetVarFromRoot(&array->vars, argv[2], argv[3]);
+    }
+    break;
+  }
+  BufDel(&buf);
+  return PICOL_OK;
+}
+
+int picolCommandSplit(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  char *list = strdup("");
+  switch (argc) {
+  default:
+    return picolArityErr(i, argv[0]);
+
+  case 3:{
+      char *s = argv[1];
+      char d = argv[2][0];
+      struct Buf list;
+      BufInit(&list);
+      while (*s) {
+        struct Buf part;
+        BufInit(&part);
+        while (*s && *s != d) {
+          BufAppC(&part, *s);
+          s++;
+        }
+        if (*s)
+          s++;                  // past d.
+
+
+        BufAppElemS(&list, BufFinish(&part));
+        BufDel(&part);
+      }
+      picolMoveToResult(i, BufTake(&list));
     }
     break;
   }
@@ -917,44 +962,43 @@ int picolCommandInfo(struct picolInterp *i, int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
-int SplitList(char *s, int *argcP, char ***argvP)
+int SplitList(const char *s, int *argcP, const char ***argvP)
 {
-  char **vec = NewVec();
-  int veclen = 0;
+  struct Buf dope;
+  BufInit(&dope);
 
   while (*s) {
     while (*s && *s <= 32) {    // skip white
-//puthex('s', *s);
       s++;
     }
-    char *b = NewBuf();
-    int blen = 0;
-    while (*s && *s > 32) {     // copy word
-//puthex('x', *s);
-      b = AppendBuf(b, blen, *s);
-      blen++;
-      s++;
-    }
-    if (blen) {
-//puthex('v', veclen);
-//puthex('v', vec);
-      vec = AppendVec(vec, veclen, b);
-//puthex('v', vec);
-      veclen++;
-    }
+    if (!s)
+      break;
+
+    const char *end;
+    int len = ElemLen(s, &end);
+    const char *elem = ElemDecode(s);
+    s = end;
+
+    BufAppDope(&dope, elem);
   }
-  *argvP = vec;
-  *argcP = veclen;
-//puthex('V', vec);
-//puthex('L', veclen);
+  *argvP = BufTakeDope(&dope, argcP);
   return PICOL_OK;
 }
 
 int picolCommandEval(struct picolInterp *i, int argc, char **argv, void *pd)
 {
-  if (argc != 2)
-    return picolArityErr(i, argv[0]);
-  return picolEval(i, argv[1]);
+  struct Buf buf;
+  BufInit(&buf);
+  // Join the args simply with spaces.
+  for (int j = 1; j < argc; j++) {
+    if (j)
+      BufAppC(&buf, ' ');
+    BufAppS(&buf, argv[j], -1);
+  }
+  BufFinish(&buf);
+  int e = picolEval(i, BufPeek(&buf));
+  BufDel(&buf);
+  return e;
 }
 
 int picolCommandCatch(struct picolInterp *i, int argc, char **argv, void *pd)
@@ -978,7 +1022,7 @@ int picolCommandListIndex(struct picolInterp *i, int argc, char **argv, void *pd
   int j = atoi(argv[2]);
 
   int c = 0;
-  char **v = NULL;
+  const char **v = NULL;
   int err = SplitList(list, &c, &v);
 
   if (0 <= j && j < c) {
@@ -997,17 +1041,19 @@ int picolCommandListRange(struct picolInterp *i, int argc, char **argv, void *pd
   int b = atoi(argv[3]);
 
   int c = 0;
-  char **v = NULL;
+  const char **v = NULL;
   int err = SplitList(list, &c, &v);
-  char *buf = NewBuf();
+
+  struct Buf result;
+  BufInit(&result);
   for (int j = 0; j < c; j++) {
     if (a <= j && j <= b)
-      buf = AppendList(buf, v[j]);
+      BufAppElemS(&result, v[j]);
   }
-
-  picolSetResult(i, buf);
-  free(buf);
   FreeDope(c, v);
+
+  BufFinish(&result);
+  picolMoveToResult(i, BufTake(&result));
   return PICOL_OK;
 }
 
@@ -1020,7 +1066,7 @@ int picolCommandForEach(struct picolInterp *i, int argc, char **argv, void *pd)
   char *body = argv[3];
 
   int c = 0;
-  char **v = NULL;
+  const char **v = NULL;
   int err = SplitList(list, &c, &v);
   for (int j = 0; j < c; j++) {
     picolSetVar(i, var, v[j]);
@@ -1038,28 +1084,20 @@ int picolCommandForEach(struct picolInterp *i, int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
-char *FormList(int argc, char **argv)
+const char *FormList(int argc, char **argv)
 {
-  char *b = NewBuf();
-  int blen = 0;
+  struct Buf buf;
+  BufInit(&buf);
   for (int i = 0; i < argc; i++) {
-    if (i > 0) {
-      b = AppendBuf(b, blen, ' ');
-      blen++;
-    }
-    char *p = argv[i];
-    while (*p) {
-      b = AppendBuf(b, blen, *p);
-      blen++;
-      p++;
-    }
+    BufAppElemS(&buf, argv[i]);
   }
-  return b;
+  BufFinish(&buf);
+  return BufTake(&buf);
 }
 
 int picolCommandList(struct picolInterp *i, int argc, char **argv, void *pd)
 {
-  char *s = FormList(argc - 1, argv + 1);
+  const char *s = FormList(argc - 1, argv + 1);
   picolSetResult(i, s);
   return PICOL_OK;
 }
@@ -1092,13 +1130,22 @@ int picolCommand9Exit(struct picolInterp *i, int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
+const char *AddCR(char *s)
+{
+  int n = strlen(s);
+  s = realloc(s, n + 2);
+  s[n] = '\r';
+  return (const char *) s;
+}
+
 int picolCommand9Chain(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc < 2) {
     return picolArityErr(i, argv[0]);
   }
   char *program = argv[1];
-  char *params = FormList(argc - 2, argv + 2);
+  const char *params = FormList(argc - 2, argv + 2);
+  params = AddCR((char *) params);
   int e = Os9Chain(program, params, strlen(params), 0 /*lang_type */ ,
                    0 /*mem_size */ );
   // If returns, it is an error.
@@ -1111,7 +1158,8 @@ int picolCommand9Fork(struct picolInterp *i, int argc, char **argv, void *pd)
     return picolArityErr(i, argv[0]);
   }
   char *program = argv[1];
-  char *params = FormList(argc - 2, argv + 2);
+  const char *params = FormList(argc - 2, argv + 2);
+  params = AddCR((char *) params);
   int child_id = 0;
   int e = Os9Fork(program, params, strlen(params), 0 /*lang_type */ ,
                   0 /*mem_size */ , &child_id);
@@ -1190,6 +1238,7 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "lindex", picolCommandListIndex, NULL);
   picolRegisterCommand(i, "lrange", picolCommandListRange, NULL);
   picolRegisterCommand(i, "array", picolCommandArray, NULL);
+  picolRegisterCommand(i, "split", picolCommandSplit, NULL);
   picolRegisterCommand(i, "exit", picolCommand9Exit, NULL);
   // low-level os9 commands:
   picolRegisterCommand(i, "9exit", picolCommand9Exit, NULL);

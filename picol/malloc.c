@@ -17,7 +17,7 @@ struct Head {
   char barrierZ;
 };
 
-void *malloc(int n)
+char *malloc(int n)
 {
   //puthex('M', n);
   int i;
@@ -49,7 +49,7 @@ void *malloc(int n)
     ram_roots[i] = h->next;
     bzero((char *) (h + 1), cap);
     //puthex('y', (int)(h+1));
-    return (void *) (h + 1);
+    return (char *) (h + 1);
   }
 
   // Break fresh memory.
@@ -81,7 +81,7 @@ void *malloc(int n)
   h->cap = cap;
   h->next = NULL;
   //puthex('z', (int)(h+1));
-  return (void *) (h + 1);
+  return (char *) (h + 1);
 }
 
 void free(void *p)
@@ -114,17 +114,17 @@ void free(void *p)
   ram_roots[i] = h;
 }
 
-void *realloc(void *p, int n)
+char *realloc(void *p, int n)
 {
   //puthex('R', (int)p);
   //puthex('n', (int)n);
   struct Head *h = ((struct Head *) p) - 1;
   if (n <= h->cap) {
     //puthex('w', (int)p);
-    return p;
+    return (char *) p;
   }
 
-  void *z = malloc(n);
+  char *z = malloc(n);
   memcpy(z, p, h->cap);
   //puthex('x', (int)z);
   return z;

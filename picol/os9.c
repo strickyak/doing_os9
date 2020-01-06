@@ -133,7 +133,7 @@ OUTPUT: (X) = Updated past the name string.
 ERROR OUTPUT: (CC) = C bit set. (B) = Appropriate error code.
 */
 
-asm int Os9Fork(char* program, char* params, int paramlen, int lang_type, int mem_size, int* child_id) {
+asm int Os9Fork(const char* program, const char* params, int paramlen, int lang_type, int mem_size, int* child_id) {
 	asm {
 		pshs y,u
 		ldx 6,s  ; program
@@ -151,7 +151,7 @@ asm int Os9Fork(char* program, char* params, int paramlen, int lang_type, int me
 	}
 }
 
-asm int Os9Chain(char* program, char* params, int paramlen, int lang_type, int mem_size) {
+asm int Os9Chain(const char* program, const char* params, int paramlen, int lang_type, int mem_size) {
 	asm {
 		pshs y,u
 		ldx 6,s  ; program
