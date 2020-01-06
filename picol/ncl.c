@@ -52,6 +52,12 @@ struct picolVar {
   struct picolVar *next;
 };
 
+struct picolArray {
+  char *name;
+  struct picolVar *vars;
+  struct picolArray *next;
+};
+
 typedef int (*picolCmdFunc)(struct picolInterp * i, int argc, char **argv, void *privdata);
 
 struct picolCmd {
@@ -70,6 +76,7 @@ struct picolInterp {
   int level;                    /* Level of nesting */
   struct picolCallFrame *callframe;
   struct picolCmd *commands;
+  struct picolArray *arrays;
   char *result;
 };
 
@@ -78,6 +85,54 @@ void FreeDope(int c, char **v)
   for (int j = 0; j < c; j++)
     free(v[j]);                 // Free the strings.
   free((char *) v);             // Free the vector.
+}
+
+char **NewVec()
+{
+  return (char **) malloc(2);
+}
+
+char **AppendVec(char **vec, int veclen, char *s)
+{
+  vec = (char **) realloc((void *) vec, 2 * (veclen + 1));
+  vec[veclen] = s;
+  return vec;
+}
+
+char *NewBuf()
+{
+  char *z = (char *) malloc(1);
+  z[0] = '\0';
+  return z;
+}
+
+char *AppendBuf(char *buf, int buflen, char x)
+{
+  buf = (char *) realloc((void *) buf, buflen + 2);
+  buf[buflen] = x;
+  buf[buflen + 1] = '\0';
+  return buf;
+}
+
+char *AppendBufS(char *buf, int *buflenP, char *s)
+{
+  while (*s) {
+    buf = AppendBuf(buf, *buflenP, *s);
+    s++;
+    (*buflenP)++;
+  }
+  return buf;
+}
+
+char *AppendList(char *list, char *item)
+{
+  int n = strlen(list);
+  if (n) {
+    list = AppendBuf(list, n, ' ');
+    n++;
+  }
+  list = AppendBufS(list, &n, item);
+  return list;
 }
 
 void picolInitParser(struct picolParser *p, const char *text)
@@ -314,6 +369,7 @@ void picolInitInterp(struct picolInterp *i)
   i->callframe->vars = NULL;
   i->callframe->parent = NULL;
   i->commands = NULL;
+  i->arrays = NULL;
   i->result = strdup("");
 }
 
@@ -323,20 +379,29 @@ void picolSetResult(struct picolInterp *i, const char *s)
   i->result = strdup(s);
 }
 
-struct picolVar *picolGetVar(struct picolInterp *i, const char *name)
+void picolMoveToResult(struct picolInterp *i, const char *s)
 {
-  struct picolVar *v = i->callframe->vars;
-  while (v) {
+  free(i->result);
+  i->result = (char *) s;
+}
+
+struct picolVar *picolGetVarFromRoot(struct picolVar *v, const char *name)
+{
+  for (; v; v = v->next) {
     if (strcasecmp(v->name, name) == 0)
       return v;
-    v = v->next;
   }
   return NULL;
 }
 
-int picolSetVar(struct picolInterp *i, const char *name, const char *val)
+struct picolVar *picolGetVar(struct picolInterp *i, const char *name)
 {
-  struct picolVar *v = picolGetVar(i, name);
+  return picolGetVarFromRoot(i->callframe->vars, name);
+}
+
+int picolSetVarFromRoot(struct picolVar **root, const char *name, const char *val)
+{
+  struct picolVar *v = picolGetVarFromRoot(*root, name);
   if (v) {
     free(v->val);
     v->val = strdup(val);
@@ -344,22 +409,36 @@ int picolSetVar(struct picolInterp *i, const char *name, const char *val)
     v = (struct picolVar *) malloc(sizeof(*v));
     v->name = strdup(name);
     v->val = strdup(val);
-    v->next = i->callframe->vars;
-    i->callframe->vars = v;
+    v->next = *root;
+    *root = v;
   }
   return PICOL_OK;
 }
 
+int picolSetVar(struct picolInterp *i, const char *name, const char *val)
+{
+  return picolSetVarFromRoot(&i->callframe->vars, name, val);
+}
+
 struct picolCmd *picolGetCommand(struct picolInterp *i, const char *name)
 {
-  struct picolCmd *c = i->commands;
-  while (c) {
-    if (strcasecmp(c->name, name) == 0)
+  for (struct picolCmd * c = i->commands; c; c = c->next) {
+    if (strcasecmp(c->name, name) == 0) {
       return c;
-    c = c->next;
+    }
   }
   return NULL;
 }
+
+struct picolArray *picolGetArray(struct picolInterp *i, const char *name)
+{
+  for (struct picolArray * p = i->arrays; p; p = p->next) {
+    if (strcasecmp(p->name, name) == 0) {
+      return p;
+    }
+  }
+  return NULL;
+};
 
 int picolRegisterCommand(struct picolInterp *i, const char *name, picolCmdFunc f, void *privdata)
 {
@@ -524,6 +603,70 @@ int picolCommandMath(struct picolInterp *i, int argc, char **argv, void *pd)
   }
   snprintf_d(buf, 8, "%d", c);
   picolSetResult(i, buf);
+  return PICOL_OK;
+}
+
+int NotFound(struct picolInterp *i)
+{
+  picolSetResult(i, "not found");
+  return PICOL_ERR;
+}
+
+int picolCommandArray(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  switch (argc) {
+  default:
+    return picolArityErr(i, argv[0]);
+
+  case 1:{
+      // List arrays.
+      char *list = strdup("");
+      for (struct picolArray * p = i->arrays; p; p = p->next) {
+        list = AppendList(list, p->name);
+      }
+      picolMoveToResult(i, list);
+    }
+    break;
+  case 2:{
+      // List keys of named array.
+      struct picolArray *array = picolGetArray(i, argv[1]);
+      if (!array) {
+        return NotFound(i);
+      }
+
+      char *list = strdup("");
+      for (struct picolVar * q = array->vars; q; q = q->next) {
+        list = AppendList(list, q->name);
+      }
+      picolMoveToResult(i, list);
+    }
+    break;
+  case 3:{
+      struct picolArray *array = picolGetArray(i, argv[1]);
+      if (!array) {
+        return NotFound(i);
+      }
+      struct picolVar *var = picolGetVarFromRoot(array->vars, argv[2]);
+      if (!var) {
+        return NotFound(i);
+      }
+      picolSetResult(i, var->val);
+    }
+    break;
+  case 4:{
+      // Set variable.
+      struct picolArray *array = picolGetArray(i, argv[1]);
+      if (!array) {
+        array = (struct picolArray *) malloc(sizeof *array);
+        array->name = strdup(argv[1]);
+        array->vars = NULL;
+        array->next = i->arrays;
+        i->arrays = array;
+      }
+      picolSetVarFromRoot(&array->vars, argv[2], argv[3]);
+    }
+    break;
+  }
   return PICOL_OK;
 }
 
@@ -738,7 +881,7 @@ int picolCommandInfo(struct picolInterp *i, int argc, char **argv, void *pd)
   }
   puts("\r");
 
-  puts(" other commands: ");
+  puts(" commands: ");
   for (c = i->commands; c; c = c->next) {
     if (c->func == picolCommandCallProc)
       continue;
@@ -747,11 +890,21 @@ int picolCommandInfo(struct picolInterp *i, int argc, char **argv, void *pd)
   }
   puts("\r");
 
-  struct picolCallFrame *f;
-  for (f = i->callframe; f; f = f->parent) {
+  for (struct picolCallFrame * f = i->callframe; f; f = f->parent) {
     puts(f->parent ? " frame: " : " globals: ");
-    struct picolVar *v;
-    for (v = f->vars; v; v = v->next) {
+    for (struct picolVar * v = f->vars; v; v = v->next) {
+      puts(v->name);
+      puts("=");
+      puts(v->val);
+      puts(" ");
+    }
+    puts("\r");
+  }
+
+  puts(" arrays:\r");
+  for (struct picolArray * array = i->arrays; array; array = array->next) {
+    printf_s("   %s: ", array->name);
+    for (struct picolVar * v = array->vars; v; v = v->next) {
       puts(v->name);
       puts("=");
       puts(v->val);
@@ -762,43 +915,6 @@ int picolCommandInfo(struct picolInterp *i, int argc, char **argv, void *pd)
 
   picolSetResult(i, "");
   return PICOL_OK;
-}
-
-char **NewVec()
-{
-  return (char **) malloc(2);
-}
-
-char **AppendVec(char **vec, int veclen, char *s)
-{
-  vec = (char **) realloc((void *) vec, 2 * (veclen + 1));
-  vec[veclen] = s;
-  return vec;
-}
-
-char *NewBuf()
-{
-  char *z = (char *) malloc(1);
-  z[0] = '\0';
-  return z;
-}
-
-char *AppendBuf(char *buf, int buflen, char x)
-{
-  buf = (char *) realloc((void *) buf, buflen + 2);
-  buf[buflen] = x;
-  buf[buflen + 1] = '\0';
-  return buf;
-}
-
-char *AppendBufS(char *buf, int *buflenP, char *s)
-{
-  while (*s) {
-    buf = AppendBuf(buf, *buflenP, *s);
-    s++;
-    (*buflenP)++;
-  }
-  return buf;
 }
 
 int SplitList(char *s, int *argcP, char ***argvP)
@@ -870,17 +986,6 @@ int picolCommandListIndex(struct picolInterp *i, int argc, char **argv, void *pd
   }
   FreeDope(c, v);
   return PICOL_OK;
-}
-
-char *AppendList(char *list, char *item)
-{
-  int n = strlen(list);
-  if (n) {
-    list = AppendBuf(list, n, ' ');
-    n++;
-  }
-  list = AppendBufS(list, &n, item);
-  return list;
 }
 
 int picolCommandListRange(struct picolInterp *i, int argc, char **argv, void *pd)
@@ -1084,6 +1189,7 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "list", picolCommandList, NULL);
   picolRegisterCommand(i, "lindex", picolCommandListIndex, NULL);
   picolRegisterCommand(i, "lrange", picolCommandListRange, NULL);
+  picolRegisterCommand(i, "array", picolCommandArray, NULL);
   picolRegisterCommand(i, "exit", picolCommand9Exit, NULL);
   // low-level os9 commands:
   picolRegisterCommand(i, "9exit", picolCommand9Exit, NULL);
