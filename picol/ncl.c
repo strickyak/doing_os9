@@ -684,34 +684,60 @@ int picolCommandArray(struct picolInterp *i, int argc, char **argv, void *pd)
 
 int picolCommandSplit(struct picolInterp *i, int argc, char **argv, void *pd)
 {
-  char *list = strdup("");
+  char delim;
+  char *s = argv[1];
+
   switch (argc) {
   default:
     return picolArityErr(i, argv[0]);
 
-  case 3:{
-      char *s = argv[1];
-      char d = argv[2][0];
-      struct Buf list;
-      BufInit(&list);
-      while (*s) {
-        struct Buf part;
-        BufInit(&part);
-        while (*s && *s != d) {
-          BufAppC(&part, *s);
-          s++;
-        }
-        if (*s)
-          s++;                  // past d.
+  case 2:
+    delim = 0;                  // Split on white space.
+    break;
 
-
-        BufAppElemS(&list, BufFinish(&part));
-        BufDel(&part);
-      }
-      picolMoveToResult(i, BufTake(&list));
-    }
+  case 3:
+    delim = argv[2][0];         // Split on first char of 2nd arg.
     break;
   }
+
+  byte final_delim = false;
+  struct Buf list;
+  BufInit(&list);
+  while (*s) {
+    struct Buf part;
+    BufInit(&part);
+    while (*s) {
+      if (delim) {
+        // Use specified delimiter.
+        if (*s == delim) {
+          final_delim = true;
+          break;
+        }
+      } else {
+        // Use any whitespace.
+        if (*s <= 32)
+          break;
+      }
+
+      // Not at a delimiter.
+      BufAppC(&part, *s);
+      s++;
+      final_delim = false;
+    }
+    if (*s)
+      s++;                      // past delim.
+
+    // Finished a part.
+    if (delim || part.n) {      // no empties if split on white.
+      BufAppElemS(&list, BufFinish(&part));
+    }
+    BufDel(&part);
+  }
+  if (final_delim) {
+    BufAppElemS(&list, "");
+  }
+  BufFinish(&list);
+  picolMoveToResult(i, BufTake(&list));
   return PICOL_OK;
 }
 
@@ -1014,16 +1040,27 @@ int picolCommandCatch(struct picolInterp *i, int argc, char **argv, void *pd)
   return ResultD(i, e);
 }
 
+int picolCommandListLength(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 2)
+    return picolArityErr(i, argv[0]);
+
+  int c = 0;
+  const char **v = NULL;
+  int err = SplitList(argv[1], &c, &v);
+  FreeDope(c, v);
+  return ResultD(i, c);
+}
+
 int picolCommandListIndex(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 3)
     return picolArityErr(i, argv[0]);
-  char *list = argv[1];
   int j = atoi(argv[2]);
 
   int c = 0;
   const char **v = NULL;
-  int err = SplitList(list, &c, &v);
+  int err = SplitList(argv[1], &c, &v);
 
   if (0 <= j && j < c) {
     picolSetResult(i, v[j]);
@@ -1235,6 +1272,7 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "eval", picolCommandEval, NULL);
   picolRegisterCommand(i, "catch", picolCommandCatch, NULL);
   picolRegisterCommand(i, "list", picolCommandList, NULL);
+  picolRegisterCommand(i, "llength", picolCommandListLength, NULL);
   picolRegisterCommand(i, "lindex", picolCommandListIndex, NULL);
   picolRegisterCommand(i, "lrange", picolCommandListRange, NULL);
   picolRegisterCommand(i, "array", picolCommandArray, NULL);
