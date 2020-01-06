@@ -105,7 +105,7 @@ void BufAppElemS(struct Buf *p, const char *s)
       break;
     }
   }
-  if (clean) {
+  if (clean && *s) {  // empty strings should not be clean.
     for (const char *t = s; *t; t++) {
       BufAppC(p, *t);
     }
@@ -141,9 +141,10 @@ int ElemLen(const char *s, const char **endP)
   int n = 0;
   if (*s == '{') {
     // brace-wrapped element.
+    s++;
     while (*s) {
       if (*s == '}') {
-        *endP = s + 1;
+        s++;
         break;
       }
       if (*s == '\\') {
@@ -173,8 +174,10 @@ const char *ElemDecode(const char *s)
   BufInit(&buf);
   if (*s == '{') {
     // brace-wrapped element.
+    s++;
     while (*s) {
       if (*s == '}') {
+        s++;
         break;
       }
       if (*s == '\\') {
