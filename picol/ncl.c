@@ -819,6 +819,22 @@ int picolCommandSet(struct picolInterp *i, int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
+int picolCommandGets(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 3)
+    return picolArityErr(i, argv[0]);
+  int fd = atoi(argv[1]);
+  char *varname = argv[2];
+  char buf[BUF_SIZE + 1];
+  int bytes_read = 0;
+  bzero(buf, BUF_SIZE + 1);
+  int e = Os9ReadLn(fd, buf, BUF_SIZE, &bytes_read);
+  if (e)
+    return Error(i, argv[0], e);
+  picolSetVar(i, varname, buf);
+  return ResultD(i, bytes_read);
+}
+
 int picolCommandPuts(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   char *argv0 = argv[0];        // because argv may increment.
@@ -1351,6 +1367,69 @@ int picolCommand9Sleep(struct picolInterp *i, int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
+char SetHiBitOfLastChar(char *s)
+{
+  int n = strlen(s);
+  char z = s[n - 1];
+  s[n - 1] |= 0x80;
+  return z;
+}
+
+void RestoreLastChar(char *s, char c)
+{
+  int n = strlen(s);
+  s[n - 1] = c;
+}
+
+int picolCommand9Create(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 4)
+    return picolArityErr(i, argv[0]);
+  char *path = argv[1];
+  char final = SetHiBitOfLastChar(path);
+  int mode = atoi(argv[2]);
+  int attrs = atoi(argv[3]);
+  int fd = 0;
+
+  int e = Os9Create(path, mode, attrs, &fd);
+  RestoreLastChar(path, final);
+  if (e)
+    return Error(i, argv[0], e);
+  return ResultD(i, fd);
+}
+
+int picolCommand9Open(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 3)
+    return picolArityErr(i, argv[0]);
+  char *path = argv[1];
+  char final = SetHiBitOfLastChar(path);
+  int mode = atoi(argv[2]);
+  int fd = 0;
+
+  int e = Os9Open(path, mode, &fd);
+  RestoreLastChar(path, final);
+  if (e)
+    return Error(i, argv[0], e);
+  return ResultD(i, fd);
+}
+
+int picolCommand9ChgDir(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 3)
+    return picolArityErr(i, argv[0]);
+  char *path = argv[1];
+  char final = SetHiBitOfLastChar(path);
+  int mode = atoi(argv[2]);
+
+  int e = Os9ChgDir(path, mode);
+  RestoreLastChar(path, final);
+  if (e)
+    return Error(i, argv[0], e);
+  picolSetResult(i, "");
+  return PICOL_OK;
+}
+
 void picolRegisterCoreCommands(struct picolInterp *i)
 {
   const char *mathOps[] = { "+", "-", "*", "/", ">", ">=", "<", "<=", "==", "!=", NULL };
@@ -1389,6 +1468,9 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "9dup", picolCommand9Dup, NULL);
   picolRegisterCommand(i, "9close", picolCommand9Close, NULL);
   picolRegisterCommand(i, "9sleep", picolCommand9Sleep, NULL);
+  picolRegisterCommand(i, "9chgdir", picolCommand9ChgDir, NULL);
+  picolRegisterCommand(i, "9open", picolCommand9Open, NULL);
+  picolRegisterCommand(i, "9create", picolCommand9Create, NULL);
   picolEval(i, "proc fib x { if { < $x 2 } { return $x } ; + [fib [- $x 1] ] [fib [- $x 2]] }");
   picolEval(i, "proc tri x { if { < $x 2 } { return $x } ; + $x [tri [- $x 1]] }");
   picolEval(i,

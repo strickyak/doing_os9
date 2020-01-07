@@ -32,6 +32,53 @@ asm void exit(int status) {
 	}
 }
 
+asm int Os9Create(char* path, int mode, int attrs, int* fd) {
+	asm {
+		pshs y,u
+		ldx 6,s      ; buf
+		lda 9,s      ; mode
+		ldb 11,s      ; attrs
+		os9 0x83
+		lbcs Os9Err
+
+		tfr a,b
+		sex
+		std [12,s]   ; set fd
+
+		ldd #0
+		puls y,u,pc
+	}
+}
+
+asm int Os9Open(char* path, int mode, int* fd) {
+	asm {
+		pshs y,u
+		ldx 6,s      ; buf
+		lda 9,s      ; mode
+		os9 0x84
+		lbcs Os9Err
+
+		tfr a,b
+		sex
+		std [10,s]   ; set fd
+
+		ldd #0
+		puls y,u,pc
+	}
+}
+
+asm int Os9ChgDir(char* path, int mode) {
+	asm {
+		pshs y,u
+		ldx 6,s      ; buf
+		lda 9,s      ; mode
+		os9 0x86
+		lbcs Os9Err
+		ldd #0
+		puls y,u,pc
+	}
+}
+
 asm int Os9ReadLn(int path, char* buf, int buflen, int* bytes_read) {
 	asm {
 		pshs y,u
@@ -39,7 +86,7 @@ asm int Os9ReadLn(int path, char* buf, int buflen, int* bytes_read) {
 		ldx 8,s      ; buf
 		ldy 10,s      ; buflen
 		os9 I_ReadLn
-		bcs Os9Err
+		lbcs Os9Err
 		sty [12,s]   ; bytes_read
 		ldd #0
 		puls y,u,pc
@@ -53,7 +100,7 @@ asm int Os9WritLn(int path, const char* buf, int max, int* bytes_written) {
 		ldx 8,s      ; buf
 		ldy 10,s      ; max
 		os9 I_WritLn
-		bcs Os9Err
+		lbcs Os9Err
 		sty [12,s]   ; bytes_written
 		ldd #0
 		puls y,u,pc
@@ -65,7 +112,7 @@ asm int Os9Dup(int path, int* new_path) {
 		pshs y,u
 		lda 7,s  ; old path.
 		os9 0x82 ; I$Dup
-		bcs Os9Err
+		lbcs Os9Err
 		tfr a,b  ; new path.
 		sex
 		std [8,s]
@@ -79,7 +126,7 @@ asm int Os9Close(int path) {
 		pshs y,u
 		lda 7,s  ; path.
 		os9 0x8F ; I$Close
-		bcs Os9Err
+		lbcs Os9Err
 		ldd #0
 		puls y,u,pc
 	}
@@ -90,7 +137,7 @@ asm int Os9Sleep(int secs) {
 		pshs y,u
 		ldx 6,s  ; ticks
 		os9 0x0A ; I$Sleep
-		bcs Os9Err
+		lbcs Os9Err
 		ldd #0
 		puls y,u,pc
 Os9Err
@@ -111,7 +158,7 @@ asm int Os9Wait(int* child_id) {
 	asm {
 		pshs y,u
 		os9 0x04 ; F$Wait
-		bcs Os9Err
+		lbcs Os9Err
 		tfr a,b
 		sex
 		std [6,s]
@@ -142,7 +189,7 @@ asm int Os9Fork(const char* program, const char* params, int paramlen, int lang_
 		lda 13,s  ; lang_type
 		ldb 15,s  ; mem_size
 		os9 0x03  ; F$Fork
-		bcs Os9Err
+		lbcs Os9Err
 		tfr a,b    ; move child id to D
 		clra
 		std [16,s]  ; Store D to *child_id
