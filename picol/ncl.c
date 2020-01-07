@@ -1040,6 +1040,42 @@ int picolCommandCatch(struct picolInterp *i, int argc, char **argv, void *pd)
   return ResultD(i, e);
 }
 
+int picolCommandExplode(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 2)
+    return picolArityErr(i, argv[0]);
+
+  struct Buf result;
+  BufInit(&result);
+
+  for (char* s = argv[1]; *s; s++) {
+    char tmp[8];
+    snprintf_d(tmp, 10, "%d", *s);
+    BufAppElemS(&result, tmp);
+  }
+  BufFinish(&result);
+  picolMoveToResult(i, BufTake(&result));
+  return PICOL_OK;
+}
+
+int picolCommandImplode(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  int c = 0;
+  const char **v = NULL;
+  int err = SplitList(argv[1], &c, &v);
+
+  char* z = malloc(c+1);
+  int j;
+  for (j = 0; j < c; j++) {
+	  z[j] = atoi(v[j]);
+  }
+  z[j] = '\0';
+
+  FreeDope(c, v);
+  picolMoveToResult(i, z);
+  return PICOL_OK;
+}
+
 int picolCommandListLength(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   if (argc != 2)
@@ -1272,6 +1308,8 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "eval", picolCommandEval, NULL);
   picolRegisterCommand(i, "catch", picolCommandCatch, NULL);
   picolRegisterCommand(i, "list", picolCommandList, NULL);
+  picolRegisterCommand(i, "explode", picolCommandExplode, NULL);
+  picolRegisterCommand(i, "implode", picolCommandImplode, NULL);
   picolRegisterCommand(i, "llength", picolCommandListLength, NULL);
   picolRegisterCommand(i, "lindex", picolCommandListIndex, NULL);
   picolRegisterCommand(i, "lrange", picolCommandListRange, NULL);
