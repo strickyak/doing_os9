@@ -1,5 +1,9 @@
 ////////////////////  Malloc & Free
 
+#define ZERO_MALLOC
+#define ZERO_FREE
+//#define ZERO_FRESH
+
 unsigned int ram_min;
 unsigned int ram_brk;
 unsigned int ram_max;
@@ -47,7 +51,9 @@ char *malloc(int n)
       panic("corrupt cap");
     }
     ram_roots[i] = h->next;
+#ifdef ZERO_MALLOC
     bzero((char *) (h + 1), cap);
+#endif
     //puthex('y', (int)(h+1));
     return (char *) (h + 1);
   }
@@ -66,6 +72,7 @@ char *malloc(int n)
     panic(" *oom* ");
   }
   // If not zero, it isn't fresh.
+#ifdef ZERO_FRESH
   for (char *j = p; j < (char *) ram_brk; j++) {
     if (*j) {
       puthex('n', n);
@@ -75,12 +82,16 @@ char *malloc(int n)
       panic("malloc: unzero");
     }
   }
+#endif
   h = ((struct Head *) p) - 1;
   h->barrierA = 'A';
   h->barrierZ = 'Z';
   h->cap = cap;
   h->next = NULL;
   //puthex('z', (int)(h+1));
+#ifdef ZERO_MALLOC
+  bzero((char *) (h + 1), cap);
+#endif
   return (char *) (h + 1);
 }
 
@@ -108,8 +119,9 @@ void free(void *p)
     panic("corrupt free");
   }
 
+#ifdef ZERO_FREE
   bzero((char *) p, cap);
-
+#endif
   h->next = ram_roots[i];
   ram_roots[i] = h;
 }
