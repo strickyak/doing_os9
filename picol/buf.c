@@ -2,7 +2,7 @@
 //
 // Buffers for accumulating strings and list items.
 
-#define INITIAL_CAP 32
+#define INITIAL_CAP 16
 
 struct Buf {
   char *s;
@@ -148,7 +148,7 @@ int ElemLen(const char *s, const char **endP)
         break;
       }
       if (*s == '\\') {
-        ++s;
+        ++s;  // extra to jump over the backslash.
         ++n;
       }
       ++s;
@@ -181,7 +181,7 @@ const char *ElemDecode(const char *s)
         break;
       }
       if (*s == '\\') {
-        ++s;
+        ++s;  // extra to jump over the backslash.
       }
       BufAppC(&buf, *s);
       ++s;
