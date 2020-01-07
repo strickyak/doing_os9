@@ -54,11 +54,18 @@ name
     fcb edition
 
 start  pshs Y,U
-* Need to clear from U to SP.    
-* How many bytes?   SP - U.
-    tfr s,d    ; start with SP
-    subd 2,s    ; subtract pushed U
-    tfr d,x   ; counter in X
+
+* **** CASE: USE THIS TO CLEAR ALL MEM ****
+* * Need to clear from U to SP.    
+* * How many bytes?   SP - U.
+*     tfr s,d    ; start with SP
+*     subd 2,s    ; subtract pushed U
+*     tfr d,x   ; counter in X
+
+**** CASE: USE THIS TO CLEAR ONLY BSS ****
+**** ALSO don't #define ZERO_FRESH ****
+    ldx #bss_end
+
     ldb #0
 ClearLoop stb ,u+
     leax -1,x
