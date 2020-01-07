@@ -148,7 +148,7 @@ int ElemLen(const char *s, const char **endP)
         break;
       }
       if (*s == '\\') {
-        ++s;  // extra to jump over the backslash.
+        ++s;                    // extra to jump over the backslash.
         ++n;
       }
       ++s;
@@ -181,7 +181,7 @@ const char *ElemDecode(const char *s)
         break;
       }
       if (*s == '\\') {
-        ++s;  // extra to jump over the backslash.
+        ++s;                    // extra to jump over the backslash.
       }
       BufAppC(&buf, *s);
       ++s;

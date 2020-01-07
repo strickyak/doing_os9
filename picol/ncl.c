@@ -682,6 +682,64 @@ int picolCommandArray(struct picolInterp *i, int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
+int SplitList(const char *s, int *argcP, const char ***argvP)
+{
+  struct Buf dope;
+  BufInit(&dope);
+
+  while (*s) {
+    while (*s && *s <= 32) {    // skip white
+      s++;
+    }
+    if (!s)
+      break;
+
+    const char *end;
+    int len = ElemLen(s, &end);
+    const char *elem = ElemDecode(s);
+    s = end;
+
+    BufAppDope(&dope, elem);
+  }
+  *argvP = BufTakeDope(&dope, argcP);
+  return PICOL_OK;
+}
+
+int picolCommandJoin(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  int c = 0;
+  const char **v = NULL;
+  int err = SplitList(argv[1], &c, &v);
+
+  char delim;
+  switch (argc) {
+  default:
+    return picolArityErr(i, argv[0]);
+
+  case 2:
+    delim = 0;                  // Join with empty string.
+    break;
+
+  case 3:
+    delim = argv[2][0];         // Join with first char of 2nd arg.
+    break;
+  }
+
+  struct Buf result;
+  BufInit(&result);
+  for (int j = 0; j < c; j++) {
+    if (j && delim) {
+      BufAppC(&result, delim);
+    }
+    BufAppS(&result, v[j], -1);
+  }
+  BufFinish(&result);
+
+  FreeDope(c, v);
+  picolMoveToResult(i, BufTake(&result));
+  return PICOL_OK;
+}
+
 int picolCommandSplit(struct picolInterp *i, int argc, char **argv, void *pd)
 {
   char delim;
@@ -942,15 +1000,19 @@ int picolCommandReturn(struct picolInterp *i, int argc, char **argv, void *pd)
 
 int picolCommandInfo(struct picolInterp *i, int argc, char **argv, void *pd)
 {
-  puts(" procs: ");
+  puts(" procs:\r");
   struct picolCmd *c;
   for (c = i->commands; c; c = c->next) {
     if (c->func != picolCommandCallProc)
       continue;
+    puts("   proc ");
     puts(c->name);
-    puts(" ");
+    puts(" {");
+    puts(((const char **) c->privdata)[0]);
+    puts("} {");
+    puts(((const char **) c->privdata)[1]);
+    puts("}\r");
   }
-  puts("\r");
 
   puts(" commands: ");
   for (c = i->commands; c; c = c->next) {
@@ -985,29 +1047,6 @@ int picolCommandInfo(struct picolInterp *i, int argc, char **argv, void *pd)
   }
 
   picolSetResult(i, "");
-  return PICOL_OK;
-}
-
-int SplitList(const char *s, int *argcP, const char ***argvP)
-{
-  struct Buf dope;
-  BufInit(&dope);
-
-  while (*s) {
-    while (*s && *s <= 32) {    // skip white
-      s++;
-    }
-    if (!s)
-      break;
-
-    const char *end;
-    int len = ElemLen(s, &end);
-    const char *elem = ElemDecode(s);
-    s = end;
-
-    BufAppDope(&dope, elem);
-  }
-  *argvP = BufTakeDope(&dope, argcP);
   return PICOL_OK;
 }
 
@@ -1048,7 +1087,7 @@ int picolCommandExplode(struct picolInterp *i, int argc, char **argv, void *pd)
   struct Buf result;
   BufInit(&result);
 
-  for (char* s = argv[1]; *s; s++) {
+  for (char *s = argv[1]; *s; s++) {
     char tmp[8];
     snprintf_d(tmp, 10, "%d", *s);
     BufAppElemS(&result, tmp);
@@ -1064,15 +1103,39 @@ int picolCommandImplode(struct picolInterp *i, int argc, char **argv, void *pd)
   const char **v = NULL;
   int err = SplitList(argv[1], &c, &v);
 
-  char* z = malloc(c+1);
+  char *z = malloc(c + 1);
   int j;
   for (j = 0; j < c; j++) {
-	  z[j] = atoi(v[j]);
+    z[j] = (char) atoi(v[j]);
   }
   z[j] = '\0';
 
   FreeDope(c, v);
   picolMoveToResult(i, z);
+  return PICOL_OK;
+}
+
+int picolCommandListAppend(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc < 2)
+    return picolArityErr(i, argv[0]);
+
+  struct picolVar *var = picolGetVar(i, argv[1]);
+  if (!var) {
+    picolSetVar(i, argv[1], "");
+    var = picolGetVar(i, argv[1]);
+  }
+  struct Buf buf;
+  BufInit(&buf);
+  free(buf.s);
+  buf.s = var->val;
+  buf.n = strlen(buf.s);
+
+  for (int j = 2; j < argc; j++) {
+    BufAppElemS(&buf, argv[j]);
+  }
+  BufFinish(&buf);
+  var->val = buf.s;
   return PICOL_OK;
 }
 
@@ -1310,11 +1373,13 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "list", picolCommandList, NULL);
   picolRegisterCommand(i, "explode", picolCommandExplode, NULL);
   picolRegisterCommand(i, "implode", picolCommandImplode, NULL);
+  picolRegisterCommand(i, "lappend", picolCommandListAppend, NULL);
   picolRegisterCommand(i, "llength", picolCommandListLength, NULL);
   picolRegisterCommand(i, "lindex", picolCommandListIndex, NULL);
   picolRegisterCommand(i, "lrange", picolCommandListRange, NULL);
   picolRegisterCommand(i, "array", picolCommandArray, NULL);
   picolRegisterCommand(i, "split", picolCommandSplit, NULL);
+  picolRegisterCommand(i, "join", picolCommandJoin, NULL);
   picolRegisterCommand(i, "exit", picolCommand9Exit, NULL);
   // low-level os9 commands:
   picolRegisterCommand(i, "9exit", picolCommand9Exit, NULL);
