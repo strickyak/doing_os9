@@ -1475,6 +1475,7 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolEval(i, "proc tri x { if { < $x 2 } { return $x } ; + $x [tri [- $x 1]] }");
   picolEval(i,
             "proc iota x { set z {}; set i 0; while {< $i $x} { set z \"$z $i\" ; set i [+ $i 1] }; set z}");
+  picolEval(i, "proc run x { eval 9fork $x ; 9wait }");
 }
 
 void ReduceBigraphs(char *s)
