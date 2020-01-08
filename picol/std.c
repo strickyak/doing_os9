@@ -4,6 +4,11 @@ char Up(char c)
   return ('a' <= c && c <= 'z') ? c - 32 : c;
 }
 
+char Down(char c)
+{
+  return ('A' <= c && c <= 'Z') ? c + 32 : c;
+}
+
 int atoi(const char *s)
 {
   int z = 0;

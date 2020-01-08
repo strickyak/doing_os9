@@ -1167,30 +1167,14 @@ int picolCommandListLength(struct picolInterp *i, int argc, char **argv, void *p
   return ResultD(i, c);
 }
 
-int picolCommandListIndex(struct picolInterp *i, int argc, char **argv, void *pd)
-{
-  if (argc != 3)
-    return picolArityErr(i, argv[0]);
-  int j = atoi(argv[2]);
-
-  int c = 0;
-  const char **v = NULL;
-  int err = SplitList(argv[1], &c, &v);
-
-  if (0 <= j && j < c) {
-    picolSetResult(i, v[j]);
-  }
-  FreeDope(c, v);
-  return PICOL_OK;
-}
-
 int picolCommandListRange(struct picolInterp *i, int argc, char **argv, void *pd)
 {
-  if (argc != 4)
+  if (argc != 3 && argc != 4)
     return picolArityErr(i, argv[0]);
   char *list = argv[1];
   int a = atoi(argv[2]);
-  int b = atoi(argv[3]);
+  // lindex is like lrange with index twice.
+  int b = (argc == 3) ? a : atoi(argv[3]);
 
   int c = 0;
   const char **v = NULL;
@@ -1206,6 +1190,53 @@ int picolCommandListRange(struct picolInterp *i, int argc, char **argv, void *pd
 
   BufFinish(&result);
   picolMoveToResult(i, BufTake(&result));
+  return PICOL_OK;
+}
+
+int picolCommandStringLength(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 2)
+    return picolArityErr(i, argv[0]);
+  char *s = argv[1];
+  int n = strlen(s);
+  return ResultD(i, n);
+}
+
+int picolCommandStringRange(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 3 && argc != 4)
+    return picolArityErr(i, argv[0]);
+  char *s = argv[1];
+  int n = strlen(s);
+  int a = atoi(argv[2]);
+  // sindex is like srange with index twice.
+  int b = (argc == 3) ? a : atoi(argv[3]);
+  if (a < 0)
+    a = 0;
+  if (b >= n)
+    b = n - 1;
+  struct Buf result;
+  BufInit(&result);
+  for (int j = a; j <= b; j++) {
+    BufAppC(&result, s[j]);
+  }
+  BufFinish(&result);
+  picolMoveToResult(i, BufTake(&result));
+  return PICOL_OK;
+}
+
+int picolCommandStringUpperLower(struct picolInterp *i, int argc, char **argv, void *pd)
+{
+  if (argc != 2)
+    return picolArityErr(i, argv[0]);
+  byte up = (Up(argv[0][1]) == 'U');
+  char *s = argv[1];
+  int n = strlen(s);
+  char *z = malloc(n + 1);
+  for (int j = 0; j <= n; j++) {
+    z[j] = up ? Up(s[j]) : Down(s[j]);
+  }
+  picolMoveToResult(i, z);
   return PICOL_OK;
 }
 
@@ -1454,8 +1485,13 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "implode", picolCommandImplode, NULL);
   picolRegisterCommand(i, "lappend", picolCommandListAppend, NULL);
   picolRegisterCommand(i, "llength", picolCommandListLength, NULL);
-  picolRegisterCommand(i, "lindex", picolCommandListIndex, NULL);
+  picolRegisterCommand(i, "lindex", picolCommandListRange, NULL);
   picolRegisterCommand(i, "lrange", picolCommandListRange, NULL);
+  picolRegisterCommand(i, "slength", picolCommandStringLength, NULL);
+  picolRegisterCommand(i, "sindex", picolCommandStringRange, NULL);
+  picolRegisterCommand(i, "srange", picolCommandStringRange, NULL);
+  picolRegisterCommand(i, "supper", picolCommandStringUpperLower, NULL);
+  picolRegisterCommand(i, "srange", picolCommandStringUpperLower, NULL);
   picolRegisterCommand(i, "array", picolCommandArray, NULL);
   picolRegisterCommand(i, "split", picolCommandSplit, NULL);
   picolRegisterCommand(i, "join", picolCommandJoin, NULL);
@@ -1471,11 +1507,12 @@ void picolRegisterCoreCommands(struct picolInterp *i)
   picolRegisterCommand(i, "9chgdir", picolCommand9ChgDir, NULL);
   picolRegisterCommand(i, "9open", picolCommand9Open, NULL);
   picolRegisterCommand(i, "9create", picolCommand9Create, NULL);
-  picolEval(i, "proc fib x { if { < $x 2 } { return $x } ; + [fib [- $x 1] ] [fib [- $x 2]] }");
-  picolEval(i, "proc tri x { if { < $x 2 } { return $x } ; + $x [tri [- $x 1]] }");
+  // demo commands:
+  picolEval(i, "proc fib x {if {< $x 2} {return $x}; + [fib [- $x 1]] [fib [- $x 2]]}");
+  picolEval(i, "proc tri x {if {< $x 2} {return $x}; + $x [tri [- $x 1]]}");
   picolEval(i,
-            "proc iota x { set z {}; set i 0; while {< $i $x} { set z \"$z $i\" ; set i [+ $i 1] }; set z}");
-  picolEval(i, "proc run x { eval 9fork $x ; 9wait }");
+            "proc iota x {set z {}; set i 0; while {< $i $x} {set z \"$z $i\" ; set i [+ $i 1] }; set z}");
+  picolEval(i, "proc run x {eval 9fork $x; 9wait}");
 }
 
 void ReduceBigraphs(char *s)
