@@ -33,6 +33,8 @@ extern char *realloc(void *, int);
 
 #include "util.c"
 
+#include "re.c"
+
 //////////////////////////
 
 //////////////////////////
@@ -753,7 +755,7 @@ int picolCommandStringMatch(int argc, char **argv, void *pd)
   // Always do case-independant matching.
   char *pattern = strdup_upper(argv[1]);
   char *s = strdup_upper(argv[2]);
-  int z = Tcl_StringMatch(s, pattern);
+  int z = (Up(argv[0][0]) == 'R') ? re_match(pattern, s) : Tcl_StringMatch(s, pattern);
   free(pattern);
   free(s);
   return ResultD(z);
@@ -1453,6 +1455,7 @@ void picolRegisterCoreCommands()
   picolRegisterCommand("supper", picolCommandStringUpperLower, NULL);
   picolRegisterCommand("srange", picolCommandStringUpperLower, NULL);
   picolRegisterCommand("smatch", picolCommandStringMatch, NULL);
+  picolRegisterCommand("regexp", picolCommandStringMatch, NULL);
   picolRegisterCommand("array", picolCommandArray, NULL);
   picolRegisterCommand("split", picolCommandSplit, NULL);
   picolRegisterCommand("join", picolCommandJoin, NULL);
@@ -1482,17 +1485,34 @@ void ReduceBigraphs(char *s)
   for (char *p = s; *p; p++) {
     if (p[0] == '(') {
       if (p[1] == '(') {
-        *z++ = '{';
+        if (p[2] == '(') {
+          *z++ = '{';
+          p++;
+        } else {
+          *z++ = '[';
+        }
         p++;
       } else {
-        *z++ = '[';
+        *z++ = '(';
       }
     } else if (p[0] == ')') {
       if (p[1] == ')') {
-        *z++ = '}';
+        if (p[2] == ')') {
+          *z++ = '}';
+          p++;
+        } else {
+          *z++ = ']';
+        }
         p++;
       } else {
-        *z++ = ']';
+        *z++ = ')';
+      }
+    } else if (p[0] == '@') {
+      if (p[1] == '@') {
+        *z++ = '\\';
+        p++;
+      } else {
+        *z++ = '@';
       }
     } else {
       *z++ = *p;
