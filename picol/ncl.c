@@ -746,6 +746,19 @@ int picolCommandSplit(int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
+int picolCommandStringMatch(int argc, char **argv, void *pd)
+{
+  if (argc != 3)
+    return picolArityErr(argv[0]);
+  // Always do case-independant matching.
+  char *pattern = strdup_upper(argv[1]);
+  char *s = strdup_upper(argv[2]);
+  int z = Tcl_StringMatch(s, pattern);
+  free(pattern);
+  free(s);
+  return ResultD(z);
+}
+
 int picolCommandSet(int argc, char **argv, void *pd)
 {
   if (argc != 2 && argc != 3)
@@ -1439,6 +1452,7 @@ void picolRegisterCoreCommands()
   picolRegisterCommand("srange", picolCommandStringRange, NULL);
   picolRegisterCommand("supper", picolCommandStringUpperLower, NULL);
   picolRegisterCommand("srange", picolCommandStringUpperLower, NULL);
+  picolRegisterCommand("smatch", picolCommandStringMatch, NULL);
   picolRegisterCommand("array", picolCommandArray, NULL);
   picolRegisterCommand("split", picolCommandSplit, NULL);
   picolRegisterCommand("join", picolCommandJoin, NULL);

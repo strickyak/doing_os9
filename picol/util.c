@@ -115,7 +115,7 @@ int Tcl_StringMatch(char *string, char *pattern)
       return 0;
     }
 
-thisCharOK:
+  thisCharOK:
     pattern += 1;
     string += 1;
   }

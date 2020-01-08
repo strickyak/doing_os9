@@ -176,3 +176,14 @@ char *strdup(const char *s)
   strcpy(p, s);
   return p;
 }
+
+char *strdup_upper(const char *s)
+{
+  int n = strlen(s);
+  char *z = (char *) malloc(n + 1);
+  char *p = z;
+  while (*s) {
+    *p++ = Up(*s++);
+  }
+  return z;
+}
