@@ -1423,6 +1423,21 @@ int picolCommand9ChgDir(int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
+int picolCommand9Delete(int argc, char **argv, void *pd)
+{
+  if (argc != 2)
+    return picolArityErr(argv[0]);
+  char *path = argv[1];
+  char final = SetHiBitOfLastChar(path);
+
+  int e = Os9Delete(path);
+  RestoreLastChar(path, final);
+  if (e)
+    return Error(argv[0], e);
+  picolSetResult("");
+  return PICOL_OK;
+}
+
 void picolRegisterCoreCommands()
 {
   const char *mathOps[] = { "+", "-", "*", "/", ">", ">=", "<", "<=", "==", "!=", NULL };
@@ -1471,6 +1486,7 @@ void picolRegisterCoreCommands()
   picolRegisterCommand("9chgdir", picolCommand9ChgDir, NULL);
   picolRegisterCommand("9open", picolCommand9Open, NULL);
   picolRegisterCommand("9create", picolCommand9Create, NULL);
+  picolRegisterCommand("9delete", picolCommand9Delete, NULL);
   // demo commands:
   picolEval("proc fib x {if {< $x 2} {return $x}; + [fib [- $x 1]] [fib [- $x 2]]}");
   picolEval("proc tri x {if {< $x 2} {return $x}; + $x [tri [- $x 1]]}");

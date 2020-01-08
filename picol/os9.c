@@ -67,6 +67,17 @@ asm int Os9Open(char* path, int mode, int* fd) {
 	}
 }
 
+asm int Os9Delete(char* path) {
+	asm {
+		pshs y,u
+		ldx 6,s      ; buf
+		os9 0x87
+		lbcs Os9Err
+		ldd #0
+		puls y,u,pc
+	}
+}
+
 asm int Os9ChgDir(char* path, int mode) {
 	asm {
 		pshs y,u

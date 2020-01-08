@@ -70,7 +70,7 @@ For more information, please refer to <http://unlicense.org>
 
 
 enum { UNUSED, DOT, BEGIN, END, QUESTIONMARK, STAR, PLUS, CHAR, CHAR_CLASS, INV_CHAR_CLASS, DIGIT,
-  NOT_DIGIT, ALPHA, NOT_ALPHA, WHITESPACE, NOT_WHITESPACE, /* BRANCH */
+  NOT_DIGIT, ALPHA, NOT_ALPHA, WHITESPACE, NOT_WHITESPACE,      /* BRANCH */
 };
 
 typedef struct regex_t {
@@ -296,7 +296,7 @@ void re_print(regex_t * pattern)
   const char *types[] =
       { "UNUSED", "DOT", "BEGIN", "END", "QUESTIONMARK", "STAR", "PLUS", "CHAR", "CHAR_CLASS",
     "INV_CHAR_CLASS", "DIGIT", "NOT_DIGIT", "ALPHA", "NOT_ALPHA", "WHITESPACE", "NOT_WHITESPACE",
-        "BRANCH"
+    "BRANCH"
   };
 
   int i;
