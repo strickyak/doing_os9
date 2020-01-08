@@ -31,6 +31,8 @@ extern char *realloc(void *, int);
 
 #include "buf.c"
 
+#include "util.c"
+
 //////////////////////////
 
 //////////////////////////
