@@ -89,6 +89,12 @@ int strlen(const char *p)
   return q - p;
 }
 
+void strcat(char *d, const char *s)
+{
+  d += strlen(d);
+  strcpy(d, s);
+}
+
 void bzero(char *p, int n)
 {
   for (int i = 0; i < n; i++)
