@@ -90,6 +90,20 @@ asm int Os9ChgDir(char* path, int mode) {
 	}
 }
 
+asm int Os9Read(int path, char* buf, int buflen, int* bytes_read) {
+	asm {
+		pshs y,u
+		lda 7,s      ; path
+		ldx 8,s      ; buf
+		ldy 10,s      ; buflen
+		os9 0x89
+		lbcs Os9Err
+		sty [12,s]   ; bytes_read
+		ldd #0
+		puls y,u,pc
+	}
+}
+
 asm int Os9ReadLn(int path, char* buf, int buflen, int* bytes_read) {
 	asm {
 		pshs y,u
@@ -99,6 +113,20 @@ asm int Os9ReadLn(int path, char* buf, int buflen, int* bytes_read) {
 		os9 I_ReadLn
 		lbcs Os9Err
 		sty [12,s]   ; bytes_read
+		ldd #0
+		puls y,u,pc
+	}
+}
+
+asm int Os9Write(int path, const char* buf, int max, int* bytes_written) {
+	asm {
+		pshs y,u
+		lda 7,s      ; path
+		ldx 8,s      ; buf
+		ldy 10,s      ; max
+		os9 0x8A
+		lbcs Os9Err
+		sty [12,s]   ; bytes_written
 		ldd #0
 		puls y,u,pc
 	}

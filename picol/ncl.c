@@ -13,6 +13,7 @@ typedef unsigned int uint;
 
 extern int Error(char *argv0, int err);
 extern int ResultD(int x);
+extern int ResultS(const char *msg, const char *x);
 
 extern char *malloc(int);
 extern void free(void *);
@@ -319,6 +320,23 @@ TOP:
   return PICOL_OK;              /* unreached */
 }
 
+const char *Explode(char *s, int n)
+{
+  if (n < 0)
+    n = strlen(s);
+
+  struct Buf result;
+  BufInit(&result);
+  for (int i = 0; i < n; i++) {
+    char tmp[8];
+    snprintf_d(tmp, 10, "%d", s[i]);
+    BufAppElemS(&result, tmp);
+  }
+  BufFinish(&result);
+
+  return BufTake(&result);
+}
+
 void picolInitInterp()
 {
   Callframe = (struct picolCallFrame *) malloc(sizeof(struct picolCallFrame));
@@ -515,6 +533,36 @@ int picolArityErr(char *name)
   return PICOL_ERR;
 }
 
+int picolCommandString(int argc, char **argv, void *pd)
+{
+  if (argc != 3)
+    return picolArityErr(argv[0]);
+  char m1 = Up(argv[0][0]);
+  char m2 = Up(argv[0][1]);
+  int cmp = strcasecmp(argv[1], argv[2]);
+  int b;
+
+  if (m1 == 'E' && m2 == 'Q')
+    b = (cmp == 0);
+  else if (m1 == 'N' && m2 == 'E')
+    b = (cmp != 0);
+  else if (m1 == 'L' && m2 == 'T')
+    b = (cmp < 0);
+  else if (m1 == 'L' && m2 == 'E')
+    b = (cmp <= 0);
+  else if (m1 == 'G' && m2 == 'T')
+    b = (cmp > 0);
+  else if (m1 == 'G' && m2 == 'E')
+    b = (cmp >= 0);
+  else {
+    puthex('1', m1);
+    puthex('2', m2);
+    panic(666);
+  }
+  picolSetResult(b ? "1" : "0");
+  return PICOL_OK;
+}
+
 int picolCommandMath(int argc, char **argv, void *pd)
 {
   char m1 = argv[0][0];
@@ -534,14 +582,12 @@ int picolCommandMath(int argc, char **argv, void *pd)
       return picolArityErr(argv[0]);
     a = atoi(argv[1]);
     b = atoi(argv[2]);
-    if (m1 == '+')
-      c = a + b;
-    else if (m1 == '-')
+    if (m1 == '-')
       c = a - b;
-    else if (m1 == '*')
-      c = a * b;
     else if (m1 == '/')
       c = a / b;
+    else if (m1 == '%')
+      c = a % b;
     else if (m1 == '>' && m2 == '\0')
       c = a > b;
     else if (m1 == '>' && m2 == '=')
@@ -554,6 +600,12 @@ int picolCommandMath(int argc, char **argv, void *pd)
       c = a == b;
     else if (m1 == '!' && m2 == '=')
       c = a != b;
+    else if (strcasecmp(argv[0], "bitand") == 0)
+      c = a & b;
+    else if (strcasecmp(argv[0], "bitor") == 0)
+      c = a | b;
+    else if (strcasecmp(argv[0], "bitxor") == 0)
+      c = a ^ b;
     else
       c = 0;                    /* I hate warnings */
   }
@@ -770,6 +822,7 @@ int picolCommandSet(int argc, char **argv, void *pd)
     struct picolVar *s = picolGetVar(argv[1]);
     if (!s) {
       picolSetResult("no such var");
+      ResultS("no such var: %s", argv[1]);
       return PICOL_ERR;
     }
     picolSetResult(s->val);
@@ -778,6 +831,22 @@ int picolCommandSet(int argc, char **argv, void *pd)
   // with two arguments, set var.
   picolSetVar(argv[1], argv[2]);
   picolSetResult(argv[2]);
+  return PICOL_OK;
+}
+
+int picolCommand9Read(int argc, char **argv, void *pd)
+{
+  if (argc != 3)
+    return picolArityErr(argv[0]);
+  int fd = atoi(argv[1]);
+  int n = atoi(argv[2]);
+  char *buf = malloc(n + 1);
+  int bytes_read = 0;
+  int e = Os9Read(fd, buf, n, &bytes_read);
+  if (e)
+    return Error(argv[0], e);
+  picolMoveToResult(Explode(buf, bytes_read));
+  free(buf);
   return PICOL_OK;
 }
 
@@ -952,7 +1021,7 @@ int picolCommandCallProc(int argc, char **argv, void *pd)
   picolDropCallFrame();         /* remove the called proc callframe */
   return errcode;
 arityerr:
-  snprintf_s(errbuf, BUF_SIZE, "Proc '%s' called with wrong arg num", argv[0]);
+  snprintf_s(errbuf, BUF_SIZE, "Proc '%s' called with wrong num args", argv[0]);
   picolSetResult(errbuf);
   picolDropCallFrame();         /* remove the called proc callframe */
   return PICOL_ERR;
@@ -1062,16 +1131,7 @@ int picolCommandExplode(int argc, char **argv, void *pd)
   if (argc != 2)
     return picolArityErr(argv[0]);
 
-  struct Buf result;
-  BufInit(&result);
-
-  for (char *s = argv[1]; *s; s++) {
-    char tmp[8];
-    snprintf_d(tmp, 10, "%d", *s);
-    BufAppElemS(&result, tmp);
-  }
-  BufFinish(&result);
-  picolMoveToResult(BufTake(&result));
+  picolMoveToResult(Explode(argv[1], -1));
   return PICOL_OK;
 }
 
@@ -1265,6 +1325,14 @@ int ResultD(int x)
   return PICOL_OK;
 }
 
+int ResultS(const char *msg, const char *x)
+{
+  char buf[BUF_SIZE];
+  snprintf_s(buf, 32, msg, x);
+  picolSetResult(buf);
+  return PICOL_OK;
+}
+
 // This currently serves as high-level "exit" and low-level "9exit".
 // In the future, if there is cleanup (like flushing IO), a new "exit" will be needed.
 int picolCommand9Exit(int argc, char **argv, void *pd)
@@ -1440,9 +1508,14 @@ int picolCommand9Delete(int argc, char **argv, void *pd)
 
 void picolRegisterCoreCommands()
 {
-  const char *mathOps[] = { "+", "-", "*", "/", ">", ">=", "<", "<=", "==", "!=", NULL };
+  const char *mathOps[] =
+      { "+", "-", "*", "/", "%", ">", ">=", "<", "<=", "==", "!=", "bitand", "bitor", "bitxor",
+NULL };
   for (const char **p = mathOps; *p; p++)
     picolRegisterCommand(*p, picolCommandMath, NULL);
+  const char *strOps[] = { "eq", "ne", "lt", "le", "gt", "ge", NULL };
+  for (const char **p = strOps; *p; p++)
+    picolRegisterCommand(*p, picolCommandString, NULL);
   picolRegisterCommand("set", picolCommandSet, NULL);
   picolRegisterCommand("puts", picolCommandPuts, NULL);
   picolRegisterCommand("if", picolCommandIf, NULL);
@@ -1487,12 +1560,21 @@ void picolRegisterCoreCommands()
   picolRegisterCommand("9open", picolCommand9Open, NULL);
   picolRegisterCommand("9create", picolCommand9Create, NULL);
   picolRegisterCommand("9delete", picolCommand9Delete, NULL);
+  picolRegisterCommand("9read", picolCommand9Read, NULL);
+  //picolRegisterCommand("9write", picolCommand9Write, NULL);
+  //picolRegisterCommand("9readln", picolCommand9ReadLn, NULL);
+  //picolRegisterCommand("9writln", picolCommand9WritLn, NULL);
   // demo commands:
   picolEval("proc fib x {if {< $x 2} {return $x}; + [fib [- $x 1]] [fib [- $x 2]]}");
   picolEval("proc tri x {if {< $x 2} {return $x}; + $x [tri [- $x 1]]}");
   picolEval
       ("proc iota x {set z {}; set i 0; while {< $i $x} {set z \"$z $i\" ; set i [+ $i 1] }; set z}");
   picolEval("proc run x {eval 9fork $x; 9wait}");
+
+  picolEval
+      ("proc implode_filename x {set z {}; foreach i $x {if {< $i 0} {lappend z [+ 128 $i]; break} else {lappend z $i}}; implode $z");
+  picolEval
+      ("proc 9dir x {set z {}; set fd [9open $x 129]; while * {if {catch {set v [9read $fd 32]}} break; if {lindex $v 0} {lappend z [implode_filename $v]}}; return $z}");
 }
 
 void ReduceBigraphs(char *s)
