@@ -569,7 +569,7 @@ int picolCommandString(int argc, char **argv, void *pd)
   else {
     puthex('1', m1);
     puthex('2', m2);
-    panic(666);
+    panic("WUT");
   }
   picolSetResult(b ? "1" : "0");
   return PICOL_OK;
@@ -995,48 +995,50 @@ void picolDropCallFrame()
 
 int picolCommandCallProc(int argc, char **argv, void *pd)
 {
-  char **x = (char **) pd, *alist = x[0], *body = x[1], *p = strdup(alist), *tofree;
+  char **pair = (char **) pd, *alist = pair[0], *body = pair[1];
+
   struct picolCallFrame *cf = (struct picolCallFrame *) malloc(sizeof(*cf));
-  int arity = 0, done = 0, errcode = PICOL_OK;
-  char errbuf[BUF_SIZE];
   cf->vars = NULL;
   cf->parent = Callframe;
   Callframe = cf;
-  tofree = p;
-  while (1) {
-    char *start = p;
-    while (*p != ' ' && *p != '\0')
-      p++;
-    if (*p != '\0' && p == start) {
-      p++;
-      continue;
-    }
-    if (p == start)
-      break;
-    if (*p == '\0')
-      done = 1;
-    else
-      *p = '\0';
-    if (++arity > argc - 1)
-      goto arityerr;
-    picolSetVar(start, argv[arity]);
-    p++;
-    if (done)
-      break;
+
+  // TODO: preprocess the alist.
+  int c = 0;
+  const char **v = NULL;
+  int err = SplitList(alist, &c, &v);
+
+  byte varargs = false;
+  if (c && strcasecmp(v[c - 1], "args") == 0) {
+    varargs = true;
   }
-  free(tofree);
-  if (arity != argc - 1)
-    goto arityerr;
-  errcode = picolEval(body, argv[0]);
+  if ((!varargs && c != argc - 1) || (varargs && argc - 1 < c - 1)) {
+    char errbuf[BUF_SIZE];
+    snprintf_s(errbuf, BUF_SIZE, "Proc '%s' called with wrong num args", argv[0]);
+    picolSetResult(errbuf);
+    picolDropCallFrame();       /* remove the called proc callframe */
+    return PICOL_ERR;
+  }
+
+  for (int i = 0; i < c - varargs; i++) {
+    picolSetVar(v[i], argv[i + 1]);
+  }
+
+  if (varargs) {
+    struct Buf rest;
+    BufInit(&rest);
+    for (int j = c; j < argc; j++) {
+      BufAppElemS(&rest, argv[j]);
+    }
+    BufFinish(&rest);
+    picolSetVar("args", rest.s);
+    BufDel(&rest);
+  }
+
+  int errcode = picolEval(body, argv[0]);
   if (errcode == PICOL_RETURN)
     errcode = PICOL_OK;
   picolDropCallFrame();         /* remove the called proc callframe */
   return errcode;
-arityerr:
-  snprintf_s(errbuf, BUF_SIZE, "Proc '%s' called with wrong num args", argv[0]);
-  picolSetResult(errbuf);
-  picolDropCallFrame();         /* remove the called proc callframe */
-  return PICOL_ERR;
 }
 
 int picolCommandProc(int argc, char **argv, void *pd)
@@ -1520,14 +1522,16 @@ int picolCommand9Delete(int argc, char **argv, void *pd)
 
 void picolRegisterCoreCommands()
 {
-  const char *mathOps[] =
-      { "+", "-", "*", "/", "%", ">", ">=", "<", "<=", "==", "!=", "bitand", "bitor", "bitxor",
-NULL };
+  const char *mathOps[] = { "+", "-", "*", "/", "%", ">", ">=", "<", "<=", "==", "!=",
+    "bitand", "bitor", "bitxor", NULL
+  };
   for (const char **p = mathOps; *p; p++)
     picolRegisterCommand(*p, picolCommandMath, NULL);
+
   const char *strOps[] = { "eq", "ne", "lt", "le", "gt", "ge", NULL };
   for (const char **p = strOps; *p; p++)
     picolRegisterCommand(*p, picolCommandString, NULL);
+
   picolRegisterCommand("set", picolCommandSet, NULL);
   picolRegisterCommand("puts", picolCommandPuts, NULL);
   picolRegisterCommand("if", picolCommandIf, NULL);
@@ -1560,6 +1564,7 @@ NULL };
   picolRegisterCommand("split", picolCommandSplit, NULL);
   picolRegisterCommand("join", picolCommandJoin, NULL);
   picolRegisterCommand("exit", picolCommand9Exit, NULL);
+
   // low-level os9 commands:
   picolRegisterCommand("9exit", picolCommand9Exit, NULL);
   picolRegisterCommand("9chain", picolCommand9Chain, NULL);
@@ -1576,9 +1581,10 @@ NULL };
   //picolRegisterCommand("9write", picolCommand9Write, NULL);
   //picolRegisterCommand("9readln", picolCommand9ReadLn, NULL);
   //picolRegisterCommand("9writln", picolCommand9WritLn, NULL);
+
   // demo commands:
   picolEval("proc fib x {if {< $x 2} {return $x}; + [fib [- $x 1]] [fib [- $x 2]]}", "__init__");
-  picolEval("proc tri x {if {< $x 2} {foo return $x}; + $x [tri [- $x 1]]}", "__init__");
+  picolEval("proc tri x {if {< $x 2} {return $x}; + $x [tri [- $x 1]]}", "__init__");
   picolEval
       ("proc iota x {set z {}; set i 0; while {< $i $x} {set z \"$z $i\" ; set i [+ $i 1] }; set z}",
        "__init__");
