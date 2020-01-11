@@ -499,18 +499,19 @@ int picolEval(const char *t, const char *where)
       free(t);
       prevtype = p.type;
       if (argc) {
+        char **new_argv = NULL;
         if ((c = picolGetCommand(argv[0])) == NULL) {
           if (strcasecmp(argv[0], "unknown")) {
             c = picolGetCommand("unknown");
             if (c) {
-              argv = (char **) realloc((char *) argv, (argc + 1) * sizeof(char *));
+              new_argv = (char **) malloc((argc + 1) * sizeof(char *));
               argc++;
               // shift everything down one slot.
               for (int k = argc - 2; k >= 0; k--) {
-                argv[k + 1] = argv[k];
+                new_argv[k + 1] = argv[k];
               }
               // and shove "unknown" in front of them.
-              argv[0] = strdup("unknown");
+              new_argv[0] = (char *) "unknown";
               goto call;
             }
           }
@@ -520,7 +521,8 @@ int picolEval(const char *t, const char *where)
           goto err;
         }
       call:
-        retcode = c->func(argc, argv, c->privdata);
+        retcode = c->func(argc, new_argv ? new_argv : argv, c->privdata);
+        free(new_argv);
         if (retcode != PICOL_OK)
           goto err;
       }
@@ -600,6 +602,7 @@ int picolCommandMath(int argc, char **argv, void *pd)
 {
   char m1 = argv[0][0];
   char m2 = argv[0][1];
+  char m3 = argv[0][2];
   char buf[8];
   int a, b, c;
   if (m1 == '+' || m1 == '*') {
@@ -625,10 +628,16 @@ int picolCommandMath(int argc, char **argv, void *pd)
       c = a > b;
     else if (m1 == '>' && m2 == '=')
       c = a >= b;
+    else if (m1 == '>' && m2 == '>' & m3 == '\0')
+      c = a >> b;
+    else if (m1 == '>' && m2 == '>' & m3 == '>')
+      c = (int) ((uint) a >> b);
     else if (m1 == '<' && m2 == '\0')
       c = a < b;
     else if (m1 == '<' && m2 == '=')
       c = a <= b;
+    else if (m1 == '<' && m2 == '<')
+      c = a << b;
     else if (m1 == '=' && m2 == '=')
       c = a == b;
     else if (m1 == '!' && m2 == '=')
@@ -737,6 +746,15 @@ int SplitList(const char *s, int *argcP, const char ***argvP)
   }
   *argvP = BufTakeDope(&dope, argcP);
   return PICOL_OK;
+}
+
+int picolCommandError(int argc, char **argv, void *pd)
+{
+  if (argc != 2)
+    return picolArityErr(argv[0]);
+
+  picolSetResult(argv[1]);
+  return PICOL_ERR;
 }
 
 int picolCommandJoin(int argc, char **argv, void *pd)
@@ -1344,8 +1362,8 @@ int picolCommandList(int argc, char **argv, void *pd)
 
 int Error(char *argv0, int err)
 {
-  char buf[32];
-  snprintf_s(buf, 32, "%s: ERROR %d", argv0);
+  char buf[BUF_SIZE];
+  snprintf_s(buf, BUF_SIZE, "%s: ERROR %d", argv0);
   char buf2[32];
   snprintf_d(buf2, 32, buf, err);
   picolSetResult(buf2);
@@ -1424,21 +1442,32 @@ int picolCommand9Fork(int argc, char **argv, void *pd)
   int child_id = 0;
   int e = Os9Fork(program, params, strlen(params), 0 /*lang_type */ ,
                   0 /*mem_size */ , &child_id);
+  free((char *) params);
   if (e)
     return Error(argv[0], e);
-  free((char *) params);
   return ResultD(child_id);
+}
+
+char static_buf_d[8];
+char *staticD(int x)
+{
+  snprintf_d(static_buf_d, sizeof static_buf_d, "%d", x);
+  return static_buf_d;
 }
 
 int picolCommand9Wait(int argc, char **argv, void *pd)
 {
-  if (argc != 1)
+  if (argc < 1 || argc > 3)
     return picolArityErr(argv[0]);
-  int child_id = 0;
-  int e = Os9Wait(&child_id);
+  int child_id_and_exit_status = 0;
+  int e = Os9Wait(&child_id_and_exit_status);
   if (e)
     return Error(argv[0], e);
-  return ResultD(child_id);
+  if (argc >= 2)
+    picolSetVar(argv[1], staticD(255 & (child_id_and_exit_status >> 8)));
+  if (argc >= 3)
+    picolSetVar(argv[2], staticD(255 & (child_id_and_exit_status)));
+  return PICOL_OK;
 }
 
 int picolCommand9Dup(int argc, char **argv, void *pd)
@@ -1555,86 +1584,6 @@ int picolCommand9Delete(int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
-void picolRegisterCoreCommands()
-{
-  const char *mathOps[] = { "+", "-", "*", "/", "%", ">", ">=", "<", "<=", "==", "!=",
-    "bitand", "bitor", "bitxor", NULL
-  };
-  for (const char **p = mathOps; *p; p++)
-    picolRegisterCommand(*p, picolCommandMath, NULL);
-
-  const char *strOps[] = { "eq", "ne", "lt", "le", "gt", "ge", NULL };
-  for (const char **p = strOps; *p; p++)
-    picolRegisterCommand(*p, picolCommandString, NULL);
-
-  picolRegisterCommand("set", picolCommandSet, NULL);
-  picolRegisterCommand("puts", picolCommandPuts, NULL);
-  picolRegisterCommand("if", picolCommandIf, NULL);
-  picolRegisterCommand("and", picolCommandAnd, NULL);
-  picolRegisterCommand("or", picolCommandOr, NULL);
-  picolRegisterCommand("while", picolCommandWhile, NULL);
-  picolRegisterCommand("break", picolCommandRetCodes, NULL);
-  picolRegisterCommand("continue", picolCommandRetCodes, NULL);
-  picolRegisterCommand("proc", picolCommandProc, NULL);
-  picolRegisterCommand("return", picolCommandReturn, NULL);
-  picolRegisterCommand("info", picolCommandInfo, NULL);
-  picolRegisterCommand("foreach", picolCommandForEach, NULL);
-  picolRegisterCommand("eval", picolCommandEval, NULL);
-  picolRegisterCommand("catch", picolCommandCatch, NULL);
-  picolRegisterCommand("list", picolCommandList, NULL);
-  picolRegisterCommand("explode", picolCommandExplode, NULL);
-  picolRegisterCommand("implode", picolCommandImplode, NULL);
-  picolRegisterCommand("lappend", picolCommandListAppend, NULL);
-  picolRegisterCommand("llength", picolCommandListLength, NULL);
-  picolRegisterCommand("lindex", picolCommandListRange, NULL);
-  picolRegisterCommand("lrange", picolCommandListRange, NULL);
-  picolRegisterCommand("slength", picolCommandStringLength, NULL);
-  picolRegisterCommand("sindex", picolCommandStringRange, NULL);
-  picolRegisterCommand("srange", picolCommandStringRange, NULL);
-  picolRegisterCommand("supper", picolCommandStringUpperLower, NULL);
-  picolRegisterCommand("srange", picolCommandStringUpperLower, NULL);
-  picolRegisterCommand("smatch", picolCommandStringMatch, NULL);
-  picolRegisterCommand("regexp", picolCommandStringMatch, NULL);
-  picolRegisterCommand("array", picolCommandArray, NULL);
-  picolRegisterCommand("split", picolCommandSplit, NULL);
-  picolRegisterCommand("join", picolCommandJoin, NULL);
-  picolRegisterCommand("exit", picolCommand9Exit, NULL);
-
-  // low-level os9 commands:
-  picolRegisterCommand("9exit", picolCommand9Exit, NULL);
-  picolRegisterCommand("9chain", picolCommand9Chain, NULL);
-  picolRegisterCommand("9fork", picolCommand9Fork, NULL);
-  picolRegisterCommand("9wait", picolCommand9Wait, NULL);
-  picolRegisterCommand("9dup", picolCommand9Dup, NULL);
-  picolRegisterCommand("9close", picolCommand9Close, NULL);
-  picolRegisterCommand("9sleep", picolCommand9Sleep, NULL);
-  picolRegisterCommand("9chgdir", picolCommand9ChgDir, NULL);
-  picolRegisterCommand("9open", picolCommand9Open, NULL);
-  picolRegisterCommand("9create", picolCommand9Create, NULL);
-  picolRegisterCommand("9delete", picolCommand9Delete, NULL);
-  picolRegisterCommand("9read", picolCommand9Read, NULL);
-  //picolRegisterCommand("9write", picolCommand9Write, NULL);
-  //picolRegisterCommand("9readln", picolCommand9ReadLn, NULL);
-  //picolRegisterCommand("9writln", picolCommand9WritLn, NULL);
-
-  // demo commands:
-  picolEval("proc fib x {if {< $x 2} {return $x}; + [fib [- $x 1]] [fib [- $x 2]]}", "__init__");
-  picolEval("proc tri x {if {< $x 2} {return $x}; + $x [tri [- $x 1]]}", "__init__");
-  picolEval
-      ("proc iota x {set z {}; set i 0; while {< $i $x} {set z \"$z $i\" ; set i [+ $i 1] }; set z}",
-       "__init__");
-  picolEval("proc run args {eval 9fork $args; 9wait}", "__init__");
-  picolEval("proc unknown args {eval 9fork $args; 9wait}", "__init__");
-
-  picolEval
-      ("proc implode_filename x {set z {}; foreach i $x {if {< $i 0} {lappend z [+ 128 $i]; break} else {lappend z $i}}; implode $z",
-       "__init__");
-  picolEval
-      ("proc readdir x {set z {}; set fd [9open $x 129]; while * {if {catch {set v [9read $fd 32]}} break; if {lindex $v 0} {lappend z [implode_filename $v]}}; return $z}",
-       "__init__");
-
-}
-
 // For lame coco keyboards:  `((` -> `[`, `(((` -> `{`, `))` -> `]`, `)))` -> `}`, `@@` -> `\`.
 void ReduceBigraphs(char *s)
 {
@@ -1676,6 +1625,104 @@ void ReduceBigraphs(char *s)
     }
   }
   *z = '\0';
+}
+
+void picolRegisterCoreCommands()
+{
+  const char *mathOps[] = {
+    "+", "-", "*", "/", "%", ">", ">=", "<", "<=", "==", "!=",
+    "bitand", "bitor", "bitxor", "<<", ">>", ">>>", NULL
+  };
+  for (const char **p = mathOps; *p; p++)
+    picolRegisterCommand(*p, picolCommandMath, NULL);
+
+  const char *strOps[] = { "eq", "ne", "lt", "le", "gt", "ge", NULL };
+  for (const char **p = strOps; *p; p++)
+    picolRegisterCommand(*p, picolCommandString, NULL);
+
+  picolRegisterCommand("set", picolCommandSet, NULL);
+  picolRegisterCommand("puts", picolCommandPuts, NULL);
+  picolRegisterCommand("if", picolCommandIf, NULL);
+  picolRegisterCommand("and", picolCommandAnd, NULL);
+  picolRegisterCommand("or", picolCommandOr, NULL);
+  picolRegisterCommand("while", picolCommandWhile, NULL);
+  picolRegisterCommand("break", picolCommandRetCodes, NULL);
+  picolRegisterCommand("continue", picolCommandRetCodes, NULL);
+  picolRegisterCommand("proc", picolCommandProc, NULL);
+  picolRegisterCommand("return", picolCommandReturn, NULL);
+  picolRegisterCommand("info", picolCommandInfo, NULL);
+  picolRegisterCommand("foreach", picolCommandForEach, NULL);
+  picolRegisterCommand("eval", picolCommandEval, NULL);
+  picolRegisterCommand("catch", picolCommandCatch, NULL);
+  picolRegisterCommand("list", picolCommandList, NULL);
+  picolRegisterCommand("explode", picolCommandExplode, NULL);
+  picolRegisterCommand("implode", picolCommandImplode, NULL);
+  picolRegisterCommand("lappend", picolCommandListAppend, NULL);
+  picolRegisterCommand("llength", picolCommandListLength, NULL);
+  picolRegisterCommand("lindex", picolCommandListRange, NULL);
+  picolRegisterCommand("lrange", picolCommandListRange, NULL);
+  picolRegisterCommand("slength", picolCommandStringLength, NULL);
+  picolRegisterCommand("sindex", picolCommandStringRange, NULL);
+  picolRegisterCommand("srange", picolCommandStringRange, NULL);
+  picolRegisterCommand("supper", picolCommandStringUpperLower, NULL);
+  picolRegisterCommand("srange", picolCommandStringUpperLower, NULL);
+  picolRegisterCommand("smatch", picolCommandStringMatch, NULL);
+  picolRegisterCommand("regexp", picolCommandStringMatch, NULL);
+  picolRegisterCommand("array", picolCommandArray, NULL);
+  picolRegisterCommand("split", picolCommandSplit, NULL);
+  picolRegisterCommand("join", picolCommandJoin, NULL);
+  picolRegisterCommand("exit", picolCommand9Exit, NULL);
+  picolRegisterCommand("error", picolCommandError, NULL);
+
+  // kernel-level os9 commands:
+  picolRegisterCommand("9exit", picolCommand9Exit, NULL);
+  picolRegisterCommand("9chain", picolCommand9Chain, NULL);
+  picolRegisterCommand("9fork", picolCommand9Fork, NULL);
+  picolRegisterCommand("9wait", picolCommand9Wait, NULL);
+  picolRegisterCommand("9dup", picolCommand9Dup, NULL);
+  picolRegisterCommand("9close", picolCommand9Close, NULL);
+  picolRegisterCommand("9sleep", picolCommand9Sleep, NULL);
+  picolRegisterCommand("9chgdir", picolCommand9ChgDir, NULL);
+  picolRegisterCommand("9open", picolCommand9Open, NULL);
+  picolRegisterCommand("9create", picolCommand9Create, NULL);
+  picolRegisterCommand("9delete", picolCommand9Delete, NULL);
+  picolRegisterCommand("9read", picolCommand9Read, NULL);
+  //picolRegisterCommand("9write", picolCommand9Write, NULL);
+  //picolRegisterCommand("9readln", picolCommand9ReadLn, NULL);
+  //picolRegisterCommand("9writln", picolCommand9WritLn, NULL);
+
+  // Attribute failures here to `__init__`.
+  const char kInit[] = "__init__";
+
+  // "unknown" calls "run", so you can call most OS9 CMDS directly.
+  picolEval
+      ("proc run args {set cid [eval 9fork $args]; puts CID:$cid;  while * {9wait c e; puts C:$c,E:$e; if {== $c $cid} {puts X; break}}; puts Y; if {+ $e} {error \"Exit status $e\"}; puts Z; list}",
+       kInit);
+
+  picolEval("proc unknown args {eval run $args}", kInit);
+
+  // Emulate builtin commands from SHELL.
+  picolEval("proc cd d {9chgdir $d 1}", kInit);
+  picolEval("proc chd d {9chgdir $d 1}", kInit);
+  picolEval("proc chx d {9chgdir $d 4}", kInit);
+  picolEval("proc w {} {9wait}", kInit);
+
+  // demo commands:
+  picolEval("proc fib x {if {< $x 2} {return $x}; + [fib [- $x 1]] [fib [- $x 2]]}", kInit);
+  picolEval("proc tri x {if {< $x 2} {return $x}; + $x [tri [- $x 1]]}", kInit);
+  picolEval
+      ("proc iota x {set z {}; set i 0; while {< $i $x} {set z \"$z $i\" ; set i [+ $i 1] }; set z}",
+       kInit);
+  picolEval
+      ("proc implode_thru_hibit x {set z {}; foreach i $x {if {< $i 0} {lappend z [+ 128 $i]; break} else {lappend z $i}}; implode $z",
+       kInit);
+  picolEval
+      ("proc readdir d {set z {}; set fd [9open $d 129]; while * {if {catch {set v [9read $fd 32]}} break; if {lindex $v 0} {lappend z [implode_thru_hibit $v]}}; return $z}",
+       kInit);
+  picolEval
+      ("proc glob pat {set z {}; foreach f [readdir .] {if {smatch $pat $f} {lappend z $f}}; set z}",
+       kInit);
+
 }
 
 int main()

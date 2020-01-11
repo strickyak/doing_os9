@@ -2,26 +2,27 @@
 
 asm void stkcheck() {
 	asm {
-		pshs x
-		ldx 2,s   ; get the supposed return PC
+		pshs  x
+		ldx   2,s           ; get the supposed return PC
 
-		tfr s,d   ; going to subtract from S.
-		addd ,x   ; add the max stack size.
-		subd _ram_brk,y   ; sub the brk.
-		bcs stkcheckBAD
-		leax 2,x  ; add 2 to it
-		stx 2,s   ; put it back
-		puls x,pc ; and use it to return.
+		tfr   s,d           ; going to subtract from S.
+		addd  ,x            ; add the max stack size.
+		std   _heap_max,y   ; save as maximum usable heap ram.
+		subd  _heap_brk,y   ; sub the brk.
+		bcs   stkcheckBAD   ; bad if underflowed.
+		leax  2,x           ; add 2 to it
+		stx   2,s           ; put it back
+		puls  x,pc          ; and use it to return.
 
-stkcheckBAD	leax stkcheckMSG,pcr
-		ldy #(stkcheckNUL-stkcheckMSG)
-		lda #2    ; stderr
-		os9 I_WritLn
-		ldb #57
-		os9 F_Exit
+stkcheckBAD	leax  stkcheckMSG,pcr
+		ldy   #(stkcheckNUL-stkcheckMSG)
+		lda   #2            ; stderr
+		os9   I_WritLn
+		ldb   #57
+		os9   F_Exit
 
-stkcheckMSG	fcc / *stack oom* /
-stkcheckNUL	fcb 0
+stkcheckMSG	fcc   / *stack oom* /
+stkcheckNUL	fcb   0
 	}
 }
 
@@ -180,7 +181,7 @@ asm int Os9Sleep(int secs) {
 		ldd #0
 		puls y,u,pc
 Os9Err
-		sex
+		clra
 		puls y,u,pc
 	}
 }
@@ -193,14 +194,12 @@ OUTPUT: (A) = Deceased child process’ process ID
 (B) = Child process’ exit status code
 */
 
-asm int Os9Wait(int* child_id) {
+asm int Os9Wait(int* child_id_and_exit_status) {
 	asm {
 		pshs y,u
 		os9 0x04 ; F$Wait
 		lbcs Os9Err
-		tfr a,b
-		sex
-		std [6,s]
+		std [6,s]      ; return Child Id in hi byte; Exit Status in low byte.
 		ldd #0
 		puls y,u,pc
 	}

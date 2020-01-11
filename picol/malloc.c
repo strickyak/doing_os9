@@ -2,17 +2,25 @@
 
 #define ZERO_MALLOC
 #define ZERO_FREE
-//#define ZERO_FRESH
+//#define CHECK_ZERO_FRESH
 
-unsigned int ram_min;
-unsigned int ram_brk;
-unsigned int ram_max;
+// Parameter boundaries for main() argv.
 unsigned int param_min;
 unsigned int param_max;
 
-#define STACK_MARGIN (4*1024)
+// Heap boundaries.
+unsigned int heap_min;          // Set by start code to bss_end.
+unsigned int heap_brk;          // Set by start code to bss_end.
+unsigned int heap_max;          // Set by every stkcheck().
+
+// Buckets for malloc/free quanta.
+#define STACK_MARGIN 200        // paranoid gap between heap and stack.
+#define SMALLEST 8              // smallest mallocation; power of 2.
 #define NBUCKETS 12             // 8B to 16KB.
-struct Head *ram_roots[NBUCKETS];
+struct Head *buck_roots[NBUCKETS];
+int *buck_num_alloc[NBUCKETS];
+int *buck_num_free[NBUCKETS];
+int *buck_num_brk[NBUCKETS];
 
 struct Head {
   char barrierA;
@@ -21,65 +29,67 @@ struct Head {
   char barrierZ;
 };
 
-char *malloc(int n)
+void heap_check_block(struct Head *h, int cap)
 {
-  //puthex('M', n);
-  int i;
-  int cap = 8;
-  for (i = 0; i < NBUCKETS; i++) {
-    //puthex('0'+i, ram_roots[i]);
+  if (h->barrierA != 'A' || h->barrierZ != 'Z' || (cap && h->cap != cap)) {
+    panic("corrupt heap");
+  }
+}
+
+byte which_bucket(int n, int *capP)
+{
+  byte b;
+  int cap = SMALLEST;
+  for (b = 0; b < NBUCKETS; b++) {
     if (n <= cap)
       break;
     cap += cap;
   }
-  if (i >= 10) {
+  if (b >= NBUCKETS) {
     puthex('m', n);
     panic("malloc too big");
   }
+  *capP = cap;
+  return b;
+}
+
+char *malloc(int n)
+{
+  int cap;
+  byte b = which_bucket(n, &cap);
+  buck_num_alloc[b]++;
 
   // Try an existing unused block.
 
-  struct Head *h = ram_roots[i];
+  struct Head *h = buck_roots[b];
   if (h) {
-    if (h->barrierA != 'A') {
-      panic("malloc: corrupt barrierA");
-    }
-    if (h->barrierZ != 'Z') {
-      panic("malloc: corrupt barrierZ");
-    }
-    if (h->cap != cap) {
-      panic("corrupt cap");
-    }
-    ram_roots[i] = h->next;
+    heap_check_block(h, cap);
+    buck_roots[b] = h->next;
 #ifdef ZERO_MALLOC
     bzero((char *) (h + 1), cap);
 #endif
-    //puthex('y', (int)(h+1));
     return (char *) (h + 1);
   }
 
   // Break fresh memory.
-  //puthex('B', ram_min);
-  //puthex('B', ram_brk);
-  //puthex('B', ram_max);
-  char *p = (char *) ram_brk;
-  ram_brk += (unsigned int) (cap + sizeof(struct Head));
-  if (ram_brk > ram_max - STACK_MARGIN) {
+  char *p = (char *) heap_brk;
+  heap_brk += (unsigned int) (cap + sizeof(struct Head));
+  if (heap_brk > heap_max - STACK_MARGIN) {
     puthex('n', n);
     puthex('c', cap);
-    puthex('u', ram_brk);
-    puthex('m', ram_max);
+    puthex('u', heap_brk);
+    puthex('m', heap_max);
     panic(" *oom* ");
   }
   // If not zero, it isn't fresh.
-#ifdef ZERO_FRESH
-  for (char *j = p; j < (char *) ram_brk; j++) {
+#ifdef CHECK_ZERO_FRESH
+  for (char *j = p; j < (char *) heap_brk; j++) {
     if (*j) {
       puthex('n', n);
       puthex('c', cap);
-      puthex('u', ram_brk);
-      puthex('m', ram_max);
-      panic("malloc: unzero");
+      puthex('u', heap_brk);
+      puthex('m', heap_max);
+      panic("heap: unzero");
     }
   }
 #endif
@@ -88,7 +98,6 @@ char *malloc(int n)
   h->barrierZ = 'Z';
   h->cap = cap;
   h->next = NULL;
-  //puthex('z', (int)(h+1));
 #ifdef ZERO_MALLOC
   bzero((char *) (h + 1), cap);
 #endif
@@ -100,46 +109,30 @@ void free(void *p)
   if (!p)
     return;
 
-  //puthex('F', (int)p);
   struct Head *h = ((struct Head *) p) - 1;
-  if (h->barrierA != 'A')
-    panic("free: corrupt barrierA");
-  if (h->barrierZ != 'Z')
-    panic("free: corrupt barrierZ");
-
-  int i;
-  int cap = 8;
-  for (i = 0; i < 10; i++) {
-    if (h->cap == cap)
-      break;
-    cap += cap;
-  }
-  if (i >= 10) {
-    puthex('c', h->cap);
-    panic("corrupt free");
-  }
+  int cap;
+  byte b = which_bucket(h->cap, &cap);
+  heap_check_block(h, cap);
+  buck_num_free[b]++;
 
 #ifdef ZERO_FREE
   bzero((char *) p, cap);
 #endif
-  h->next = ram_roots[i];
-  ram_roots[i] = h;
+  h->next = buck_roots[b];
+  buck_roots[b] = h;
 }
 
 char *realloc(void *p, int n)
 {
   if (!p)
     return malloc(n);
-  //puthex('R', (int)p);
-  //puthex('n', (int)n);
   struct Head *h = ((struct Head *) p) - 1;
   if (n <= h->cap) {
-    //puthex('w', (int)p);
     return (char *) p;
   }
 
   char *z = malloc(n);
   memcpy(z, p, h->cap);
-  //puthex('x', (int)z);
+  free(p);
   return z;
 }
