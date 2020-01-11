@@ -425,18 +425,24 @@ struct picolArray *picolGetArray(const char *name)
 int picolRegisterCommand(const char *name, picolCmdFunc f, void *privdata)
 {
   struct picolCmd *c = picolGetCommand(name);
-  char errbuf[BUF_SIZE];
   if (c) {
-    snprintf_s(errbuf, BUF_SIZE, "Command '%s' already defined", name);
-    picolSetResult(errbuf);
-    return PICOL_ERR;
+    // redefine the command, so re-use the struct *c.
+    free(c->name);
+    if (c->privdata && c->func == picolCommandCallProc) {
+      // procdata always has two malloced slots.
+      free(((char **) c->privdata)[0]);
+      free(((char **) c->privdata)[1]);
+      free((char *) c->privdata);
+    }                           // or else it is a memory leak because we don't understand the privdata.
+  } else {
+    // define a new command, so malloc a new struct *c.
+    c = (struct picolCmd *) malloc(sizeof(*c));
+    c->next = Commands;
+    Commands = c;
   }
-  c = (struct picolCmd *) malloc(sizeof(*c));
   c->name = strdup(name);
   c->func = f;
   c->privdata = privdata;
-  c->next = Commands;
-  Commands = c;
   return PICOL_OK;
 }
 
@@ -494,11 +500,26 @@ int picolEval(const char *t, const char *where)
       prevtype = p.type;
       if (argc) {
         if ((c = picolGetCommand(argv[0])) == NULL) {
+          if (strcasecmp(argv[0], "unknown")) {
+            c = picolGetCommand("unknown");
+            if (c) {
+              argv = (char **) realloc((char *) argv, (argc + 1) * sizeof(char *));
+              argc++;
+              // shift everything down one slot.
+              for (int k = argc - 2; k >= 0; k--) {
+                argv[k + 1] = argv[k];
+              }
+              // and shove "unknown" in front of them.
+              argv[0] = strdup("unknown");
+              goto call;
+            }
+          }
           snprintf_s(errbuf, BUF_SIZE, "No such command '%s'", argv[0]);
           picolSetResult(errbuf);
           retcode = PICOL_ERR;
           goto err;
         }
+      call:
         retcode = c->func(argc, argv, c->privdata);
         if (retcode != PICOL_OK)
           goto err;
@@ -1588,7 +1609,7 @@ void picolRegisterCoreCommands()
   picolEval
       ("proc iota x {set z {}; set i 0; while {< $i $x} {set z \"$z $i\" ; set i [+ $i 1] }; set z}",
        "__init__");
-  picolEval("proc run x {eval 9fork $x; 9wait}", "__init__");
+  picolEval("proc run x {eval 9fork [list $x]; 9wait}", "__init__");
 
   picolEval
       ("proc implode_filename x {set z {}; foreach i $x {if {< $i 0} {lappend z [+ 128 $i]; break} else {lappend z $i}}; implode $z",
@@ -1596,6 +1617,8 @@ void picolRegisterCoreCommands()
   picolEval
       ("proc 9dir x {set z {}; set fd [9open $x 129]; while * {if {catch {set v [9read $fd 32]}} break; if {lindex $v 0} {lappend z [implode_filename $v]}}; return $z}",
        "__init__");
+  picolEval("proc unknown args {set cmd [join $args { }]; puts \"UNKNOWN: |$cmd|\"; run $cmd}",
+            "__init__");
 }
 
 void ReduceBigraphs(char *s)

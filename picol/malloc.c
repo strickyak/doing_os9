@@ -128,6 +128,8 @@ void free(void *p)
 
 char *realloc(void *p, int n)
 {
+  if (!p)
+    return malloc(n);
   //puthex('R', (int)p);
   //puthex('n', (int)n);
   struct Head *h = ((struct Head *) p) - 1;
