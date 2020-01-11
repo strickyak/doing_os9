@@ -1,4 +1,4 @@
-/* ncl: Modified for cmoc for NitrOS9/OS9 by strick.  BSD licensed */
+/* ncl: Modified and enhanced for cmoc for NitrOS9/OS9 by strick.  BSD licensed */
 
 /* Tcl in ~ 500 lines of code by Salvatore antirez Sanfilippo.  BSD licensed */
 
@@ -1386,13 +1386,26 @@ const char *AddCR(char *s)
   return (const char *) s;
 }
 
+const char *JoinWithSpaces(int argc, char **argv)
+{
+  struct Buf buf;
+  BufInit(&buf);
+  for (int i = 0; i < argc; i++) {
+    if (i)
+      BufAppC(&buf, ' ');
+    BufAppS(&buf, argv[i], -1);
+  }
+  BufFinish(&buf);
+  return BufTake(&buf);
+}
+
 int picolCommand9Chain(int argc, char **argv, void *pd)
 {
   if (argc < 2) {
     return picolArityErr(argv[0]);
   }
   char *program = argv[1];
-  const char *params = FormList(argc - 2, argv + 2);
+  const char *params = /*FormList */ JoinWithSpaces(argc - 2, argv + 2);
   params = AddCR((char *) params);
   int e = Os9Chain(program, params, strlen(params), 0 /*lang_type */ ,
                    0 /*mem_size */ );
@@ -1406,13 +1419,14 @@ int picolCommand9Fork(int argc, char **argv, void *pd)
     return picolArityErr(argv[0]);
   }
   char *program = argv[1];
-  const char *params = FormList(argc - 2, argv + 2);
+  const char *params = /*FormList */ JoinWithSpaces(argc - 2, argv + 2);
   params = AddCR((char *) params);
   int child_id = 0;
   int e = Os9Fork(program, params, strlen(params), 0 /*lang_type */ ,
                   0 /*mem_size */ , &child_id);
   if (e)
     return Error(argv[0], e);
+  free((char *) params);
   return ResultD(child_id);
 }
 
@@ -1609,7 +1623,8 @@ void picolRegisterCoreCommands()
   picolEval
       ("proc iota x {set z {}; set i 0; while {< $i $x} {set z \"$z $i\" ; set i [+ $i 1] }; set z}",
        "__init__");
-  picolEval("proc run x {eval 9fork [list $x]; 9wait}", "__init__");
+  picolEval("proc run args {eval 9fork $args; 9wait}", "__init__");
+  picolEval("proc unknown args {eval 9fork $args; 9wait}", "__init__");
 
   picolEval
       ("proc implode_filename x {set z {}; foreach i $x {if {< $i 0} {lappend z [+ 128 $i]; break} else {lappend z $i}}; implode $z",
@@ -1617,10 +1632,10 @@ void picolRegisterCoreCommands()
   picolEval
       ("proc 9dir x {set z {}; set fd [9open $x 129]; while * {if {catch {set v [9read $fd 32]}} break; if {lindex $v 0} {lappend z [implode_filename $v]}}; return $z}",
        "__init__");
-  picolEval("proc unknown args {set cmd [join $args { }]; puts \"UNKNOWN: |$cmd|\"; run $cmd}",
-            "__init__");
+
 }
 
+// For lame coco keyboards:  `((` -> `[`, `(((` -> `{`, `))` -> `]`, `)))` -> `}`, `@@` -> `\`.
 void ReduceBigraphs(char *s)
 {
   char *z = s;                  // read from p, write to z.
