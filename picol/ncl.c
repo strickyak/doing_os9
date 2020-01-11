@@ -1630,7 +1630,7 @@ void picolRegisterCoreCommands()
       ("proc implode_filename x {set z {}; foreach i $x {if {< $i 0} {lappend z [+ 128 $i]; break} else {lappend z $i}}; implode $z",
        "__init__");
   picolEval
-      ("proc 9dir x {set z {}; set fd [9open $x 129]; while * {if {catch {set v [9read $fd 32]}} break; if {lindex $v 0} {lappend z [implode_filename $v]}}; return $z}",
+      ("proc readdir x {set z {}; set fd [9open $x 129]; while * {if {catch {set v [9read $fd 32]}} break; if {lindex $v 0} {lappend z [implode_filename $v]}}; return $z}",
        "__init__");
 
 }
