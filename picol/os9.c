@@ -73,9 +73,7 @@ asm int Os9Delete(char* path) {
 		pshs y,u
 		ldx 6,s      ; path
 		os9 0x87
-		lbcs Os9Err
-		ldd #0
-		puls y,u,pc
+		jmp ZeroOrErr,pcr
 	}
 }
 
@@ -85,9 +83,7 @@ asm int Os9ChgDir(char* path, int mode) {
 		ldx 6,s      ; path
 		lda 9,s      ; mode
 		os9 0x86     ; I$ChgDir
-		lbcs Os9Err
-		ldd #0
-		puls y,u,pc
+		jmp ZeroOrErr,pcr
 	}
 }
 
@@ -97,9 +93,7 @@ asm int Os9MakDir(char* path, int mode) {
 		ldx 6,s      ; path
 		ldb 9,s      ; dir attrs
 		os9 0x85     ; I$MakDir
-		lbcs Os9Err
-		ldd #0
-		puls y,u,pc
+		jmp ZeroOrErr,pcr
 	}
 }
 
@@ -193,9 +187,7 @@ asm int Os9Close(int path) {
 		pshs y,u
 		lda 7,s  ; path.
 		os9 0x8F ; I$Close
-		lbcs Os9Err
-		ldd #0
-		puls y,u,pc
+		jmp ZeroOrErr,pcr
 	}
 }
 
@@ -272,7 +264,7 @@ asm int Os9Chain(const char* program, const char* params, int paramlen, int lang
 		lda 13,s  ; lang_type
 		ldb 15,s  ; mem_size
 		os9 0x05  ; F$Chain -- if returns, then it is an error.
-		sex         ; extend error B to D
+		clra      ; extend unsigned error B to D
 		puls y,u,pc
 	}
 }
@@ -280,9 +272,9 @@ asm int Os9Chain(const char* program, const char* params, int paramlen, int lang
 asm int Os9Send(int process_id, int signal_code) {
 	asm {
 		pshs y,u
-		lda 7,s  ; program
-		ldb 9,s  ; params
-		os9 0x08  ; F$Send
+		lda 7,s      ; process_id
+		ldb 9,s      ; signal_code
+		os9 0x08     ; F$Send
 		jmp ZeroOrErr,pcr
 	}
 }
