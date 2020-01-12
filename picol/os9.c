@@ -71,7 +71,7 @@ asm int Os9Open(char* path, int mode, int* fd) {
 asm int Os9Delete(char* path) {
 	asm {
 		pshs y,u
-		ldx 6,s      ; buf
+		ldx 6,s      ; path
 		os9 0x87
 		lbcs Os9Err
 		ldd #0
@@ -82,10 +82,37 @@ asm int Os9Delete(char* path) {
 asm int Os9ChgDir(char* path, int mode) {
 	asm {
 		pshs y,u
-		ldx 6,s      ; buf
+		ldx 6,s      ; path
 		lda 9,s      ; mode
-		os9 0x86
+		os9 0x86     ; I$ChgDir
 		lbcs Os9Err
+		ldd #0
+		puls y,u,pc
+	}
+}
+
+asm int Os9MakDir(char* path, int mode) {
+	asm {
+		pshs y,u
+		ldx 6,s      ; path
+		ldb 9,s      ; dir attrs
+		os9 0x85     ; I$MakDir
+		lbcs Os9Err
+		ldd #0
+		puls y,u,pc
+	}
+}
+
+asm int Os9GetStt(int path, int func, int* dOut, int* xOut, int* uOut) {
+	asm {
+		pshs y,u
+		lda 7,s      ; path
+		ldb 9,s      ; func
+		os9 0x8D     ; I$GetStt
+		lbcs Os9Err
+		std [10,s]   ; dOut
+		stx [12,s]   ; xOut
+		stu [14,s]   ; uOut
 		ldd #0
 		puls y,u,pc
 	}

@@ -1146,6 +1146,28 @@ int picolCommandInfo(int argc, char **argv, void *pd)
     puts("\r");
   }
 
+  printf_d(" mem: heap=%d", heap_brk - heap_min);
+  printf_d(" stack=%d", param_min - heap_max);
+  printf_d(" avail=%d", heap_max - heap_brk - STACK_MARGIN);
+  int cap = SMALLEST_BUCKET;
+  for (byte b = 0; b < NBUCKETS; b++) {
+    int n = 0;
+    for (struct Head * h = buck_freelist[b]; h; h = h->next) {
+      heap_check_block(h, cap);
+      n++;
+    }
+    printf_d(" [%d]", cap);
+    if (buck_num_alloc[b]) {
+      printf_d("a:%d-", buck_num_alloc[b]);
+      printf_d("f:%d=", buck_num_free[b]);
+      printf_d("u:%d;", buck_num_alloc[b] - buck_num_free[b]);
+      printf_d("b:%d-", buck_num_brk[b]);
+      printf_d("x:%d.", n);
+    }
+    cap += cap;
+  }
+  puts("\r");
+
   picolSetResult("");
   return PICOL_OK;
 }
@@ -1455,6 +1477,19 @@ char *staticD(int x)
   return static_buf_d;
 }
 
+int picolCommand9FileSize(int argc, char **argv, void *pd)
+{
+  if (argc != 2)
+    return picolArityErr(argv[0]);
+  int d, x, u;
+  int e = Os9GetStt(atoi(argv[1]), 2 /*SS.Size */ , &d, &x, &u);
+  if (e)
+    return Error(argv[0], e);
+  if (x)
+    return picolSetResult("toobig"), PICOL_ERR;
+  return picolSetResult(staticD(u)), PICOL_OK;
+}
+
 int picolCommand9Wait(int argc, char **argv, void *pd)
 {
   if (argc < 1 || argc > 3)
@@ -1553,7 +1588,7 @@ int picolCommand9Open(int argc, char **argv, void *pd)
   return ResultD(fd);
 }
 
-int picolCommand9ChgDir(int argc, char **argv, void *pd)
+int picolCommand9MakOrChgDir(int argc, char **argv, void *pd)
 {
   if (argc != 3)
     return picolArityErr(argv[0]);
@@ -1561,7 +1596,9 @@ int picolCommand9ChgDir(int argc, char **argv, void *pd)
   char final = SetHiBitOfLastChar(path);
   int mode = atoi(argv[2]);
 
-  int e = Os9ChgDir(path, mode);
+  int (*f)(char *, int);
+  f = ((argv[0][1]) == 'M') ? Os9MakDir : Os9ChgDir;
+  int e = f(path, mode);
   RestoreLastChar(path, final);
   if (e)
     return Error(argv[0], e);
@@ -1582,6 +1619,49 @@ int picolCommand9Delete(int argc, char **argv, void *pd)
     return Error(argv[0], e);
   picolSetResult("");
   return PICOL_OK;
+}
+
+int picolCommandSource(int argc, char **argv, void *pd)
+{
+  if (argc != 2)
+    return picolArityErr(argv[0]);
+
+  // Open.
+
+  char *path = argv[1];
+  char final = SetHiBitOfLastChar(path);
+  int fd = 0;
+  int e = Os9Open(path, 1 /*read mode */ , &fd);
+  RestoreLastChar(path, final);
+  if (e)
+    return Error(path, e);
+
+  // Stat: FileSize
+
+  int d, x, u;
+  e = Os9GetStt(fd, 2 /*SS.Size */ , &d, &x, &u);
+  if (e)
+    return Error(path, e);
+  if (x || u < 0 || u > 16 * 1024)      // cannot handle more than say 16K.
+    return picolSetResult("toobig"), PICOL_ERR;
+
+  // Read.
+
+  char *buf = malloc(u + 1);
+  bzero(buf, u + 1);
+  int bytes_read = 0;
+  e = Os9Read(fd, buf, u, &bytes_read);
+  if (e)
+    return Error(path, e);
+  if (bytes_read != u)
+    return Error(path, 0);
+
+  // Close.
+  e = Os9Close(fd);
+  if (e)
+    return Error(argv[0], e);
+
+  return picolEval(buf, path);
 }
 
 // For lame coco keyboards:  `((` -> `[`, `(((` -> `{`, `))` -> `]`, `)))` -> `}`, `@@` -> `\`.
@@ -1673,16 +1753,19 @@ void picolRegisterCoreCommands()
   picolRegisterCommand("join", picolCommandJoin, NULL);
   picolRegisterCommand("exit", picolCommand9Exit, NULL);
   picolRegisterCommand("error", picolCommandError, NULL);
+  picolRegisterCommand("source", picolCommandSource, NULL);
 
   // kernel-level os9 commands:
   picolRegisterCommand("9exit", picolCommand9Exit, NULL);
   picolRegisterCommand("9chain", picolCommand9Chain, NULL);
   picolRegisterCommand("9fork", picolCommand9Fork, NULL);
   picolRegisterCommand("9wait", picolCommand9Wait, NULL);
+  picolRegisterCommand("9filesize", picolCommand9FileSize, NULL);
   picolRegisterCommand("9dup", picolCommand9Dup, NULL);
   picolRegisterCommand("9close", picolCommand9Close, NULL);
   picolRegisterCommand("9sleep", picolCommand9Sleep, NULL);
-  picolRegisterCommand("9chgdir", picolCommand9ChgDir, NULL);
+  picolRegisterCommand("9chgdir", picolCommand9MakOrChgDir, NULL);
+  picolRegisterCommand("9makdir", picolCommand9MakOrChgDir, NULL);
   picolRegisterCommand("9open", picolCommand9Open, NULL);
   picolRegisterCommand("9create", picolCommand9Create, NULL);
   picolRegisterCommand("9delete", picolCommand9Delete, NULL);
@@ -1696,7 +1779,7 @@ void picolRegisterCoreCommands()
 
   // "unknown" calls "run", so you can call most OS9 CMDS directly.
   picolEval
-      ("proc run args {set cid [eval 9fork $args]; puts CID:$cid;  while * {9wait c e; puts C:$c,E:$e; if {== $c $cid} {puts X; break}}; puts Y; if {+ $e} {error \"Exit status $e\"}; puts Z; list}",
+      ("proc run args {set cid [eval 9fork $args]; while * {9wait c e; if {== $c $cid} break}; if {+ $e} {error \"Exit status $e\"}; list}",
        kInit);
 
   picolEval("proc unknown args {eval run $args}", kInit);
@@ -1730,12 +1813,64 @@ int main()
   picolInitInterp();
   picolRegisterCoreCommands();
 
+  int param_size = param_max - param_min;
+  char *params = malloc(param_size + 1);
+  memcpy(params, (char *) param_min, param_size);
+  params[param_size] = '\0';
+  params[param_size - 1] = '\0';        // TODO: why is this needed?
+
+  int argc;
+  const char **argv;
+  int e = SplitList(params, &argc, &argv);
+  if (e) {
+    puts("Cannot SplitList params");
+    exit(e);
+  }
+
+  //printf_d("argc=%d\r", argc);
+  for (int j = 0; j < argc; j++) {
+    //printf_d("arg:%s\r", argv[j]);
+    //printf_s("===:%s\r", argv[j]);
+  }
+
+  if (argc) {
+
+    picolSetVar("argv0", argv[0]);
+
+    struct Buf list;
+    BufInit(&list);
+    for (int j = 1; j < argc; j++) {
+      BufAppElemS(&list, argv[j]);
+      BufFinish(&list);
+      //printf_d("  j:%d\r", j);
+      //printf_s("add:%s\r", argv[j]);
+      //printf_s("  >:%s\r", list.s);
+    }
+    BufFinish(&list);
+    //printf_s(">>>:%s\r", list.s);
+    picolSetVar("argv", list.s);
+    BufDel(&list);
+
+    BufInit(&list);
+    BufAppElemS(&list, "source");
+    BufAppElemS(&list, argv[0]);
+    BufFinish(&list);
+    //printf_s("eval: %s\r", list.s);
+    e = picolEval(list.s, "__script__");
+    BufDel(&list);
+    if (e) {
+      printf_d("ERROR code %d: ", e);
+      printf_s("%s\r", Result);
+    }
+    exit(e);
+  }
+
   while (1) {
     puts(" >NCL> ");
     char line[111];
     bzero(line, sizeof line);
     int bytes_read;
-    int e = Os9ReadLn(0 /*path */ , line, 111, &bytes_read);
+    e = Os9ReadLn(0 /*path */ , line, 111, &bytes_read);
     if (e) {
       puts(" *EOF*\r");
       break;

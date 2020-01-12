@@ -15,12 +15,12 @@ unsigned int heap_max;          // Set by every stkcheck().
 
 // Buckets for malloc/free quanta.
 #define STACK_MARGIN 200        // paranoid gap between heap and stack.
-#define SMALLEST 8              // smallest mallocation; power of 2.
+#define SMALLEST_BUCKET 8       // smallest mallocation; power of 2.
 #define NBUCKETS 12             // 8B to 16KB.
-struct Head *buck_roots[NBUCKETS];
-int *buck_num_alloc[NBUCKETS];
-int *buck_num_free[NBUCKETS];
-int *buck_num_brk[NBUCKETS];
+struct Head *buck_freelist[NBUCKETS];
+int buck_num_alloc[NBUCKETS];
+int buck_num_free[NBUCKETS];
+int buck_num_brk[NBUCKETS];
 
 struct Head {
   char barrierA;
@@ -39,7 +39,7 @@ void heap_check_block(struct Head *h, int cap)
 byte which_bucket(int n, int *capP)
 {
   byte b;
-  int cap = SMALLEST;
+  int cap = SMALLEST_BUCKET;
   for (b = 0; b < NBUCKETS; b++) {
     if (n <= cap)
       break;
@@ -61,10 +61,10 @@ char *malloc(int n)
 
   // Try an existing unused block.
 
-  struct Head *h = buck_roots[b];
+  struct Head *h = buck_freelist[b];
   if (h) {
     heap_check_block(h, cap);
-    buck_roots[b] = h->next;
+    buck_freelist[b] = h->next;
 #ifdef ZERO_MALLOC
     bzero((char *) (h + 1), cap);
 #endif
@@ -81,6 +81,8 @@ char *malloc(int n)
     puthex('m', heap_max);
     panic(" *oom* ");
   }
+  buck_num_brk[b]++;
+
   // If not zero, it isn't fresh.
 #ifdef CHECK_ZERO_FRESH
   for (char *j = p; j < (char *) heap_brk; j++) {
@@ -118,8 +120,8 @@ void free(void *p)
 #ifdef ZERO_FREE
   bzero((char *) p, cap);
 #endif
-  h->next = buck_roots[b];
-  buck_roots[b] = h;
+  h->next = buck_freelist[b];
+  buck_freelist[b] = h;
 }
 
 char *realloc(void *p, int n)
