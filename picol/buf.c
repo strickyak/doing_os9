@@ -22,6 +22,18 @@ void BufInit(struct Buf *p)
   p->n = 0;
 }
 
+void BufInitWith(struct Buf *p, const char *s)
+{
+  p->s = strdup(s);
+  p->n = strlen(s);
+}
+
+void BufInitTake(struct Buf *p, char *s)
+{
+  p->s = s;
+  p->n = strlen(s);
+}
+
 void BufDel(struct Buf *p)
 {
   // OK to delete more than once, or after BufTake().

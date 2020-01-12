@@ -18,4 +18,4 @@ indent:
 clean:
 	rm -f *.s *.asm *.list *.map *.bin *.c~
 ci:
-	ci-l Makefile *.[ch] *.py
+	ci-l Makefile *.[ch] *.py *.tcl

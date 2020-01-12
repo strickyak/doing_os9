@@ -93,6 +93,13 @@ void FreeDope(int c, const char **v)
   free(v);                      // Free the vector.
 }
 
+char static_buf_d[8];
+char *StaticD(int x)
+{
+  snprintf_d(static_buf_d, sizeof static_buf_d, "%d", x);
+  return static_buf_d;
+}
+
 void picolInitParser(struct picolParser *p, const char *text)
 {
   p->text = p->p = (char *) text;
@@ -273,7 +280,7 @@ int picolParseString(struct picolParser *p)
 
 int picolParseComment(struct picolParser *p)
 {
-  while (p->len && *p->p != '\n') {
+  while (p->len && *p->p != '\n' && *p->p != '\r') {
     p->p++;
     p->len--;
   }
@@ -294,11 +301,11 @@ TOP:
     switch (*p->p) {
     case ' ':
     case '\t':
-    case '\r':
       if (p->insidequote)
         return picolParseString(p);
       return picolParseSep(p);
     case '\n':
+    case '\r':
     case ';':
       if (p->insidequote)
         return picolParseString(p);
@@ -1286,6 +1293,46 @@ int picolCommandImplode(int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
+//- incr varname ?value?
+int picolCommandIncr(int argc, char **argv, void *pd)
+{
+  if (argc != 2 && argc != 3)
+    return picolArityErr(argv[0]);
+
+  struct picolVar *var = picolGetVar(argv[1]);
+  if (!var) {
+    picolSetVar(argv[1], "0");
+    var = picolGetVar(argv[1]);
+  }
+  int z = (argc == 3) ? atoi(argv[2]) : 1;
+  z += atoi(var->val);
+  free(var->val);
+  var->val = strdup(StaticD(z));
+  picolSetResult(var->val);
+  return PICOL_OK;
+}
+
+//- append varname ?items...?
+int picolCommandAppend(int argc, char **argv, void *pd)
+{
+  if (argc < 2)
+    return picolArityErr(argv[0]);
+
+  struct picolVar *var = picolGetVar(argv[1]);
+  if (!var) {
+    picolSetVar(argv[1], "");
+    var = picolGetVar(argv[1]);
+  }
+  struct Buf buf;
+  BufInitTake(&buf, var->val);
+  for (int j = 2; j < argc; j++) {
+    BufAppS(&buf, argv[j], -1);
+  }
+  BufFinish(&buf);
+  var->val = (char *) BufTake(&buf);
+  return PICOL_OK;
+}
+
 //- lappend varname ?items...?
 int picolCommandListAppend(int argc, char **argv, void *pd)
 {
@@ -1298,16 +1345,12 @@ int picolCommandListAppend(int argc, char **argv, void *pd)
     var = picolGetVar(argv[1]);
   }
   struct Buf buf;
-  BufInit(&buf);
-  free(buf.s);
-  buf.s = var->val;
-  buf.n = strlen(buf.s);
-
+  BufInitTake(&buf, var->val);
   for (int j = 2; j < argc; j++) {
     BufAppElemS(&buf, argv[j]);
   }
   BufFinish(&buf);
-  var->val = buf.s;
+  var->val = (char *) BufTake(&buf);
   return PICOL_OK;
 }
 
@@ -1519,7 +1562,7 @@ int picolCommand9Chain(int argc, char **argv, void *pd)
   int e = Os9Chain(program, params, strlen(params), 0 /*lang_type */ ,
                    0 /*mem_size */ );
   // If returns, it is an error.
-  return Error(argv[0], e);
+  return Error(argv[1], e);
 }
 
 //- 9fork command args.... -> child_id
@@ -1535,14 +1578,7 @@ int picolCommand9Fork(int argc, char **argv, void *pd)
   int e = Os9Fork(program, params, strlen(params), 0 /*lang_type */ ,
                   0 /*mem_size */ , &child_id);
   free((char *) params);
-  return IntOrError(e, argv, child_id);
-}
-
-char static_buf_d[8];
-char *staticD(int x)
-{
-  snprintf_d(static_buf_d, sizeof static_buf_d, "%d", x);
-  return static_buf_d;
+  return IntOrError(e, argv + 1, child_id);
 }
 
 //- 9filesize fd -> size (error if 64K or bigger)
@@ -1556,7 +1592,7 @@ int picolCommand9FileSize(int argc, char **argv, void *pd)
     return Error(argv[0], e);
   if (x)
     return picolSetResult("toobig"), PICOL_ERR;
-  return picolSetResult(staticD(u)), PICOL_OK;
+  return picolSetResult(StaticD(u)), PICOL_OK;
 }
 
 //- 9wait child_id_var exit_status_var (name two variables to receive results)
@@ -1569,9 +1605,9 @@ int picolCommand9Wait(int argc, char **argv, void *pd)
   if (e)
     return Error(argv[0], e);
   if (argc >= 2)
-    picolSetVar(argv[1], staticD(255 & (child_id_and_exit_status >> 8)));
+    picolSetVar(argv[1], StaticD(255 & (child_id_and_exit_status >> 8)));
   if (argc >= 3)
-    picolSetVar(argv[2], staticD(255 & (child_id_and_exit_status)));
+    picolSetVar(argv[2], StaticD(255 & (child_id_and_exit_status)));
   return PICOL_OK;
 }
 
@@ -1692,7 +1728,7 @@ int picolCommand9Delete(int argc, char **argv, void *pd)
   return EmptyOrError(e, argv);
 }
 
-//- source filepath (read and execute the script)
+//- source filepath (read and execute the script; 16K max}
 int picolCommandSource(int argc, char **argv, void *pd)
 {
   if (argc != 2)
@@ -1700,7 +1736,7 @@ int picolCommandSource(int argc, char **argv, void *pd)
 
   // Open.
 
-  char *path = argv[1];
+  char *path = argv[argc - 1];
   char final = SetHiBitOfLastChar(path);
   int fd = 0;
   int e = Os9Open(path, 1 /*read mode */ , &fd);
@@ -1779,6 +1815,15 @@ void ReduceBigraphs(char *s)
   *z = '\0';
 }
 
+void picolInitMustEval(const char *s)
+{
+  int e = picolEval(s, "__init__");
+  if (e) {
+    printf_s(" *** %s ***\r", Result);
+    panic("INIT FAILS");
+  }
+}
+
 void picolRegisterCoreCommands()
 {
   const char *mathOps[] = {
@@ -1809,6 +1854,8 @@ void picolRegisterCoreCommands()
   picolRegisterCommand("list", picolCommandList, NULL);
   picolRegisterCommand("explode", picolCommandExplode, NULL);
   picolRegisterCommand("implode", picolCommandImplode, NULL);
+  picolRegisterCommand("incr", picolCommandIncr, NULL);
+  picolRegisterCommand("append", picolCommandAppend, NULL);
   picolRegisterCommand("lappend", picolCommandListAppend, NULL);
   picolRegisterCommand("llength", picolCommandListLength, NULL);
   picolRegisterCommand("lindex", picolCommandListRange, NULL);
@@ -1846,38 +1893,8 @@ void picolRegisterCoreCommands()
   //picolRegisterCommand("9readln", picolCommand9ReadLn, NULL);
   //picolRegisterCommand("9writln", picolCommand9WritLn, NULL);
 
-  // Attribute failures here to `__init__`.
-  const char kInit[] = "__init__";
-
-  // "unknown" calls "run", so you can call most OS9 CMDS directly.
-  picolEval
-      ("proc run args {set cid [eval 9fork $args]; while * {9wait c e; if {== $c $cid} break}; if {+ $e} {error \"Exit status $e\"}; list}",
-       kInit);
-
-  picolEval("proc unknown args {eval run $args}", kInit);
-
-  // Emulate builtin commands from SHELL.
-  picolEval("proc cd d {9chgdir $d 1}", kInit);
-  picolEval("proc chd d {9chgdir $d 1}", kInit);
-  picolEval("proc chx d {9chgdir $d 4}", kInit);
-  picolEval("proc w {} {9wait}", kInit);
-
-  // demo commands:
-  picolEval("proc fib x {if {< $x 2} {return $x}; + [fib [- $x 1]] [fib [- $x 2]]}", kInit);
-  picolEval("proc tri x {if {< $x 2} {return $x}; + $x [tri [- $x 1]]}", kInit);
-  picolEval
-      ("proc iota x {set z {}; set i 0; while {< $i $x} {set z \"$z $i\" ; set i [+ $i 1] }; set z}",
-       kInit);
-  picolEval
-      ("proc implode_thru_hibit x {set z {}; foreach i $x {if {< $i 0} {lappend z [+ 128 $i]; break} else {lappend z $i}}; implode $z",
-       kInit);
-  picolEval
-      ("proc readdir d {set z {}; set fd [9open $d 129]; while * {if {catch {set v [9read $fd 32]}} break; if {lindex $v 0} {lappend z [implode_thru_hibit $v]}}; return $z}",
-       kInit);
-  picolEval
-      ("proc glob pat {set z {}; foreach f [readdir .] {if {smatch $pat $f} {lappend z $f}}; set z}",
-       kInit);
-
+  picolInitMustEval
+      ("set rcfile /dd/sys/nclrc.tcl; if {catch {source $rcfile} err} {puts 2 \"Error sourcing $rcfile: $err\"}");
 }
 
 int main()

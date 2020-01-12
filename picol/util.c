@@ -10,7 +10,7 @@
  * express or implied warranty.
  */
 
-int Tcl_StringMatch(char *string, char *pattern)
+int Tcl_StringMatch(const char *string, const char *pattern)
 {
   char c2;
 
