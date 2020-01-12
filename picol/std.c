@@ -4,6 +4,7 @@ char Up(char c)
   return ('a' <= c && c <= 'z') ? c - 32 : c;
 }
 
+// Down(c): convert to lower case for 26 ascii letters.
 char Down(char c)
 {
   return ('A' <= c && c <= 'Z') ? c + 32 : c;
@@ -192,4 +193,15 @@ char *strdup_upper(const char *s)
     *p++ = Up(*s++);
   }
   return z;
+}
+
+char *Format(const char *fmt, ...)
+{
+  char buf[BUF_SIZE];
+  int *a = (int *) &fmt;
+  printf_s("format: %s\r", fmt);
+  printf_d("  arg1: %s\r", a[1]);
+  printf_d("  arg2: %s\r", a[2]);
+  printf_d("  arg3: %s\r", a[3]);
+  return NULL;
 }

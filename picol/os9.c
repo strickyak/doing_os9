@@ -204,7 +204,7 @@ asm int Os9Sleep(int secs) {
 		pshs y,u
 		ldx 6,s  ; ticks
 		os9 0x0A ; I$Sleep
-		lbcs Os9Err
+ZeroOrErr	lbcs Os9Err
 		ldd #0
 		puls y,u,pc
 Os9Err
@@ -274,6 +274,16 @@ asm int Os9Chain(const char* program, const char* params, int paramlen, int lang
 		os9 0x05  ; F$Chain -- if returns, then it is an error.
 		sex         ; extend error B to D
 		puls y,u,pc
+	}
+}
+
+asm int Os9Send(int process_id, int signal_code) {
+	asm {
+		pshs y,u
+		lda 7,s  ; program
+		ldb 9,s  ; params
+		os9 0x08  ; F$Send
+		jmp ZeroOrErr,pcr
 	}
 }
 

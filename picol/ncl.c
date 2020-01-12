@@ -1408,8 +1408,6 @@ int ResultS(const char *msg, const char *x)
   return PICOL_OK;
 }
 
-// This currently serves as high-level "exit" and low-level "9exit".
-// In the future, if there is cleanup (like flushing IO), a new "exit" will be needed.
 int picolCommand9Exit(int argc, char **argv, void *pd)
 {
   if (argc != 1 && argc != 2)
@@ -1523,6 +1521,19 @@ int picolCommand9Close(int argc, char **argv, void *pd)
     return picolArityErr(argv[0]);
   int path = atoi(argv[1]);
   int e = Os9Close(path);
+  if (e)
+    return Error(argv[0], e);
+  picolSetResult("");
+  return PICOL_OK;
+}
+
+int picolCommand9Kill(int argc, char **argv, void *pd)
+{
+  if (argc != 2 && argc != 3)
+    return picolArityErr(argv[0]);
+  int victim = atoi(argv[1]);
+  int signal = (argc < 3) ? 228 : atoi(argv[1]);
+  int e = Os9Send(victim, signal);
   if (e)
     return Error(argv[0], e);
   picolSetResult("");
@@ -1754,9 +1765,9 @@ void picolRegisterCoreCommands()
   picolRegisterCommand("exit", picolCommand9Exit, NULL);
   picolRegisterCommand("error", picolCommandError, NULL);
   picolRegisterCommand("source", picolCommandSource, NULL);
+  picolRegisterCommand("kill", picolCommand9Kill, NULL);
 
   // kernel-level os9 commands:
-  picolRegisterCommand("9exit", picolCommand9Exit, NULL);
   picolRegisterCommand("9chain", picolCommand9Chain, NULL);
   picolRegisterCommand("9fork", picolCommand9Fork, NULL);
   picolRegisterCommand("9wait", picolCommand9Wait, NULL);
