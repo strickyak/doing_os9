@@ -36,11 +36,8 @@ extern char *realloc(void *, int);
 
 #include "re.c"
 
-//////////////////////////
-
-//////////////////////////
-
-// Start actual picol.
+// #define HEAP_CHECKS  // Check heap integregity at key points.
+// #define TEAR_DOWN    // Free all memory structures at the end, to check for leak.  Use `;` to exit repl.
 
 enum { PICOL_OK, PICOL_ERR, PICOL_RETURN, PICOL_BREAK, PICOL_CONTINUE };
 enum { PT_ESC, PT_STR, PT_CMD, PT_VAR, PT_SEP, PT_EOL, PT_EOF };
@@ -86,6 +83,86 @@ struct picolCmd *Commands;
 struct picolArray *Arrays;
 char *Result;
 
+#ifdef HEAP_CHECKS
+void HC(void *p)
+{
+  heap_check_block(((struct Head *) p) - 1, 0);
+}
+
+void HeapCheckVars(struct picolVar *v)
+{
+  while (v) {
+    HC(v);
+    HC(v->name);
+    HC(v->val);
+    v = v->next;
+  }
+}
+
+void HeapCheck()
+{
+  for (struct picolCmd * c = Commands; c; c = c->next) {
+    HC(c);
+    HC(c->name);
+    if (c->privdata) {
+      HC(((char **) (c->privdata))[0]);
+      HC(((char **) (c->privdata))[1]);
+      HC(c->privdata);
+    }
+  }
+  for (struct picolCallFrame * f = Callframe; f; f = f->parent) {
+    HC(f);
+    HeapCheckVars(f->vars);
+  }
+  for (struct picolArray * a = Arrays; a; a = a->next) {
+    HC(a);
+    HC(a->name);
+    HeapCheckVars(a->vars);
+  }
+  HC(Result);
+}
+#endif
+
+#ifdef TEAR_DOWN
+void TearDownVars(struct picolVar *v)
+{
+  while (v) {
+    free(v->name);
+    free(v->val);
+    void *tmp = v;
+    v = v->next;
+    free(tmp);
+  }
+}
+
+void TearDown()
+{
+  for (struct picolCmd * c = Commands; c;) {
+    free(c->name);
+    if (c->privdata) {
+      free(((char **) (c->privdata))[0]);
+      free(((char **) (c->privdata))[1]);
+      free(c->privdata);
+    }
+    void *tmp = c;
+    c = c->next;
+    free(tmp);
+  }
+  if (Callframe->parent)
+    panic("CF P");
+  TearDownVars(Callframe->vars);
+  free(Callframe);
+  for (struct picolArray * a = Arrays; a;) {
+    free(a->name);
+    TearDownVars(a->vars);
+    void *tmp = a;
+    a = a->next;
+    free(tmp);
+  }
+  free(Result);
+}
+#endif
+
 void FreeDope(int c, const char **v)
 {
   for (int j = 0; j < c; j++)
@@ -93,10 +170,11 @@ void FreeDope(int c, const char **v)
   free(v);                      // Free the vector.
 }
 
-char static_buf_d[8];
+char static_buf_d[16];
 char *StaticD(int x)
 {
-  snprintf_d(static_buf_d, sizeof static_buf_d, "%d", x);
+  bzero(static_buf_d, 16);
+  snprintf_d(static_buf_d, 15, "%d", x);
   return static_buf_d;
 }
 
@@ -448,8 +526,6 @@ int picolRegisterCommand(const char *name, picolCmdFunc f, void *privdata)
 {
   struct picolCmd *c = picolGetCommand(name);
   if (c) {
-    // redefine the command, so re-use the struct *c.
-    free(c->name);
     if (c->privdata && c->func == picolCommandCallProc) {
       // procdata always has two malloced slots.
       free(((char **) c->privdata)[0]);
@@ -460,9 +536,9 @@ int picolRegisterCommand(const char *name, picolCmdFunc f, void *privdata)
     // define a new command, so malloc a new struct *c.
     c = (struct picolCmd *) malloc(sizeof(*c));
     c->next = Commands;
+    c->name = strdup(name);
     Commands = c;
   }
-  c->name = strdup(name);
   c->func = f;
   c->privdata = privdata;
   return PICOL_OK;
@@ -471,6 +547,9 @@ int picolRegisterCommand(const char *name, picolCmdFunc f, void *privdata)
 /* EVAL! */
 int picolEval(const char *t, const char *where)
 {
+#ifdef HEAP_CHECKS
+  HeapCheck();
+#endif
   struct picolParser p;
   int argc = 0, j;
   char **argv = NULL;
@@ -578,6 +657,9 @@ err:
     picolAppendResult("; in ");
     picolAppendResult(where);
   }
+#ifdef HEAP_CHECKS
+  HeapCheck();
+#endif
   return retcode;
 }
 
@@ -973,7 +1055,7 @@ int picolCommandGets(int argc, char **argv, void *pd)
 //- puts ?-nonewline? ?fd? str (write str to fd, default is stdout)
 int picolCommandPuts(int argc, char **argv, void *pd)
 {
-  char *argv0 = argv[0];        // because argv may increment.
+  char **orig_argv = argv;      // argv may increment.
   byte nonewline = false;
   // any dash argument must be -nonewline.
   if (argc > 2 && argv[1][0] == '-') {
@@ -981,19 +1063,19 @@ int picolCommandPuts(int argc, char **argv, void *pd)
     argc--, argv++;
   }
   if (argc != 2 && argc != 3)
-    return picolArityErr(argv0);
+    return picolArityErr(orig_argv[0]);
   // defaults to path 1.
   int fd = (argc == 3) ? atoi(argv[1]) : 1;
   int unused;
   int e = Os9WritLn(fd, argv[argc - 1], strlen(argv[argc - 1]), &unused);
   if (e)
-    return Error(argv0, e);
+    return Error(orig_argv[0], e);
   if (!nonewline) {
     e = Os9WritLn(fd, "\r", 1, &unused);
     if (e)
-      return Error(argv0, e);
+      return Error(orig_argv[0], e);
   }
-  return PICOL_OK;
+  return EmptyOrError(0, orig_argv);
 }
 
 //- if {cond} {body_if_true} ?else {body_if_else}?
@@ -1113,6 +1195,7 @@ int picolCommandCallProc(int argc, char **argv, void *pd)
     snprintf_s(errbuf, BUF_SIZE, "Proc '%s' called with wrong num args", argv[0]);
     picolSetResult(errbuf);
     picolDropCallFrame();       /* remove the called proc callframe */
+    FreeDope(c, v);
     return PICOL_ERR;
   }
 
@@ -1135,6 +1218,7 @@ int picolCommandCallProc(int argc, char **argv, void *pd)
   if (errcode == PICOL_RETURN)
     errcode = PICOL_OK;
   picolDropCallFrame();         /* remove the called proc callframe */
+  FreeDope(c, v);
   return errcode;
 }
 
@@ -1212,10 +1296,9 @@ int picolCommandInfo(int argc, char **argv, void *pd)
   printf_d(" avail=%d", heap_max - heap_brk - STACK_MARGIN);
   int cap = SMALLEST_BUCKET;
   for (byte b = 0; b < NBUCKETS; b++) {
-    int n = 0;
+    int num_in_bucket = 0;
     for (struct Head * h = buck_freelist[b]; h; h = h->next) {
-      heap_check_block(h, cap);
-      n++;
+      num_in_bucket++;
     }
     printf_d(" [%d]", cap);
     if (buck_num_alloc[b]) {
@@ -1223,7 +1306,7 @@ int picolCommandInfo(int argc, char **argv, void *pd)
       printf_d("f:%d=", buck_num_free[b]);
       printf_d("u:%d;", buck_num_alloc[b] - buck_num_free[b]);
       printf_d("b:%d-", buck_num_brk[b]);
-      printf_d("x:%d.", n);
+      printf_d("x:%d.", num_in_bucket);
     }
     cap += cap;
   }
@@ -1769,7 +1852,9 @@ int picolCommandSource(int argc, char **argv, void *pd)
   if (e)
     return Error(argv[0], e);
 
-  return picolEval(buf, path);
+  e = picolEval(buf, path);
+  free(buf);
+  return e;
 }
 
 // For lame coco keyboards:  `((` -> `[`, `(((` -> `{`, `))` -> `]`, `)))` -> `}`, `@@` -> `\`.
@@ -1813,15 +1898,6 @@ void ReduceBigraphs(char *s)
     }
   }
   *z = '\0';
-}
-
-void picolInitMustEval(const char *s)
-{
-  int e = picolEval(s, "__init__");
-  if (e) {
-    printf_s(" *** %s ***\r", Result);
-    panic("INIT FAILS");
-  }
 }
 
 void picolRegisterCoreCommands()
@@ -1893,15 +1969,26 @@ void picolRegisterCoreCommands()
   //picolRegisterCommand("9readln", picolCommand9ReadLn, NULL);
   //picolRegisterCommand("9writln", picolCommand9WritLn, NULL);
 
-  picolInitMustEval
-      ("set rcfile /dd/sys/nclrc.tcl; if {catch {source $rcfile} err} {puts 2 \"Error sourcing $rcfile: $err\"}");
 }
 
 int main()
 {
   picolInitInterp();
+#ifdef HEAP_CHECKS
+  HeapCheck();
+#endif
   picolRegisterCoreCommands();
+#ifdef HEAP_CHECKS
+  HeapCheck();
+#endif
 
+  // A script can `source $rcfile` if it wants.
+  picolSetVar("rcfile", "/dd/sys/nclrc.tcl");
+#ifdef HEAP_CHECKS
+  HeapCheck();
+#endif
+
+  // If command-line params, invoke a script.
   int param_size = param_max - param_min;
   char *params = malloc(param_size + 1);
   memcpy(params, (char *) param_min, param_size);
@@ -1911,16 +1998,17 @@ int main()
   int argc;
   const char **argv;
   int e = SplitList(params, &argc, &argv);
+#ifdef HEAP_CHECKS
+  HeapCheck();
+#endif
   if (e) {
     puts("Cannot SplitList params");
-    exit(e);
+    return e;
   }
-
-  //printf_d("argc=%d\r", argc);
-  for (int j = 0; j < argc; j++) {
-    //printf_d("arg:%s\r", argv[j]);
-    //printf_s("===:%s\r", argv[j]);
-  }
+  free(params);
+#ifdef HEAP_CHECKS
+  HeapCheck();
+#endif
 
   if (argc) {
 
@@ -1931,12 +2019,8 @@ int main()
     for (int j = 1; j < argc; j++) {
       BufAppElemS(&list, argv[j]);
       BufFinish(&list);
-      //printf_d("  j:%d\r", j);
-      //printf_s("add:%s\r", argv[j]);
-      //printf_s("  >:%s\r", list.s);
     }
     BufFinish(&list);
-    //printf_s(">>>:%s\r", list.s);
     picolSetVar("argv", list.s);
     BufDel(&list);
 
@@ -1944,42 +2028,56 @@ int main()
     BufAppElemS(&list, "source");
     BufAppElemS(&list, argv[0]);
     BufFinish(&list);
-    //printf_s("eval: %s\r", list.s);
-    e = picolEval(list.s, "__script__");
+    e = picolEval(list.s, "__main__");
     BufDel(&list);
     if (e) {
       printf_d("ERROR code %d: ", e);
       printf_s("%s\r", Result);
     }
-    exit(e);
-  }
+    return e;
+  } else {
 
-  while (1) {
-    puts(" >NCL> ");
-    char line[111];
-    bzero(line, sizeof line);
-    int bytes_read;
-    e = Os9ReadLn(0 /*path */ , line, 111, &bytes_read);
-    if (e) {
-      puts(" *EOF*\r");
-      break;
-    }
-    ReduceBigraphs(line);
-    e = picolEval(line, "__repl__");
-    if (e) {
-      puts(" ERROR: ");
-      if (e > 1) {
-        printf_d("CODE=%d: ", e);
+    e = picolEval("if {catch {source $rcfile} rcval} {puts 2 \"Error sourcing $rcfile: $rcval\"}",
+                  "__rc__");
+    if (e)
+      panic("RC");
+
+    while (1) {
+      puts(" >NCL> ");
+      char line[111];
+      bzero(line, sizeof line);
+      int bytes_read;
+      e = Os9ReadLn(0 /*path */ , line, 111, &bytes_read);
+      if (e) {
+        puts(" *EOF*\r");
+        break;
       }
-      puts(Result);
-      puts("\r");
-    } else {
-      if (Result[0] != '\0') {
+#ifdef TEAR_DOWN
+      // If debugging teardown, line starting with `;` exits repl.
+      if (line[0] == ';') {
+        break;
+      }
+#endif
+      ReduceBigraphs(line);
+      e = picolEval(line, "__repl__");
+      if (e) {
+        puts(" ERROR: ");
+        if (e > 1) {
+          printf_d("CODE=%d: ", e);
+        }
         puts(Result);
         puts("\r");
+      } else {
+        if (Result[0] != '\0') {
+          puts(Result);
+          puts("\r");
+        }
       }
     }
   }
-  exit(0);
+#ifdef TEAR_DOWN
+  FreeDope(argc, argv);
+  TearDown();
+#endif
   return 0;
 }

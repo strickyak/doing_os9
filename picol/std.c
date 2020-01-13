@@ -177,7 +177,6 @@ void printf_s(const char *fmt, const char *s)
 
 char *strdup(const char *s)
 {
-
   int n = strlen(s);
   char *p = (char *) malloc(n + 1);
   strcpy(p, s);

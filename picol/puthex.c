@@ -31,7 +31,7 @@ void puthex(char prefix, int a)
 // panic: print message and exit 5.
 void panic(const char *s)
 {
-  puthex('P', (int) s);
+  pc_trace('*', 0);
   puts(s);
   exit(5);
 }

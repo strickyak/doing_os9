@@ -1,8 +1,13 @@
-////////////////////  Malloc & Free
+// Malloc & Free, by Strick.
+//
+// Raise requested malloc size to the next power of two.
+// There is a free list for each power of two.
+// So if random sizes are used, we waste perhaps 25%.
+// But it is fast.
 
-#define ZERO_MALLOC
-#define ZERO_FREE
-//#define CHECK_ZERO_FRESH
+// #define ZERO_MALLOC             // catch bugs faster.
+// #define ZERO_FREE               // catch bugs faster.
+// #define AUDIT_MALLOC_FREE  // for leak and unmatched malloc/free detection.
 
 // Parameter boundaries for main() argv.
 unsigned int param_min;
@@ -31,7 +36,14 @@ struct Head {
 
 void heap_check_block(struct Head *h, int cap)
 {
+  // pc_trace('?', (char*)h);
   if (h->barrierA != 'A' || h->barrierZ != 'Z' || (cap && h->cap != cap)) {
+    puthex('h', h);
+    puthex('A', h->barrierA);
+    puthex('Z', h->barrierZ);
+    puthex('c', h->cap);
+    puthex('C', cap);
+    pc_trace('*', (char *) h);
     panic("corrupt heap");
   }
 }
@@ -53,6 +65,20 @@ byte which_bucket(int n, int *capP)
   return b;
 }
 
+#if 0
+void ShowChains()
+{
+  for (byte b = 0; b < NBUCKETS; b++) {
+    printf_d("Bucket [%d]: ", b);
+    for (struct Head * p = buck_freelist[b]; p; p = p->next) {
+      puthex('=', p);
+    }
+    puts("\r");
+  }
+  puts("\r");
+}
+#endif
+
 char *malloc(int n)
 {
   int cap;
@@ -63,10 +89,14 @@ char *malloc(int n)
 
   struct Head *h = buck_freelist[b];
   if (h) {
+    h->cap = cap;
     heap_check_block(h, cap);
     buck_freelist[b] = h->next;
 #ifdef ZERO_MALLOC
     bzero((char *) (h + 1), cap);
+#endif
+#ifdef AUDIT_MALLOC_FREE
+    pc_trace('M', (char *) h);
 #endif
     return (char *) (h + 1);
   }
@@ -83,25 +113,16 @@ char *malloc(int n)
   }
   buck_num_brk[b]++;
 
-  // If not zero, it isn't fresh.
-#ifdef CHECK_ZERO_FRESH
-  for (char *j = p; j < (char *) heap_brk; j++) {
-    if (*j) {
-      puthex('n', n);
-      puthex('c', cap);
-      puthex('u', heap_brk);
-      puthex('m', heap_max);
-      panic("heap: unzero");
-    }
-  }
-#endif
-  h = ((struct Head *) p) - 1;
+  h = ((struct Head *) p);
   h->barrierA = 'A';
   h->barrierZ = 'Z';
   h->cap = cap;
   h->next = NULL;
 #ifdef ZERO_MALLOC
   bzero((char *) (h + 1), cap);
+#endif
+#ifdef AUDIT_MALLOC_FREE
+  pc_trace('M', (char *) h);
 #endif
   return (char *) (h + 1);
 }
@@ -112,6 +133,10 @@ void free(void *p)
     return;
 
   struct Head *h = ((struct Head *) p) - 1;
+  if (!h->cap) {                // TODO -- because double-frees.
+    panic("DoubleFree");
+    return;
+  }
   int cap;
   byte b = which_bucket(h->cap, &cap);
   heap_check_block(h, cap);
@@ -120,8 +145,12 @@ void free(void *p)
 #ifdef ZERO_FREE
   bzero((char *) p, cap);
 #endif
+  h->cap = 0;                   // TODO -- because double-frees.
   h->next = buck_freelist[b];
   buck_freelist[b] = h;
+#ifdef AUDIT_MALLOC_FREE
+  pc_trace('F', (char *) h);
+#endif
 }
 
 char *realloc(void *p, int n)

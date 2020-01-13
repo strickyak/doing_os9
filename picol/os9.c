@@ -15,14 +15,76 @@ asm void stkcheck() {
 		puls  x,pc          ; and use it to return.
 
 stkcheckBAD	leax  stkcheckMSG,pcr
-		ldy   #(stkcheckNUL-stkcheckMSG)
-		lda   #2            ; stderr
-		os9   I_WritLn
-		ldb   #57
+
+*		ldy   #(stkcheckNUL-stkcheckMSG)
+*		lda   #2            ; stderr
+*		os9   I_WritLn
+
+		pshs x
+		lbsr _panic
+		ldb   #5
 		os9   F_Exit
+
 
 stkcheckMSG	fcc   / *stack oom* /
 stkcheckNUL	fcb   0
+	}
+}
+
+asm void pc_trace(int mark, char* ptr) {
+	asm {
+*                           ; 10: mark; 12:ptr
+		pshs y,u    ; 4: orig &; 6: orig frame pointer U.
+		leas -4,s   ; 0: char 2: int (for puthex)
+
+		ldd #$0d00   ; CR.
+		std 2,s
+		leax 2,s
+		stx ,s
+		lbsr _puts
+
+		ldd 10,s
+		std 0,s
+		ldd 12,s
+		std 2,s
+		lbsr _puthex
+
+		ldd #'{'
+		std 0,s
+		ldd #$FFF1
+		std 2,s
+		lbsr _puthex
+
+
+PcTraceLoop	ldd #'U'
+		std ,s
+		stU 2,s
+		lbsr _puthex
+
+		ldd #'P'
+		std ,s
+		ldd 2,u
+		std 2,s
+		lbsr _puthex
+
+		ldU ,u	; previous frame pointer
+		tfr U,D
+		addd #0
+		bne PcTraceLoop
+
+		ldd #'}'
+		std 0,s
+		ldd #$FFF2
+		std 2,s
+		lbsr _puthex
+
+		ldd #$0d00   ; CR.
+		std 2,s
+		leax 2,s
+		stx ,s
+		lbsr _puts
+
+		puls D,X,y,u,pc  ; D and X to undo "leas -4,s"
 	}
 }
 
