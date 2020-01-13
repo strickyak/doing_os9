@@ -1803,7 +1803,7 @@ int picolCommand9MakOrChgDir(int argc, char **argv, void *pd)
   return EmptyOrError(e, argv);
 }
 
-//- delete filepath
+//- 9delete filepath
 int picolCommand9Delete(int argc, char **argv, void *pd)
 {
   if (argc != 2)

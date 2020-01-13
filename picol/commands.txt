@@ -8,6 +8,7 @@
  9chgdir filepath which_dir (which_dir: 1=working, 4=execute)
  9close fd
  9create filepath access_mode attrs -> fd (access_mode: 2=write 3=update)
+ 9delete filepath
  9dup fd -> new_fd
  9filesize fd -> size (error if 64K or bigger)
  9fork command args.... -> child_id
@@ -28,7 +29,6 @@
  bitor a b -> z (bitwise or: a|b)
  bitxor a b -> z (bitwise xor: x^b)
  catch body ?varname? -> code (result value put in varname; code 0 is no error)
- delete filepath
  eq a b -> z (string compare: a==b; returns 0 or 1)
  eval args... -> result (args are joined with spaces)
  exit ?status? (does not return.  0 is good status, 1..255 are bad)
