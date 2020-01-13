@@ -65,11 +65,19 @@ It is mostly stdout right now, but should be stderr.
 This implements a subset of old style Tcl.
 
 There is a file `tcl_6.7_man.txt` in this directory that documents an old
-version of Tcl.  That's probably a better starting point than newer versions.
+version of Tcl.  That's probably a better starting point than newer versions
+if you want to learn Tcl.
 
-Still there are many differences:
+(Actually NCL started with a tiny Tcl-like interpreter called Picol; see Credits below.
+You might also enjoy
+http://antirez.com/articoli/tclmisunderstood.html --
+a lot of those first examples work with NCL.  Notable exceptions are that
+NCL does not have `expr` or `uplevel`, and the syntax for the predicate of
+`if` and `while` statements is different.)
 
-*   There is no `expr` command.  Instead there are individual Tcl commands 
+There are many differences from Tcl:
+
+*   There is no `expr` command.  Instead there are individual Tcl commands
 for each arithmetic or string operator.  The `if` and `while` commands do
 not take an `expr`-style argument, but rather a normal Tcl command.
 
@@ -77,8 +85,8 @@ not take an `expr`-style argument, but rather a normal Tcl command.
 Normal Tcl:
 proc fizzbuzz i {
         set z {}
-        if {0 ==($i % 3)} {append z "fizz"}
-        if {0 ==($i % 5)} {append z "buzz"}
+        if {0 == ($i % 3)} {append z "fizz"}
+        if {0 == ($i % 5)} {append z "buzz"}
         if {[llength $z]} {set z} else {set i}
 }
 
