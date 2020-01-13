@@ -171,9 +171,42 @@ array                      -- list the names.
  sleep num_ticks
  slength str -> length
  slower str -> newstr (convert str to ASCII lowercase)
- smatch pattern str (`*` for any string, `?` for any char, `[...]` for char range )
+ smatch pattern str -> 1 or 0 (`*` for any string, `?` for any char, `[...]` for char range)
  source filepath (read and execute the script; 16K max}
  srange str first last -> substr (return substring range from first to last inclusive)
+ sregexp pattern str -> position or -1 (Most basic patterns are supported. see re.h for documentation)
  supper str -> newstr (convert str to ASCII uppercase)
  while {cond} {body} (cond evaluates to 0 for false, other int for true)
 ```
+
+== Credits & Licenses
+
+The core of the NCL interpreter comes from PICOL by Salvatore `antirez`
+Sanfilippo.  BSD licensed.  PICOL may have been published as a toy, but
+without it as a base, NCL probably would not have happened.  It's been
+a pleasure to add more features to it.
+
+Tcl_StringMatch comes from the source code to tcl6.7, Copyright 1987-1991
+Regents of the University of California, with the following license:
+
+```
+ * Permission to use, copy, modify, and distribute this
+ * software and its documentation for any purpose and without
+ * fee is hereby granted, provided that the above copyright
+ * notice appear in all copies.  The University of California
+ * makes no representations about the suitability of this
+ * software for any purpose.  It is provided "as is" without
+ * express or implied warranty.
+```
+
+The regular expression library comes from
+https://github.com/kokke/tiny-regex-c which is public
+domain.  Its author credits code by Rob Pike and
+its exegesis by Brian Kernighan for its inspiration:
+https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
+
+Additions by me, Strick, in this `/picol/` directory are BSD licensed.
+
+(There are files in other directories if this git repository that are
+GPL, so watch out for them.  But they should have nothing to do with
+this NCL command.)
