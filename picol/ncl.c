@@ -1046,6 +1046,10 @@ int picolCommandGets(int argc, char **argv, void *pd)
   int bytes_read = 0;
   bzero(buf, BUF_SIZE + 1);
   int e = Os9ReadLn(fd, buf, BUF_SIZE, &bytes_read);
+  if (e == 211 /*EOF*/) {
+          picolSetVar(varname, "");
+	  return ResultD(0);
+  }
   if (e)
     return Error(argv[0], e);
   picolSetVar(varname, buf);
@@ -1915,6 +1919,7 @@ void picolRegisterCoreCommands()
 
   picolRegisterCommand("set", picolCommandSet, NULL);
   picolRegisterCommand("puts", picolCommandPuts, NULL);
+  picolRegisterCommand("gets", picolCommandGets, NULL);
   picolRegisterCommand("if", picolCommandIf, NULL);
   picolRegisterCommand("and", picolCommandAnd, NULL);
   picolRegisterCommand("or", picolCommandOr, NULL);

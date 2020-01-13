@@ -3,8 +3,8 @@ proc run args {
 	set argv {}
 
 	set in - ; set out -
-	set prep {list}
-	set post {list}
+	set prep {list; }
+	set post {list; }
 	set bg 0
 	# puts =1=
 	foreach a $args {
@@ -15,13 +15,13 @@ proc run args {
 		} else {if {smatch "<*" $a} {
 			# puts ==less
 			set in [srange $a 1 999]
-			set prep {set dupin [9dup 0] ; 9close 0 ; 9open [set in] 1}
-			set post {catch {9close 0} ; 9dup [set dupin]; catch {9close [set dupin]}}
+			append prep {set dupin [9dup 0] ; 9close 0 ; 9open [set in] 1 ;}
+			append post {catch {9close 0} ; 9dup [set dupin]; catch {9close [set dupin]} ;}
 		} else {if {smatch ">*" $a} {
 			# puts ==greater
 			set out [srange $a 1 999]
-			set prep {set dupout [9dup 1] ; 9close 1 ; 9create [set out] 2 033}
-			set post {catch {9close 1} ; 9dup [set dupout]; catch {9close [set dupout]}}
+			append prep {set dupout [9dup 1] ; 9close 1 ; 9create [set out] 2 033 ;}
+			append post {catch {9close 1} ; 9dup [set dupout]; catch {9close [set dupout]} ;}
 		} else {
 			# puts ==lappend
 			lappend argv $a
@@ -74,6 +74,7 @@ proc readdir d {
 		if {catch {set v [9read $fd 32]}} break
 		if {lindex $v 0} {lappend z [implode_thru_hi_bit $v]}
 	}
+	9close $fd
 	return $z
 }
 # Simple glob in current directory.
