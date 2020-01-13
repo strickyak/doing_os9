@@ -5,8 +5,8 @@
 // So if random sizes are used, we waste perhaps 25%.
 // But it is fast.
 
-// #define ZERO_MALLOC             // catch bugs faster.
-// #define ZERO_FREE               // catch bugs faster.
+#define ZERO_MALLOC             // catch bugs faster.
+#define ZERO_FREE               // catch bugs faster.
 // #define AUDIT_MALLOC_FREE  // for leak and unmatched malloc/free detection.
 
 // Parameter boundaries for main() argv.

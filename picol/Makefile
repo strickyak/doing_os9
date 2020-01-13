@@ -6,6 +6,8 @@ all:
 	python  wrap.py  < ncl.s > ncl.asm
 	lwasm -f"os9" --pragma=forwardrefmax --output=ncl.bin --list="ncl.list" --map="ncl.map" ncl.asm
 	:
+	grep '^//-' ncl.c | sed 's;^//-;;' | LC_ALL=C sort  > commands.txt
+	:
 	cp ncl.list ../borges/ncl.mod
 	os9 copy -r ncl.bin $(DISK),cmds/ncl
 	os9 attr -e -r -w -pe -pr $(DISK),cmds/ncl

@@ -36,8 +36,8 @@ extern char *realloc(void *, int);
 
 #include "re.c"
 
-// #define HEAP_CHECKS  // Check heap integregity at key points.
-// #define TEAR_DOWN    // Free all memory structures at the end, to check for leak.  Use `;` to exit repl.
+#define HEAP_CHECKS  // Check heap integregity at key points.
+#define TEAR_DOWN    // Free all memory structures at the end, to check for leak.  Use `;` to exit repl.
 
 enum { PICOL_OK, PICOL_ERR, PICOL_RETURN, PICOL_BREAK, PICOL_CONTINUE };
 enum { PT_ESC, PT_STR, PT_CMD, PT_VAR, PT_SEP, PT_EOL, PT_EOF };
@@ -672,12 +672,12 @@ int picolArityErr(char *name)
   return PICOL_ERR;
 }
 
-// eq a b -> z (string compare: a==b)
-// ne a b -> z (string compare: a!=b)
-// lt a b -> z (string compare: a<b)
-// le a b -> z (string compare: a<=b)
-// gt a b -> z (string compare: a>b)
-// ge a b -> z (string compare: a>=b)
+//- eq a b -> z (string compare: a==b; returns 0 or 1)
+//- ne a b -> z (string compare: a!=b; returns 0 or 1)
+//- lt a b -> z (string compare: a<b; returns 0 or 1)
+//- le a b -> z (string compare: a<=b; returns 0 or 1)
+//- gt a b -> z (string compare: a>b; returns 0 or 1)
+//- ge a b -> z (string compare: a>=b; returns 0 or 1)
 int picolCommandString(int argc, char **argv, void *pd)
 {
   if (argc != 3)
@@ -708,23 +708,23 @@ int picolCommandString(int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
-// + args... -> z (add integers; 0 if none)
-// * args... -> z (multiply integers; 1 if none)
-// - a b -> z (subtract: a-b)
-// / a b -> z (integer division: a/b)
-// % a b -> z (integer modulo: a%b)
-// == a b -> z
-// != a b -> z
-// < a b -> z
-// <= a b -> z
-// > a b -> z
-// >= a b -> z
-// bitand a b -> z (bitwise and: a&b)
-// bitor a b -> z (bitwise or: a|b)
-// bitxor a b -> z (bitwise xor: x^b)
-// << a b -> z (shift left: a<<b)
-// >> a b -> z (shift right, signed: a>>b)
-// >>> a b -> z (shift right, unsigned: a>>b)
+//- + args... -> z (add integers; 0 if none)
+//- * args... -> z (multiply integers; 1 if none)
+//- - a b -> z (subtract: a-b)
+//- / a b -> z (integer division: a/b)
+//- % a b -> z (integer modulo: a%b)
+//- == a b -> z (integer compare: returns 0 or 1)
+//- != a b -> z (integer compare: returns 0 or 1)
+//- < a b -> z (integer compare: returns 0 or 1)
+//- <= a b -> z (integer compare: returns 0 or 1)
+//- > a b -> z (integer compare: returns 0 or 1)
+//- >= a b -> z (integer compare: returns 0 or 1)
+//- bitand a b -> z (bitwise and: a&b)
+//- bitor a b -> z (bitwise or: a|b)
+//- bitxor a b -> z (bitwise xor: x^b)
+//- << a b -> z (shift left: a<<b)
+//- >> a b -> z (shift right, signed: a>>b)
+//- >>> a b -> z (shift right, unsigned: a>>b)
 int picolCommandMath(int argc, char **argv, void *pd)
 {
   char m1 = argv[0][0];
@@ -1940,7 +1940,7 @@ void picolRegisterCoreCommands()
   picolRegisterCommand("sindex", picolCommandStringRange, NULL);
   picolRegisterCommand("srange", picolCommandStringRange, NULL);
   picolRegisterCommand("supper", picolCommandStringUpperLower, NULL);
-  picolRegisterCommand("srange", picolCommandStringUpperLower, NULL);
+  picolRegisterCommand("slower", picolCommandStringUpperLower, NULL);
   picolRegisterCommand("smatch", picolCommandStringMatch, NULL);
   picolRegisterCommand("regexp", picolCommandStringMatch, NULL);
   picolRegisterCommand("array", picolCommandArray, NULL);

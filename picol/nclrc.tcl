@@ -1,9 +1,57 @@
 # "unknown" calls "run".
 proc run args {
-	set cid [eval 9fork $args]
-	while * {9wait c e; if {== $c $cid} break}
-	if {+ $e} {error "[lindex $args 0]: Exit status $e"}
-	list
+	set argv {}
+
+	set in - ; set out -
+	set prep {list}
+	set post {list}
+	set bg 0
+	# puts =1=
+	foreach a $args {
+		# puts "=2= $a"
+		if {eq $a "&"} {
+			# puts ==ampersand
+			set bg 1
+		} else {if {smatch "<*" $a} {
+			# puts ==less
+			set in [srange $a 1 999]
+			set prep {set dupin [9dup 0] ; 9close 0 ; 9open [set in] 1}
+			set post {catch {9close 0} ; 9dup [set dupin]; catch {9close [set dupin]}}
+		} else {if {smatch ">*" $a} {
+			# puts ==greater
+			set out [srange $a 1 999]
+			set prep {set dupout [9dup 1] ; 9close 1 ; 9create [set out] 2 033}
+			set post {catch {9close 1} ; 9dup [set dupout]; catch {9close [set dupout]}}
+		} else {
+			# puts ==lappend
+			lappend argv $a
+			# puts "==lappend argv $a"
+		}}}
+		# puts "=22= $a"
+	}
+
+	# puts =3=
+	# puts "=in= <$in>"
+	# puts "=out= <$out>"
+	# puts "=prep= $prep"
+	# puts "=argv= $argv"
+	# puts "=post= $post"
+	# puts "=bg= $bg"
+
+	if {catch {eval $prep} what} {
+		eval $post
+		error "Failed to prep for command: $what"
+	}
+	set cid [eval 9fork $argv]
+	eval $post
+
+	if {+ $bg} {
+		return $cid
+	} else {
+		while * {9wait c e; if {== $c $cid} break}
+		if {+ $e} {error "[lindex $args 0]: Exit status $e"}
+		return ""
+	}
 }
 proc unknown args {eval run $args}
 
@@ -12,6 +60,28 @@ proc cd d {9chgdir $d 1}
 proc chd d {9chgdir $d 1}
 proc chx d {9chgdir $d 4}
 proc w {} {9wait}
+
+# For file globbing.
+proc implode_thru_hi_bit x {
+	set z {}
+	foreach i $x {if {bitand $i 128} {lappend z [bitand 127 $i]; break} else {lappend z $i}}
+	implode $z
+}
+proc readdir d {
+	set z {}
+	set fd [9open $d 129]
+	while * {
+		if {catch {set v [9read $fd 32]}} break
+		if {lindex $v 0} {lappend z [implode_thru_hi_bit $v]}
+	}
+	return $z
+}
+# Simple glob in current directory.
+proc glob pat {
+	set z {}
+	foreach f [readdir .] {if {smatch $pat $f} {lappend z $f}}
+	set z
+}
 
 # Programming demos.
 proc not x {== $x 0}
