@@ -23,6 +23,28 @@ os9 copy -r nclrc.tcl /my/disk/image,sys/nclrc.tcl
 
 == Common Snags
 
+On my CoCo keyboard it is hard or impossible to type `[` `]` `{` `}` and `\`.
+So the input to NCL makes these substitutions:
+
+```
+(( to [
+)) to ]
+((( to {
+))) to }
+@@ to \
+```
+
+Those were chosen because `(` `)` and `@` are not used in Ncl syntax.
+
+In this example, the second command is actually `glob {[a-z]*}` :
+
+```
+ >NCL> glob *
+.. . OS9Boot CMDS SYS DEFS ccbkrn sysgo startup NITROS9 IOPAGE.BAS ZDIR COUNT100.BAS Z3 Z4 zsq nclrc.txt
+ >NCL> glob (((((a-z))*)))
+OS9Boot CMDS SYS DEFS ccbkrn sysgo startup NITROS9 IOPAGE.BAS ZDIR COUNT100.BAS Z3 Z4 zsq nclrc.txt
+```
+
 Three commands on my NitrOS9 system conflict with Tcl commands:
 
 *   `error`
