@@ -60,8 +60,9 @@
  sleep num_ticks
  slength str -> length
  slower str -> newstr (convert str to ASCII lowercase)
- smatch pattern str (`*` for any string, `?` for any char, `[...]` for char range )
+ smatch pattern str -> 1 or 0 (`*` for any string, `?` for any char, `[...]` for char range)
  source filepath (read and execute the script; 16K max}
  srange str first last -> substr (return substring range from first to last inclusive)
+ sregexp pattern str -> position or -1 (Most basic patterns are supported. see re.h for documentation)
  supper str -> newstr (convert str to ASCII uppercase)
  while {cond} {body} (cond evaluates to 0 for false, other int for true)

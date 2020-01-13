@@ -36,8 +36,8 @@ extern char *realloc(void *, int);
 
 #include "re.c"
 
-#define HEAP_CHECKS  // Check heap integregity at key points.
-#define TEAR_DOWN    // Free all memory structures at the end, to check for leak.  Use `;` to exit repl.
+#define HEAP_CHECKS             // Check heap integregity at key points.
+#define TEAR_DOWN               // Free all memory structures at the end, to check for leak.  Use `;` to exit repl.
 
 enum { PICOL_OK, PICOL_ERR, PICOL_RETURN, PICOL_BREAK, PICOL_CONTINUE };
 enum { PT_ESC, PT_STR, PT_CMD, PT_VAR, PT_SEP, PT_EOL, PT_EOF };
@@ -982,7 +982,8 @@ int picolCommandSplit(int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
-//- smatch pattern str (`*` for any string, `?` for any char, `[...]` for char range )
+//- smatch pattern str -> 1 or 0 (`*` for any string, `?` for any char, `[...]` for char range)
+//- sregexp pattern str -> position or -1 (Most basic patterns are supported. see re.h for documentation)
 int picolCommandStringMatch(int argc, char **argv, void *pd)
 {
   if (argc != 3)
@@ -990,7 +991,7 @@ int picolCommandStringMatch(int argc, char **argv, void *pd)
   // Always do case-independant matching.
   char *pattern = strdup_upper(argv[1]);
   char *s = strdup_upper(argv[2]);
-  int z = (Up(argv[0][0]) == 'R') ? re_match(pattern, s) : Tcl_StringMatch(s, pattern);
+  int z = (Up(argv[0][1]) == 'R') ? re_match(pattern, s) : Tcl_StringMatch(s, pattern);
   free(pattern);
   free(s);
   return ResultD(z);
@@ -1047,8 +1048,8 @@ int picolCommandGets(int argc, char **argv, void *pd)
   bzero(buf, BUF_SIZE + 1);
   int e = Os9ReadLn(fd, buf, BUF_SIZE, &bytes_read);
   if (e == 211 /*EOF*/) {
-          picolSetVar(varname, "");
-	  return ResultD(0);
+    picolSetVar(varname, "");
+    return ResultD(0);
   }
   if (e)
     return Error(argv[0], e);
@@ -1947,7 +1948,7 @@ void picolRegisterCoreCommands()
   picolRegisterCommand("supper", picolCommandStringUpperLower, NULL);
   picolRegisterCommand("slower", picolCommandStringUpperLower, NULL);
   picolRegisterCommand("smatch", picolCommandStringMatch, NULL);
-  picolRegisterCommand("regexp", picolCommandStringMatch, NULL);
+  picolRegisterCommand("sregexp", picolCommandStringMatch, NULL);
   picolRegisterCommand("array", picolCommandArray, NULL);
   picolRegisterCommand("split", picolCommandSplit, NULL);
   picolRegisterCommand("join", picolCommandJoin, NULL);
