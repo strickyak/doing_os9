@@ -39,6 +39,8 @@ extern char *realloc(void *, int);
 #define HEAP_CHECKS             // Check heap integregity at key points.
 #define TEAR_DOWN               // Free all memory structures at the end, to check for leak.  Use `;` to exit repl.
 
+#define strcaseeq(A,B) (0==strcasecmp((A),(B)))
+
 enum { PICOL_OK, PICOL_ERR, PICOL_RETURN, PICOL_BREAK, PICOL_CONTINUE };
 enum { PT_ESC, PT_STR, PT_CMD, PT_VAR, PT_SEP, PT_EOL, PT_EOF };
 
@@ -1098,6 +1100,47 @@ int picolCommandIf(int argc, char **argv, void *pd)
   return PICOL_OK;
 }
 
+#if 0
+Not Working Yet.
+//#- if {cond} {body_if_true} ?else {body_if_else}?
+//#- if {cond} {body_if_true} elseif {cond2} {body_if_true2} ... ?else {body_if_else}?
+int picolCommandIf(int argc, char **argv, void *pd)
+{
+  char** orig_argv = argv;
+
+  int retcode;
+  puts("if...");
+  puts(StaticD(argc));
+  puts("...");
+  for (int i=0; i<argc; i++) {
+  	puts(StaticD(i));
+  	puts("=");
+  	puts(argv[i]);
+  }
+  puts("\r");
+
+  while (true) {
+    if (argc < 3)
+      return picolArityErr(orig_argv[0]);
+
+    if ((retcode = picolEval(argv[1], "cond of if")) != PICOL_OK)
+      return retcode;
+
+    if (atoi(Result)) {
+      return picolEval(argv[2], "then of if");
+    } else if (argc > 5 && strcaseeq(argv[3],"elseif")) {
+	  argc -= 3, argv +=3;
+	  continue;
+    } else if (argc == 5 && strcaseeq(argv[3],"else")) {
+      return picolEval(argv[4], "else of if");
+    } else {
+      return picolArityErr(orig_argv[0]);
+    }
+  }
+  return PICOL_OK;
+}
+#endif
+
 //- and {cond1} {cond2}... -> first_false_or_one (stop evaluating if one is false)
 int picolCommandAnd(int argc, char **argv, void *pd)
 {
@@ -1653,9 +1696,17 @@ int picolCommand9Chain(int argc, char **argv, void *pd)
   return Error(argv[1], e);
 }
 
-//- 9fork command args.... -> child_id
+//- 9fork ?-mX? command args.... -> child_id (option: -m8 for 8 ram blocks; -m8K for 8K ram)
 int picolCommand9Fork(int argc, char **argv, void *pd)
 {
+  int mem_size = 0;
+  while (argc > 2 && Tcl_StringMatch(argv[1], "-m*")) {
+    mem_size = atoi(argv[1] + 2);
+    if (Up(argv[1][strlen(argv[1]) - 1]) == 'K')
+      mem_size <<= 2;
+    argc--;
+    argv++;
+  }
   if (argc < 2) {
     return picolArityErr(argv[0]);
   }
@@ -1664,7 +1715,7 @@ int picolCommand9Fork(int argc, char **argv, void *pd)
   params = AddCR((char *) params);
   int child_id = 0;
   int e = Os9Fork(program, params, strlen(params), 0 /*lang_type */ ,
-                  0 /*mem_size */ , &child_id);
+                  mem_size, &child_id);
   free((char *) params);
   return IntOrError(e, argv + 1, child_id);
 }

@@ -11,7 +11,7 @@
  9delete filepath
  9dup fd -> new_fd
  9filesize fd -> size (error if 64K or bigger)
- 9fork command args.... -> child_id
+ 9fork ?-mX? command args.... -> child_id (option: -m8 for 8 ram blocks; -m8K for 8K ram)
  9makdir filepath mode
  9open filepath access_mode -> fd (access_mode: 1=read 2=write 3=update)
  9wait child_id_var exit_status_var (name two variables to receive results)

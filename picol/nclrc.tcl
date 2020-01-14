@@ -6,43 +6,30 @@ proc run args {
 	set prep {list; }
 	set post {list; }
 	set bg 0
-	# puts =1=
+	set mem_size 0
 	foreach a $args {
-		# puts "=2= $a"
 		if {eq $a "&"} {
-			# puts ==ampersand
 			set bg 1
 		} else {if {smatch "<*" $a} {
-			# puts ==less
 			set in [srange $a 1 999]
 			append prep {set dupin [9dup 0] ; 9close 0 ; 9open [set in] 1 ;}
 			append post {catch {9close 0} ; 9dup [set dupin]; catch {9close [set dupin]} ;}
 		} else {if {smatch ">*" $a} {
-			# puts ==greater
 			set out [srange $a 1 999]
 			append prep {set dupout [9dup 1] ; 9close 1 ; 9create [set out] 2 033 ;}
 			append post {catch {9close 1} ; 9dup [set dupout]; catch {9close [set dupout]} ;}
+		} else {if {smatch "#*" $a} {
+			set mem_size [srange $a 1 999]
 		} else {
-			# puts ==lappend
 			lappend argv $a
-			# puts "==lappend argv $a"
-		}}}
-		# puts "=22= $a"
+		}}}}
 	}
-
-	# puts =3=
-	# puts "=in= <$in>"
-	# puts "=out= <$out>"
-	# puts "=prep= $prep"
-	# puts "=argv= $argv"
-	# puts "=post= $post"
-	# puts "=bg= $bg"
 
 	if {catch {eval $prep} what} {
 		eval $post
 		error "Failed to prep for command: $what"
 	}
-	set cid [eval 9fork $argv]
+	set cid [eval 9fork -m$mem_size $argv]
 	eval $post
 
 	if {+ $bg} {
