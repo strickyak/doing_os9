@@ -11,6 +11,7 @@ all:
 	cp ncl.list ../borges/ncl.mod
 	os9 copy -r ncl.bin $(DISK),cmds/ncl
 	os9 attr -e -r -w -pe -pr $(DISK),cmds/ncl
+	os9 copy -r nclrc.tcl $(DISK),sys/nclrc.tcl
 	:
 	: OKAY
 
