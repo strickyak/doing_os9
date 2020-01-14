@@ -1106,16 +1106,16 @@ Not Working Yet.
 //#- if {cond} {body_if_true} elseif {cond2} {body_if_true2} ... ?else {body_if_else}?
 int picolCommandIf(int argc, char **argv, void *pd)
 {
-  char** orig_argv = argv;
+  char **orig_argv = argv;
 
   int retcode;
   puts("if...");
   puts(StaticD(argc));
   puts("...");
-  for (int i=0; i<argc; i++) {
-  	puts(StaticD(i));
-  	puts("=");
-  	puts(argv[i]);
+  for (int i = 0; i < argc; i++) {
+    puts(StaticD(i));
+    puts("=");
+    puts(argv[i]);
   }
   puts("\r");
 
@@ -1128,10 +1128,10 @@ int picolCommandIf(int argc, char **argv, void *pd)
 
     if (atoi(Result)) {
       return picolEval(argv[2], "then of if");
-    } else if (argc > 5 && strcaseeq(argv[3],"elseif")) {
-	  argc -= 3, argv +=3;
-	  continue;
-    } else if (argc == 5 && strcaseeq(argv[3],"else")) {
+    } else if (argc > 5 && strcaseeq(argv[3], "elseif")) {
+      argc -= 3, argv += 3;
+      continue;
+    } else if (argc == 5 && strcaseeq(argv[3], "else")) {
       return picolEval(argv[4], "else of if");
     } else {
       return picolArityErr(orig_argv[0]);
