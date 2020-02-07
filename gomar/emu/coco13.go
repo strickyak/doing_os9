@@ -37,6 +37,11 @@ func AddressInDeviceSpace(addr Word) bool {
 
 func GetIOByte(a Word) byte {
 	var z byte
+
+	if 0xFF00 <= a && a <= 0xFF40 {
+		a &^= 0x003C // Wipe out the don't-care bits of PIAs.
+	}
+
 	switch a {
 	/* PIA 0 */
 	case 0xFF00:
@@ -166,6 +171,10 @@ func PutIOByte(a Word, b byte) {
 	if 0xFF90 <= a && a < 0xFFC0 {
 		PutGimeIOByte(a, b)
 		return
+	}
+
+	if 0xFF00 <= a && a <= 0xFF40 {
+		a &^= 0x003C // Wipe out the don't-care bits of PIAs.
 	}
 
 	switch a {

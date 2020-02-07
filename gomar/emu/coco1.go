@@ -3,9 +3,11 @@
 package emu
 
 import (
+	"github.com/strickyak/doing_os9/gomar/display"
 	"github.com/strickyak/doing_os9/gomar/sym"
 
 	"bytes"
+	"io/ioutil"
 	"log"
 )
 
@@ -58,7 +60,12 @@ func PeekB(addr Word) byte {
 // PutB is fundamental func to set byte.  Hack register access into here.
 func PutB(addr Word, x byte) {
 	old := mem[addr]
-	mem[addr] = x
+	if Above8000IsRom && addr >= 0x8000 && addr < 0xFF00 {
+		log.Printf("suppressed write to ROM: %04x ... %02x", addr, x)
+	} else {
+		mem[addr] = x
+	}
+
 	if TraceMem {
 		L("\t\t\t\tPutB %04x <- %02x (was %02x)", addr, x, old)
 	}
@@ -76,12 +83,13 @@ func PutGimeIOByte(a Word, b byte) {
 	// not used on coco1.
 	log.Panicf("UNKNOWN PutGimeIOByte address: 0x%04x <- 0x%02x", a, b)
 }
+
 func MemoryModuleOf(addr Word) (name string, offset Word) {
-	addr32 := uint32(addrPhys)
+	addr32 := uint32(addr)
 
 	for _, m := range InitialModules {
 		if addr32 >= m.Addr && addr32 < (m.Addr+m.Len) {
-			return m.Id(), m.Addr - addr32
+			return m.Id(), Word(m.Addr) - Word(addr32)
 		}
 	}
 
@@ -143,4 +151,25 @@ func DumpGimeStatus()      {}
 
 func MapAddr(logical Word, quiet bool) int {
 	return int(logical)
+}
+
+func GetCocoDisplayParams() *display.CocoDisplayParams {
+	z := &display.CocoDisplayParams{
+		Gime:            false,
+		Graphics:        false,
+		AttrsIfAlpha:    false,
+		VirtOffsetAddr:  0x8000, // TODO
+		HorzOffsetAddr:  0x80,   // TODO
+		VirtScroll:      0x0F,   // TODO
+		LinesPerField:   8,      // TODO
+		LinesPerCharRow: 8,      // TODO
+		Monochrome:      true,
+		HRES:            0,     // TODO
+		CRES:            0,     // TODO
+		HVEN:            false, // TODO
+	}
+	for i := 0; i < 16; i++ {
+		z.ColorMap[i] = byte(i) // TODO
+	}
+	return z
 }

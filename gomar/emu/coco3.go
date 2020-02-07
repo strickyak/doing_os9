@@ -143,6 +143,24 @@ func PeekWWithMapping(addr Word, m Mapping) Word {
 	return (Word(hi) << 8) | Word(lo)
 }
 
+func Os9StringWithMapping(addr Word, m Mapping) string {
+	var buf bytes.Buffer
+	for {
+		var b byte = PeekBWithMapping(addr, m)
+		var ch byte = 0x7F & b
+		if '!' <= ch && ch <= '~' {
+			buf.WriteByte(ch)
+		} else {
+			break
+		}
+		if (b & 128) != 0 {
+			break
+		}
+		addr++
+	}
+	return buf.String()
+}
+
 func ExplainMMU() string {
 	return F("mmu:%d task:%d [[ %02x %02x %02x %02x  %02x %02x %02x %02x || %02x %02x %02x %02x  %02x %02x %02x %02x ]]",
 		CondI(MmuEnable, 1, 0),

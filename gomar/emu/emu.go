@@ -24,6 +24,7 @@ var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
 var FlagTriggerPc = flag.Uint64("trigger_pc", 0xC00D, "")
 var FlagTriggerOp = flag.Uint64("trigger_op", 0x17, "")
 var FlagTraceOnOS9 = flag.String("trigger_os9", "", "")
+var FlagRom = flag.String("rom", "", "filename of rom; write-protect above 0x8000")
 var RegexpTraceOnOS9 *regexp.Regexp
 
 const IRQ_FREQ = (500 * 1000)
@@ -106,6 +107,7 @@ var Disp *display.Display
 var fdump int
 var Steps uint64
 var DebugString string
+var Above8000IsRom bool
 
 var Os9Description = make(map[int]string) // Describes OS9 kernel call at this big stack addr.
 
@@ -905,24 +907,6 @@ func Os9String(addr Word) string {
 	var buf bytes.Buffer
 	for {
 		var b byte = PeekB(addr)
-		var ch byte = 0x7F & b
-		if '!' <= ch && ch <= '~' {
-			buf.WriteByte(ch)
-		} else {
-			break
-		}
-		if (b & 128) != 0 {
-			break
-		}
-		addr++
-	}
-	return buf.String()
-}
-
-func Os9StringWithMapping(addr Word, m Mapping) string {
-	var buf bytes.Buffer
-	for {
-		var b byte = PeekBWithMapping(addr, m)
 		var ch byte = 0x7F & b
 		if '!' <= ch && ch <= '~' {
 			buf.WriteByte(ch)
@@ -2948,6 +2932,25 @@ func init() {
 
 const MaxUint64 = 0xFFFFFFFFFFFFFFFF
 
+func LoadRom(filename string) {
+	bb, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Fatalf("Cannot load ROM: %q: %v", filename, err)
+	}
+	var p uint = 0x8000
+	for {
+		for i := 0; i < len(bb); i++ {
+			if p < 0xFF00 || p >= 0xFFF0 {
+				PutB(Word(p), bb[i])
+			}
+			p++
+			if p > 0xFFFF {
+				return
+			}
+		}
+	}
+}
+
 func Main() {
 	SetVerbosityBits(*FlagInitialVerbosity)
 	InitHardware()
@@ -2957,46 +2960,53 @@ func Main() {
 	CocodChan := make(chan *display.CocoDisplayParams, 50)
 	Disp = display.NewDisplay(mem[:], 80, 25, CocodChan, keystrokes)
 
-	{
-		// Open disk image.
-		fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
-		if err != nil {
-			log.Fatalf("Cannot open disk image: %q: %v", *FlagBootImageFilename, err)
+	if *FlagRom != "" {
+		LoadRom(*FlagRom)
+		pcreg = W(0xFFFE)
+		Above8000IsRom = true
+	} else {
+
+		{
+			// Open disk image.
+			fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
+			if err != nil {
+				log.Fatalf("Cannot open disk image: %q: %v", *FlagBootImageFilename, err)
+			}
+			disk_fd = fd
 		}
-		disk_fd = fd
+
+		{
+			// Read disk_sector_0.
+			n, err := disk_fd.Read(disk_sector_0[:])
+			if err != nil {
+				log.Panicf("Bad disk sector read: err=%v", err)
+			}
+			if n != 256 {
+				log.Panicf("Short disk sector read: n=%d", n)
+			}
+
+			disk_dd_fmt = disk_sector_0[16]
+
+			tracks_per_sector := int(disk_sector_0[17])*256 + int(disk_sector_0[18])
+			if tracks_per_sector != 18 {
+				log.Panicf("Not 18 sectors per track: %d.", tracks_per_sector)
+			}
+		}
+
+		{
+			boot, err := ioutil.ReadFile(*FlagBootImageFilename)
+			if err != nil {
+				log.Fatalf("Cannot read boot image: %q: %v", *FlagDiskImageFilename, err)
+			}
+			L("boot mem size: %x", len(boot))
+			for i, b := range boot {
+				PokeB(Word(i+0x100), b)
+			}
+			DumpAllMemory()
+		}
+		pcreg = 0x100
 	}
 
-	{
-		// Read disk_sector_0.
-		n, err := disk_fd.Read(disk_sector_0[:])
-		if err != nil {
-			log.Panicf("Bad disk sector read: err=%v", err)
-		}
-		if n != 256 {
-			log.Panicf("Short disk sector read: n=%d", n)
-		}
-
-		disk_dd_fmt = disk_sector_0[16]
-
-		tracks_per_sector := int(disk_sector_0[17])*256 + int(disk_sector_0[18])
-		if tracks_per_sector != 18 {
-			log.Panicf("Not 18 sectors per track: %d.", tracks_per_sector)
-		}
-	}
-
-	{
-		boot, err := ioutil.ReadFile(*FlagBootImageFilename)
-		if err != nil {
-			log.Fatalf("Cannot read boot image: %q: %v", *FlagDiskImageFilename, err)
-		}
-		L("boot mem size: %x", len(boot))
-		for i, b := range boot {
-			PokeB(Word(i+0x100), b)
-		}
-		DumpAllMemory()
-	}
-
-	pcreg = 0x100
 	sreg = 0
 	dpreg = 0
 	iflag = 0
@@ -3063,7 +3073,7 @@ func Main() {
 		}
 		pcreg++
 
-		// Process insstruction
+		// Process instruction
 		HandleBtBug()
 		instructionTable[ireg]()
 		cycles_sum += int64(cycles)
