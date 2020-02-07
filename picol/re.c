@@ -99,13 +99,11 @@ static int ismetachar(char c);
 
 
 /* Public functions: */
-int re_match(const char *pattern, const char *text)
-{
+int re_match(const char *pattern, const char *text) {
   return re_matchp(re_compile(pattern), text);
 }
 
-int re_matchp(re_t pattern, const char *text)
-{
+int re_matchp(re_t pattern, const char *text) {
   if (pattern != 0) {
     if (pattern[0].type == BEGIN) {
       return ((matchpattern(&pattern[1], text)) ? 0 : -1);
@@ -131,8 +129,7 @@ int re_matchp(re_t pattern, const char *text)
 regex_t re_compiled[MAX_REGEXP_OBJECTS];
 unsigned char ccl_buf[MAX_CHAR_CLASS_LEN];
 
-re_t re_compile(const char *pattern)
-{
+re_t re_compile(const char *pattern) {
   /* The sizes of the two static arrays below substantiates the static RAM usage of this module.
      MAX_REGEXP_OBJECTS is the max number of symbols in the expression.
      MAX_CHAR_CLASS_LEN determines the size of buffer for chars in all char-classes in the expression. */
@@ -291,8 +288,7 @@ re_t re_compile(const char *pattern)
 }
 
 #if 0
-void re_print(regex_t * pattern)
-{
+void re_print(regex_t * pattern) {
   const char *types[] =
       { "UNUSED", "DOT", "BEGIN", "END", "QUESTIONMARK", "STAR", "PLUS", "CHAR", "CHAR_CLASS",
     "INV_CHAR_CLASS", "DIGIT", "NOT_DIGIT", "ALPHA", "NOT_ALPHA", "WHITESPACE", "NOT_WHITESPACE",
@@ -329,40 +325,33 @@ void re_print(regex_t * pattern)
 
 
 /* Private functions: */
-static int matchdigit(char c)
-{
+static int matchdigit(char c) {
   return ((c >= '0') && (c <= '9'));
 }
 
-static int matchalpha(char c)
-{
+static int matchalpha(char c) {
   return ((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z'));
 }
 
-static int matchwhitespace(char c)
-{
+static int matchwhitespace(char c) {
   return ((c == ' ') || (c == '\t') || (c == '\n') || (c == '\r') || (c == '\f') || (c == '\v'));
 }
 
-static int matchalphanum(char c)
-{
+static int matchalphanum(char c) {
   return ((c == '_') || matchalpha(c) || matchdigit(c));
 }
 
-static int matchrange(char c, const char *str)
-{
+static int matchrange(char c, const char *str) {
   return ((c != '-') && (str[0] != '\0') && (str[0] != '-') &&
           (str[1] == '-') && (str[1] != '\0') &&
           (str[2] != '\0') && ((c >= str[0]) && (c <= str[2])));
 }
 
-static int ismetachar(char c)
-{
+static int ismetachar(char c) {
   return ((c == 's') || (c == 'S') || (c == 'w') || (c == 'W') || (c == 'd') || (c == 'D'));
 }
 
-static int matchmetachar(char c, const char *str)
-{
+static int matchmetachar(char c, const char *str) {
   switch (str[0]) {
   case 'd':
     return matchdigit(c);
@@ -381,8 +370,7 @@ static int matchmetachar(char c, const char *str)
   }
 }
 
-static int matchcharclass(char c, const char *str)
-{
+static int matchcharclass(char c, const char *str) {
   do {
     if (matchrange(c, str)) {
       return 1;
@@ -407,8 +395,7 @@ static int matchcharclass(char c, const char *str)
   return 0;
 }
 
-static int matchone(regex_t p, char c)
-{
+static int matchone(regex_t p, char c) {
   switch (p.type) {
   case DOT:
     return 1;
@@ -433,8 +420,7 @@ static int matchone(regex_t p, char c)
   }
 }
 
-static int matchstar(regex_t p, regex_t * pattern, const char *text)
-{
+static int matchstar(regex_t p, regex_t * pattern, const char *text) {
   do {
     if (matchpattern(pattern, text))
       return 1;
@@ -444,8 +430,7 @@ static int matchstar(regex_t p, regex_t * pattern, const char *text)
   return 0;
 }
 
-static int matchplus(regex_t p, regex_t * pattern, const char *text)
-{
+static int matchplus(regex_t p, regex_t * pattern, const char *text) {
   while ((text[0] != '\0') && matchone(p, *text++)) {
     if (matchpattern(pattern, text))
       return 1;
@@ -453,8 +438,7 @@ static int matchplus(regex_t p, regex_t * pattern, const char *text)
   return 0;
 }
 
-static int matchquestion(regex_t p, regex_t * pattern, const char *text)
-{
+static int matchquestion(regex_t p, regex_t * pattern, const char *text) {
   if (p.type == UNUSED)
     return 1;
   if (matchpattern(pattern, text))
@@ -468,8 +452,7 @@ static int matchquestion(regex_t p, regex_t * pattern, const char *text)
 #if 0
 
 /* Recursive matching */
-static int matchpattern(regex_t * pattern, const char *text)
-{
+static int matchpattern(regex_t * pattern, const char *text) {
   if ((pattern[0].type == UNUSED) || (pattern[1].type == QUESTIONMARK)) {
     return matchquestion(pattern[1], &pattern[2], text);
   } else if (pattern[1].type == STAR) {
@@ -488,8 +471,7 @@ static int matchpattern(regex_t * pattern, const char *text)
 #else
 
 /* Iterative matching */
-static int matchpattern(regex_t * pattern, const char *text)
-{
+static int matchpattern(regex_t * pattern, const char *text) {
   do {
     if ((pattern[0].type == UNUSED) || (pattern[1].type == QUESTIONMARK)) {
       return matchquestion(pattern[0], &pattern[2], text);

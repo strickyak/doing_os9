@@ -34,8 +34,7 @@ struct Head {
   char barrierZ;
 };
 
-void heap_check_block(struct Head *h, int cap)
-{
+void heap_check_block(struct Head *h, int cap) {
   // pc_trace('?', (char*)h);
   if (h->barrierA != 'A' || h->barrierZ != 'Z' || (cap && h->cap != cap)) {
     puthex('h', h);
@@ -48,8 +47,7 @@ void heap_check_block(struct Head *h, int cap)
   }
 }
 
-byte which_bucket(int n, int *capP)
-{
+byte which_bucket(int n, int *capP) {
   byte b;
   int cap = SMALLEST_BUCKET;
   for (b = 0; b < NBUCKETS; b++) {
@@ -66,8 +64,7 @@ byte which_bucket(int n, int *capP)
 }
 
 #if 0
-void ShowChains()
-{
+void ShowChains() {
   for (byte b = 0; b < NBUCKETS; b++) {
     printf_d("Bucket [%d]: ", b);
     for (struct Head * p = buck_freelist[b]; p; p = p->next) {
@@ -79,8 +76,7 @@ void ShowChains()
 }
 #endif
 
-char *malloc(int n)
-{
+char *malloc(int n) {
   int cap;
   byte b = which_bucket(n, &cap);
   buck_num_alloc[b]++;
@@ -127,8 +123,7 @@ char *malloc(int n)
   return (char *) (h + 1);
 }
 
-void free(void *p)
-{
+void free(void *p) {
   if (!p)
     return;
 
@@ -153,8 +148,7 @@ void free(void *p)
 #endif
 }
 
-char *realloc(void *p, int n)
-{
+char *realloc(void *p, int n) {
   if (!p)
     return malloc(n);
   struct Head *h = ((struct Head *) p) - 1;

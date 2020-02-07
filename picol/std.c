@@ -1,17 +1,14 @@
 // Up(c): convert to upper case for 26 ascii letters.
-char Up(char c)
-{
+char Up(char c) {
   return ('a' <= c && c <= 'z') ? c - 32 : c;
 }
 
 // Down(c): convert to lower case for 26 ascii letters.
-char Down(char c)
-{
+char Down(char c) {
   return ('A' <= c && c <= 'Z') ? c + 32 : c;
 }
 
-int atoi(const char *s)
-{
+int atoi(const char *s) {
   int z = 0;
   byte neg = false;
   if (*s == '-') {
@@ -47,8 +44,7 @@ int atoi(const char *s)
   return neg ? -z : z;
 }
 
-void memcpy(void *d, const void *s, int sz)
-{
+void memcpy(void *d, const void *s, int sz) {
   char *a = (char *) d;
   const char *b = (const char *) s;
   int i;
@@ -56,8 +52,7 @@ void memcpy(void *d, const void *s, int sz)
     *a++ = *b++;
 }
 
-int strcasecmp(const char *a, const char *b)
-{
+int strcasecmp(const char *a, const char *b) {
   while (*a && *b) {
     if ((byte) Up(*a) < (byte) Up(*b))
       return -1;
@@ -74,36 +69,31 @@ int strcasecmp(const char *a, const char *b)
   return 0;
 }
 
-void strcpy(char *d, const char *s)
-{
+void strcpy(char *d, const char *s) {
   while (*s) {
     *d++ = *s++;
   }
   *d = '\0';
 }
 
-int strlen(const char *p)
-{
+int strlen(const char *p) {
   const char *q = p;
   while (*q)
     q++;
   return q - p;
 }
 
-void strcat(char *d, const char *s)
-{
+void strcat(char *d, const char *s) {
   d += strlen(d);
   strcpy(d, s);
 }
 
-void bzero(char *p, int n)
-{
+void bzero(char *p, int n) {
   for (int i = 0; i < n; i++)
     p[i] = 0;
 }
 
-void snprintf_s(char *buf, int max, const char *fmt, const char *s)
-{
+void snprintf_s(char *buf, int max, const char *fmt, const char *s) {
   int flen = strlen(fmt);
   int slen = strlen(s);
   if (flen + slen - 1 > max) {  // drop '%s' but add '\0', so net minus 1.
@@ -130,8 +120,7 @@ void snprintf_s(char *buf, int max, const char *fmt, const char *s)
   *p = '\0';
 }
 
-void snprintf_d(char *buf, int max, const char *fmt, int x)
-{
+void snprintf_d(char *buf, int max, const char *fmt, int x) {
   char tmp[8];
   const char *z;
 
@@ -161,30 +150,26 @@ void snprintf_d(char *buf, int max, const char *fmt, int x)
   snprintf_s(buf, max, fmt, z);
 }
 
-void printf_d(const char *fmt, int x)
-{
+void printf_d(const char *fmt, int x) {
   char buf[BUF_SIZE];
   snprintf_d(buf, BUF_SIZE, fmt, x);
   puts(buf);
 }
 
-void printf_s(const char *fmt, const char *s)
-{
+void printf_s(const char *fmt, const char *s) {
   char buf[BUF_SIZE];
   snprintf_s(buf, BUF_SIZE, fmt, s);
   puts(buf);
 }
 
-char *strdup(const char *s)
-{
+char *strdup(const char *s) {
   int n = strlen(s);
   char *p = (char *) malloc(n + 1);
   strcpy(p, s);
   return p;
 }
 
-char *strdup_upper(const char *s)
-{
+char *strdup_upper(const char *s) {
   int n = strlen(s);
   char *z = (char *) malloc(n + 1);
   char *p = z;
@@ -194,8 +179,7 @@ char *strdup_upper(const char *s)
   return z;
 }
 
-char *Format(const char *fmt, ...)
-{
+char *Format(const char *fmt, ...) {
   char buf[BUF_SIZE];
   int *a = (int *) &fmt;
   printf_s("format: %s\r", fmt);

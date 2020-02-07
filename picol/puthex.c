@@ -1,5 +1,4 @@
-char hexchar(byte i)
-{
+char hexchar(byte i) {
   if (0 <= i && i <= 9)
     return (char) ('0' + i);
   if (10 <= i && i <= 15)
@@ -9,8 +8,7 @@ char hexchar(byte i)
 
 // puthex prints a prefix and a hex number, like `(p=1234)`,
 // only using a small buffer.  Quick and reliable for debugging.
-void puthex(char prefix, int a)
-{
+void puthex(char prefix, int a) {
   char buf[9];
   uint x = (uint) a;
   buf[8] = '\0';
@@ -29,8 +27,7 @@ void puthex(char prefix, int a)
 }
 
 // panic: print message and exit 5.
-void panic(const char *s)
-{
+void panic(const char *s) {
   pc_trace('*', 0);
   puts(s);
   exit(5);
