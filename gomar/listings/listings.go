@@ -26,6 +26,9 @@ func Lookup(module string, offset uint, startTrace func()) string {
 	if *Borges == "" {
 		return ""
 	}
+	if module == "" || module[0] == '(' {
+		return "" // Handles "open ../borges/(fe): no such file or directory"
+	}
 
 	m, ok := Listings[module]
 	if !ok {
