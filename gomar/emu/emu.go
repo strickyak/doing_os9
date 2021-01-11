@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"strings"
 )
 
 var FlagBootImageFilename = flag.String("boot", "boot.mem", "")
@@ -21,11 +22,36 @@ var FlagStressTest = flag.String("stress", "", "If nonempty, string to repeat")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
 
+var FlagWatch = flag.String("watch", "", "Sequence of module:addr:reg:message,...")
 var FlagTriggerPc = flag.Uint64("trigger_pc", 0xC00D, "")
 var FlagTriggerOp = flag.Uint64("trigger_op", 0x17, "")
 var FlagTraceOnOS9 = flag.String("trigger_os9", "", "")
 var FlagRom = flag.String("rom", "", "filename of rom; write-protect above 0x8000")
 var RegexpTraceOnOS9 *regexp.Regexp
+
+type Watch struct {
+	Where    string
+	Register string
+	Message  string
+}
+
+var Watches []*Watch
+
+func CompileWatches() {
+	for _, s := range strings.Split(*FlagWatch, ",") {
+		if s != "" {
+			v := strings.Split(s, ":")
+			if len(v) != 3 {
+				log.Fatalf("Watch was %q, split on colon, len was %d, want 3", v, len(v))
+			}
+			Watches = append(Watches, &Watch{
+				Where:    v[0],
+				Register: v[1],
+				Message:  v[2],
+			})
+		}
+	}
+}
 
 const IRQ_FREQ = (500 * 1000)
 
@@ -2952,6 +2978,7 @@ func LoadRom(filename string) {
 }
 
 func Main() {
+	CompileWatches()
 	SetVerbosityBits(*FlagInitialVerbosity)
 	InitHardware()
 	keystrokes := make(chan byte, 0)

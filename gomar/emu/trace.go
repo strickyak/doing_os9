@@ -55,18 +55,44 @@ func Trace() {
 	dis_length = 0
 
 	module, offset := MemoryModuleOf(pcreg_prev)
+
+	/* not working
+	// for page FE yak
+	if 0xFE00 <= pcreg_prev && pcreg_prev < 0xFF00 {
+		for _, m := range InitialModules {
+			if m.Name == "krn" {
+				module = m.Id()
+				offset = pcreg_prev - 0xF000
+				break
+			}
+		}
+	}
+	*/
+
 	if module != "" {
 		moduleLower := strings.ToLower(module)
 		text := listings.Lookup(moduleLower, uint(offset), func() {
 			*FlagTraceAfter = 1
 		})
-		log.Printf("\t\t\t\t\t{{ %s }}", text)
+		log.Printf("          {{ %s }}", text)
 	}
 
 	if pcreg < pcreg_prev || pcreg > pcreg_prev+4 {
 		log.Printf("")
-		log.Printf("\t%s debug=%q", ExplainMMU(), DebugString)
+		log.Printf("    %s debug=%q", ExplainMMU(), DebugString)
 		log.Printf("")
+	}
+
+	wh = strings.Trim(wh, " ")
+	for _, w := range Watches {
+		if wh == w.Where {
+			var val Word
+			switch w.Register {
+			case "d":
+				val = dreg
+			}
+			log.Printf("@WATCH@ %s == %04x == %q", w.Where, val, w.Message)
+		}
 	}
 }
 
