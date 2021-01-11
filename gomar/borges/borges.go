@@ -17,7 +17,7 @@ import (
 type ModuleMap map[string][]byte
 
 func LoadDir(dirname string) ModuleMap {
-	filenames, err := filepath.Glob(filepath.Join(dirname, "*.list"))
+	filenames, err := filepath.Glob(filepath.Join(dirname, *Glob))
 	if err != nil {
 		log.Panicf("Cannot read directory %q: %v", dirname, err)
 	}
@@ -223,6 +223,9 @@ func HasListSuffix(path string) bool {
 	if strings.HasSuffix(path, ".listing") {
 		return true
 	}
+	if strings.HasSuffix(path, ".listingyak") {
+		return true
+	}
 	return false
 }
 
@@ -245,6 +248,7 @@ func Walker(path string, info os.FileInfo, err error) error {
 }
 
 var Outdir = flag.String("outdir", "", "directory to write listings to")
+var Glob = flag.String("glob", "*.listingyak", "basename pattern for listing files")
 
 func main() {
 	flag.Parse()
