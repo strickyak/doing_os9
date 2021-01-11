@@ -50,8 +50,7 @@ func GetIOByte(a Word) byte {
 		if PeekB(0xFF02) == 0xFF {
 			// Not strobing keyboard, so answer mouse buttons.
 			if display.MouseDown {
-				z = 0xF0 // try pressing all 4 buttons. TODO
-				z = 0xFD // just 02 result. TODO
+				z = 0xFC // buttons 1 and 2.
 			}
 		} else {
 			// Strobing keyboard.
@@ -63,7 +62,7 @@ func GetIOByte(a Word) byte {
 			}
 		}
 
-		dac := float64(PeekB(0xFF20)) / 256.0
+		dac := float64(PeekB(0xFF20)&0xFC) / 256.0
 		var mouse float64
 		if PeekB(0xFF01)&0x08 == 0 {
 			mouse = display.MouseX // or vice versa
@@ -117,7 +116,7 @@ func GetIOByte(a Word) byte {
 		}
 		return 0
 	case 0xFF93: /* GIME FIRQ */
-		log.Printf("GIME -- Read FF93 (FIRQ)")
+		log.Printf("GIME -- Read FF93 (FIRQ) NOT IMP")
 		return 0
 
 	case 0xFF83: /* emudsk */
@@ -189,7 +188,7 @@ func PutIOByte(a Word, b byte) {
 	case 0xFF00,
 		0xFF01,
 		0xFF03:
-		if a == 0xFF03 && b == 0x80 {
+		if a == 0xFF03 && b == 0x80 { // Enabling the Frame Sync IRQ? ???
 			*FlagTraceAfter = 1 // Enable trace TODO ddt
 		}
 		L("PIA0: Put IO byte $%04x <- $%02x\n", a, b)
