@@ -1,0 +1,1287 @@
+                      (/dd/sourcecode/as):00001         ********************************************************************
+                      (/dd/sourcecode/as):00002         * CC3Disk - Disto No Halt Super Controller II disk driver
+                      (/dd/sourcecode/as):00003         *
+                      (/dd/sourcecode/as):00004         * This driver their interrupt driven driver. It is a no halt
+                      (/dd/sourcecode/as):00005         * (multitasking) disk driver that uses interrupts. Care must be
+                      (/dd/sourcecode/as):00006         * taken that no other hardware will conflict.
+                      (/dd/sourcecode/as):00007         *
+                      (/dd/sourcecode/as):00008         * $Id: cc3disk_sc2_irq.asm,v 1.2 2002/12/29 17:02:03 boisy Exp $
+                      (/dd/sourcecode/as):00009         *
+                      (/dd/sourcecode/as):00010         * Ed.    Comments                                       Who YY/MM/DD
+                      (/dd/sourcecode/as):00011         * ------------------------------------------------------------------
+                      (/dd/sourcecode/as):00012         *  02    Fist disassembled                              tjl 02/08/27
+                      (/dd/sourcecode/as):00013         
+                      (/dd/sourcecode/as):00014                  nam   CC3Disk
+                      (/dd/sourcecode/as):00015                  ttl   os9 device driver    
+                      (/dd/sourcecode/as):00016         
+                      (/dd/sourcecode/as):00017         * Disassembled 02/08/27 11:42:37 by Disasm v1.6 (C) 1988 by RML
+                      (/dd/sourcecode/as):00018         
+                      (/dd/sourcecode/as):00019         * Disto's Super Controller II supports two locations for its
+                      (/dd/sourcecode/as):00020         * registers: $FF74 and $FF58
+                      (/dd/sourcecode/as):00021         
+     FF74             (/dd/sourcecode/as):00022         nh_base  equ   $FF74
+     FF74             (/dd/sourcecode/as):00023         nh_stat  equ   nh_base
+     FF76             (/dd/sourcecode/as):00024         nh_data  equ   nh_base+2
+                      (/dd/sourcecode/as):00025         
+                      (/dd/sourcecode/as):00026                  ifp1
+                      (/dd/sourcecode/as):00027                  use   os9defs
+                      (          os9defs):00001          opt -l
+                      (          os9defs):00002          ttl OS-9 System Symbol Definitions
+                      (          os9defs):00003         
+                      (          os9defs):00004         ***************
+                      (          os9defs):00005         * Edition History
+                      (          os9defs):00006         
+                      (          os9defs):00007         *   Date    Changes Made
+                      (          os9defs):00008         * -------- ----------------------------------------------
+                      (          os9defs):00009         * 83/03/01 Six new Status codes added: SS.BlkRd - SS.ELog
+                      (          os9defs):00010         * 83/03/08 New status code added: SS.SSig
+                      (          os9defs):00011         * 83/04/21 added new F$ call for 7 day clock function
+                      (          os9defs):00012         *          for com-trol level II.
+                      (          os9defs):00013         * 83/05/04 F$GCMDir service request added for NCM  by  WGP
+                      (          os9defs):00014         * 83/06/29 Added ProtFlag to init module offsets
+                      (          os9defs):00015         * 83/10/12 Added SS.AlfaS for coco  MGH
+                      (          os9defs):00016         * 83/10/28 Added SS.Break for ACIA Break command RES
+                      (          os9defs):00017         * 83/11/19 Added SS.RsBit to reserve (not allocate in) bitmap sector
+                      (          os9defs):00018         * 84/02/17 Added reserved status codes for Hoshi and Gimix
+                      (          os9defs):00019         * 84/03/07 Added SS.Cursr and SS.ScSiz for Coco MGH
+                      (          os9defs):00020         *          Added New signal code S$Window .. coco future MGH
+                      (          os9defs):00021         * 84/04/11 Addes SS.Sound for COCO                       MGH
+                      (          os9defs):00022         * 84/06/05 Added label SS.SetMF to Gimix Reserved byte   MGH
+                      (          os9defs):00023         * 85/03/04 Changed SS.Sound to SS.KySns                  MGH
+                      (          os9defs):00024         * 85/04/28 Added SS.ComSt Communication Set (Parity,Baud)MGH
+                      (          os9defs):00025         * 85/05/02 Added F$VIRQ for Virtual IRQ                  TAH
+                      (          os9defs):00026         * 85/05/30 Added SS.Open,SS.Close,SS.HngUP               MGH
+                      (          os9defs):00027         * 85/06/01 Added E$HangUp error for CDC Lost             MGH
+                      (          os9defs):00028         * 85/06/03 Added DT.NFM device type                      DJN
+                      (          os9defs):00029         * 85/06/20 Added SS.AAGBf, SS.SLGBf                      MGH
+                      (          os9defs):00030         
+                      (          os9defs):00031          pag
+                      (          os9defs):00032         ************************************************************
+                      (          os9defs):00033         *
+                      (          os9defs):00034         *     System Service Request Code Definitions
+                      (          os9defs):00035         *
+                      (          os9defs):00036          ORG 0
+0000                  (          os9defs):00037         F$Link rmb 1 Link to Module
+0001                  (          os9defs):00038         F$Load rmb 1 Load Module from File
+0002                  (          os9defs):00039         F$UnLink rmb 1 Unlink Module
+0003                  (          os9defs):00040         F$Fork rmb 1 Start New Process
+0004                  (          os9defs):00041         F$Wait rmb 1 Wait for Child Process to Die
+0005                  (          os9defs):00042         F$Chain rmb 1 Chain Process to New Module
+0006                  (          os9defs):00043         F$Exit rmb 1 Terminate Process
+0007                  (          os9defs):00044         F$Mem rmb 1 Set Memory Size
+0008                  (          os9defs):00045         F$Send rmb 1 Send Signal to Process
+0009                  (          os9defs):00046         F$Icpt rmb 1 Set Signal Intercept
+000A                  (          os9defs):00047         F$Sleep rmb 1 Suspend Process
+000B                  (          os9defs):00048         F$SSpd rmb 1 Suspend Process
+000C                  (          os9defs):00049         F$ID rmb 1 Return Process ID
+000D                  (          os9defs):00050         F$SPrior rmb 1 Set Process Priority
+000E                  (          os9defs):00051         F$SSWI rmb 1 Set Software Interrupt
+000F                  (          os9defs):00052         F$PErr rmb 1 Print Error
+0010                  (          os9defs):00053         F$PrsNam rmb 1 Parse Pathlist Name
+0011                  (          os9defs):00054         F$CmpNam rmb 1 Compare Two Names
+0012                  (          os9defs):00055         F$SchBit rmb 1 Search Bit Map
+0013                  (          os9defs):00056         F$AllBit rmb 1 Allocate in Bit Map
+0014                  (          os9defs):00057         F$DelBit rmb 1 Deallocate in Bit Map
+0015                  (          os9defs):00058         F$Time rmb 1 Get Current Time
+0016                  (          os9defs):00059         F$STime rmb 1 Set Current Time
+0017                  (          os9defs):00060         F$CRC rmb 1 Generate CRC
+0018                  (          os9defs):00061         F$GPrDsc rmb 1 get Process Descriptor copy
+0019                  (          os9defs):00062         F$GBlkMp rmb 1 get System Block Map copy
+001A                  (          os9defs):00063         F$GModDr rmb 1 get Module Directory copy
+001B                  (          os9defs):00064         F$CpyMem rmb 1 Copy External Memory
+001C                  (          os9defs):00065         F$SUser rmb 1 Set User ID number
+001D                  (          os9defs):00066         F$UnLoad rmb 1 Unlink Module by name
+                      (          os9defs):00067         *F$Ctime rmb 1 Com-Trol clock read
+                      (          os9defs):00068         *F$Cstime rmb 1 Com-Trol set time
+                      (          os9defs):00069         *F$CTswi2 rmb 1 Com-Trol double postbyte swi2
+001E                  (          os9defs):00070          rmb 3 reserved - see above
+                      (          os9defs):00071          ORG $27 Beginning of System Reserved Calls
+0027                  (          os9defs):00072         F$VIRQ rmb 1 Install/Delete Virtual IRQ
+0028                  (          os9defs):00073         F$SRqMem rmb 1 System Memory Request
+0029                  (          os9defs):00074         F$SRtMem rmb 1 System Memory Return
+002A                  (          os9defs):00075         F$IRQ rmb 1 Enter IRQ Polling Table
+002B                  (          os9defs):00076         F$IOQu rmb 1 Enter I/O Queue
+002C                  (          os9defs):00077         F$AProc rmb 1 Enter Active Process Queue
+002D                  (          os9defs):00078         F$NProc rmb 1 Start Next Process
+002E                  (          os9defs):00079         F$VModul rmb 1 Validate Module
+002F                  (          os9defs):00080         F$Find64 rmb 1 Find Process/Path Descriptor
+0030                  (          os9defs):00081         F$All64 rmb 1 Allocate Process/Path Descriptor
+0031                  (          os9defs):00082         F$Ret64 rmb 1 Return Process/Path Descriptor
+0032                  (          os9defs):00083         F$SSvc rmb 1 Service Request Table Initialization
+0033                  (          os9defs):00084         F$IODel rmb 1 Delete I/O Module
+0034                  (          os9defs):00085         F$SLink rmb 1 System Link
+0035                  (          os9defs):00086         F$Boot rmb 1 Bootstrap System
+0036                  (          os9defs):00087         F$BtMem rmb 1 Bootstrap Memory Request
+0037                  (          os9defs):00088         F$GProcP rmb 1 Get Process ptr
+0038                  (          os9defs):00089         F$Move rmb 1 Move Data (low bound first)
+0039                  (          os9defs):00090         F$AllRAM rmb 1 Allocate RAM blocks
+003A                  (          os9defs):00091         F$AllImg rmb 1 Allocate Image RAM blocks
+003B                  (          os9defs):00092         F$DelImg rmb 1 Deallocate Image RAM blocks
+003C                  (          os9defs):00093         F$SetImg rmb 1 Set Process DAT Image
+003D                  (          os9defs):00094         F$FreeLB rmb 1 Get Free Low Block
+003E                  (          os9defs):00095         F$FreeHB rmb 1 Get Free High Block
+003F                  (          os9defs):00096         F$AllTsk rmb 1 Allocate Process Task number
+0040                  (          os9defs):00097         F$DelTsk rmb 1 Deallocate Process Task number
+0041                  (          os9defs):00098         F$SetTsk rmb 1 Set Process Task DAT registers
+0042                  (          os9defs):00099         F$ResTsk rmb 1 Reserve Task number
+0043                  (          os9defs):00100         F$RelTsk rmb 1 Release Task number
+0044                  (          os9defs):00101         F$DATLog rmb 1 Convert DAT Block/Offset to Logical
+                      (          os9defs):00102         ***** With non-contiguous modules this system call will become obsolete
+0045                  (          os9defs):00103         F$DATTmp rmb 1 Make temporary DAT image
+                      (          os9defs):00104         *****
+0046                  (          os9defs):00105         F$LDAXY rmb 1 Load A [X,[Y]]
+0047                  (          os9defs):00106         F$LDAXYP rmb 1 Load A [X+,[Y]]
+0048                  (          os9defs):00107         F$LDDDXY rmb 1 Load D [D+X,[Y]]
+0049                  (          os9defs):00108         F$LDABX rmb 1 Load A from 0,X in task B
+004A                  (          os9defs):00109         F$STABX rmb 1 Store A at 0,X in task B
+004B                  (          os9defs):00110         F$AllPrc rmb 1 Allocate Process Descriptor
+004C                  (          os9defs):00111         F$DelPrc rmb 1 Deallocate Process Descriptor
+004D                  (          os9defs):00112         F$ELink rmb 1 Link using Module Directory Entry
+004E                  (          os9defs):00113         F$FModul rmb 1 Find Module Directory Entry
+004F                  (          os9defs):00114         F$MapBlk rmb 1 Map Specific Block
+0050                  (          os9defs):00115         F$ClrBlk rmb 1 Clear Specific Block
+0051                  (          os9defs):00116         F$DelRAM rmb 1 Deallocate RAM blocks
+0052                  (          os9defs):00117         F$GCMDir rmb 1 Pack module directory
+                      (          os9defs):00118          pag
+                      (          os9defs):00119         ************************************************************
+                      (          os9defs):00120         *
+                      (          os9defs):00121         *     I/O Service Request Code Definitions
+                      (          os9defs):00122         *
+                      (          os9defs):00123          ORG $80
+0080                  (          os9defs):00124         I$Attach rmb 1 Attach I/O Device
+0081                  (          os9defs):00125         I$Detach rmb 1 Detach I/O Device
+0082                  (          os9defs):00126         I$Dup rmb 1 Duplicate Path
+0083                  (          os9defs):00127         I$Create rmb 1 Create New File
+0084                  (          os9defs):00128         I$Open rmb 1 Open Existing File
+0085                  (          os9defs):00129         I$MakDir rmb 1 Make Directory File
+0086                  (          os9defs):00130         I$ChgDir rmb 1 Change Default Directory
+0087                  (          os9defs):00131         I$Delete rmb 1 Delete File
+0088                  (          os9defs):00132         I$Seek rmb 1 Change Current Position
+0089                  (          os9defs):00133         I$Read rmb 1 Read Data
+008A                  (          os9defs):00134         I$Write rmb 1 Write Data
+008B                  (          os9defs):00135         I$ReadLn rmb 1 Read Line of ASCII Data
+008C                  (          os9defs):00136         I$WritLn rmb 1 Write Line of ASCII Data
+008D                  (          os9defs):00137         I$GetStt rmb 1 Get Path Status
+008E                  (          os9defs):00138         I$SetStt rmb 1 Set Path Status
+008F                  (          os9defs):00139         I$Close rmb 1 Close Path
+0090                  (          os9defs):00140         I$DeletX rmb 1 Delete from current exec dir
+                      (          os9defs):00141         
+                      (          os9defs):00142          pag
+                      (          os9defs):00143         ************************************************************
+                      (          os9defs):00144         *
+                      (          os9defs):00145         *     Signal Codes
+                      (          os9defs):00146         *
+                      (          os9defs):00147          ORG 0
+0000                  (          os9defs):00148         S$Kill rmb 1 Non-Interceptable Abort
+0001                  (          os9defs):00149         S$Wake rmb 1 Wake-up Sleeping Process
+0002                  (          os9defs):00150         S$Abort rmb 1 Keyboard Abort
+0003                  (          os9defs):00151         S$Intrpt rmb 1 Keyboard Interrupt
+0004                  (          os9defs):00152         S$Window rmb 1 Window Change
+                      (          os9defs):00153         
+                      (          os9defs):00154         
+                      (          os9defs):00155         ************************************************************
+                      (          os9defs):00156         *
+                      (          os9defs):00157         *     Status Codes for GetStat/PutStat
+                      (          os9defs):00158         *
+                      (          os9defs):00159          ORG 0
+0000                  (          os9defs):00160         SS.Opt rmb 1 Read/Write PD Options
+0001                  (          os9defs):00161         SS.Ready rmb 1 Check for Device Ready
+0002                  (          os9defs):00162         SS.Size rmb 1 Read/Write File Size
+0003                  (          os9defs):00163         SS.Reset rmb 1 Device Restore
+0004                  (          os9defs):00164         SS.WTrk rmb 1 Device Write Track
+0005                  (          os9defs):00165         SS.Pos rmb 1 Get File Current Position
+0006                  (          os9defs):00166         SS.EOF rmb 1 Test for End of File
+0007                  (          os9defs):00167         SS.Link rmb 1 Link to Status routines
+0008                  (          os9defs):00168         SS.ULink rmb 1 Unlink Status routines
+0009                  (          os9defs):00169         SS.Feed rmb 1 issue form feed
+000A                  (          os9defs):00170         SS.Frz rmb 1 Freeze DD. information
+000B                  (          os9defs):00171         SS.SPT rmb 1 Set DD.TKS to given value
+000C                  (          os9defs):00172         SS.SQD rmb 1 Sequence down hard disk
+000D                  (          os9defs):00173         SS.DCmd rmb 1 Send direct command to disk
+000E                  (          os9defs):00174         SS.DevNm rmb 1 Return Device name (32-bytes at [X])
+000F                  (          os9defs):00175         SS.FD rmb 1 Return File Descriptor (Y-bytes at [X])
+0010                  (          os9defs):00176         SS.Ticks rmb 1 Set Lockout honor duration
+0011                  (          os9defs):00177         SS.Lock rmb 1 Lock/Release record
+0012                  (          os9defs):00178         SS.DStat rmb 1 Return Display Status (CoCo)
+0013                  (          os9defs):00179         SS.Joy rmb 1 Return Joystick Value (CoCo)
+0014                  (          os9defs):00180         SS.BlkRd rmb 1 Block Read
+0015                  (          os9defs):00181         SS.BlkWr rmb 1 Block Write
+0016                  (          os9defs):00182         SS.Reten rmb 1 Retension cycle
+0017                  (          os9defs):00183         SS.WFM rmb 1 Write File Mark
+0018                  (          os9defs):00184         SS.RFM rmb 1 Read past File Mark
+0019                  (          os9defs):00185         SS.ELog rmb 1 Read Error Log
+001A                  (          os9defs):00186         SS.SSig rmb 1 Send signal on data ready
+001B                  (          os9defs):00187         SS.Relea rmb 1 Release device
+001C                  (          os9defs):00188         SS.AlfaS rmb 1 Return Alfa Display Status (CoCo)
+001D                  (          os9defs):00189         SS.Break rmb 1 Send break signal out acia
+001E                  (          os9defs):00190         SS.RsBit rmb 1 Reserve bitmap sector (do not allocate in) LSB(X)=sct#
+001F                  (          os9defs):00191          rmb 1 reserved
+0020                  (          os9defs):00192          rmb 4 reserve $20-$23 for Japanese version (Hoshi)
+0024                  (          os9defs):00193         SS.SetMF rmb 1 reserve $24 for Gimix G68 (Flex compatability?)
+0025                  (          os9defs):00194         SS.Cursr rmb 1 Cursor information for COCO
+0026                  (          os9defs):00195         SS.ScSiz rmb 1 Return screen size for COCO
+0027                  (          os9defs):00196         SS.KySns rmb 1 Getstat/Putstat for COCO keyboard
+0028                  (          os9defs):00197         SS.ComSt rmb 1 Getstat/Putstat for Baud/Parity
+0029                  (          os9defs):00198         SS.Open rmb 1 Putstat to tell driver a path was opened
+002A                  (          os9defs):00199         SS.Close rmb 1 Putstat to tell driver a path was closed
+002B                  (          os9defs):00200         SS.HngUp rmb 1 Putstat to tell driver to hangup phone
+                      (          os9defs):00201         * System Specific and User defined codes above $80
+                      (          os9defs):00202          org 80 
+0050                  (          os9defs):00203         SS.AAGBf rmb 1 Putstat to Allocate Additional Graphic Buffer
+0051                  (          os9defs):00204         SS.SLGBf rmb 1 Putstat to Select a different Graphic Buffer
+                      (          os9defs):00205         
+                      (          os9defs):00206          ttl Direct Page Definitions
+                      (          os9defs):00207          page
+                      (          os9defs):00208         ************************************************************
+                      (          os9defs):00209         *
+                      (          os9defs):00210         *     Direct Page Variable Definitions
+                      (          os9defs):00211         *
+                      (          os9defs):00212          org $20 reserve first 32 bytes
+0020                  (          os9defs):00213         D.FMBM rmb 4 Free memory bit map pointers
+0024                  (          os9defs):00214         D.MLIM rmb 2 Memory limit
+0026                  (          os9defs):00215         D.ModDir rmb 4 Module directory
+002A                  (          os9defs):00216         D.Init rmb 2 Rom base address
+002C                  (          os9defs):00217         D.SWI3 rmb 2 Swi3 vector
+002E                  (          os9defs):00218         D.SWI2 rmb 2 Swi2 vector
+0030                  (          os9defs):00219         D.FIRQ rmb 2 Firq vector
+0032                  (          os9defs):00220         D.IRQ rmb 2 Irq vector
+0034                  (          os9defs):00221         D.SWI rmb 2 Swi vector
+0036                  (          os9defs):00222         D.NMI rmb 2 Nmi vector
+0038                  (          os9defs):00223         D.SvcIRQ rmb 2 Interrupt service entry
+003A                  (          os9defs):00224         D.Poll rmb 2 Interrupt polling routine
+003C                  (          os9defs):00225         D.UsrIRQ rmb 2 User irq routine
+003E                  (          os9defs):00226         D.SysIRQ rmb 2 System irq routine
+0040                  (          os9defs):00227         D.UsrSvc rmb 2 User service request routine
+0042                  (          os9defs):00228         D.SysSvc rmb 2 System service request routine
+0044                  (          os9defs):00229         D.UsrDis rmb 2 User service request dispatch table
+0046                  (          os9defs):00230         D.SysDis rmb 2 System service reuest dispatch table
+0048                  (          os9defs):00231         D.Slice rmb 1 Process time slice count
+0049                  (          os9defs):00232         D.PrcDBT rmb 2 Process descriptor block address
+004B                  (          os9defs):00233         D.Proc rmb 2 Process descriptor address
+004D                  (          os9defs):00234         D.AProcQ rmb 2 Active process queue
+004F                  (          os9defs):00235         D.WProcQ rmb 2 Waiting process queue
+0051                  (          os9defs):00236         D.SProcQ rmb 2 Sleeping process queue
+     0053             (          os9defs):00237         D.Time equ . Time
+0053                  (          os9defs):00238         D.Year rmb 1
+0054                  (          os9defs):00239         D.Month rmb 1
+0055                  (          os9defs):00240         D.Day rmb 1
+0056                  (          os9defs):00241         D.Hour rmb 1
+0057                  (          os9defs):00242         D.Min rmb 1
+0058                  (          os9defs):00243         D.Sec rmb 1
+0059                  (          os9defs):00244         D.Tick rmb 1
+005A                  (          os9defs):00245         D.TSec rmb 1 Ticks / second
+005B                  (          os9defs):00246         D.TSlice rmb 1 Ticks / time-slice
+005C                  (          os9defs):00247         D.IOML rmb 2 I/O mgr free memory low bound
+005E                  (          os9defs):00248         D.IOMH rmb 2 I/O mgr free memory hi  bound
+0060                  (          os9defs):00249         D.DevTbl rmb 2 Device driver table addr
+0062                  (          os9defs):00250         D.PolTbl rmb 2 Irq polling table addr
+0064                  (          os9defs):00251         D.PthDBT rmb 2 Path descriptor block table addr
+0066                  (          os9defs):00252         D.BTLO rmb 2 Bootstrap low address
+0068                  (          os9defs):00253         D.BTHI rmb 2 Bootstrap hi address
+006A                  (          os9defs):00254         D.DMAReq rmb 1 DMA in use flag
+                      (          os9defs):00255         
+006B                  (          os9defs):00256         D.AltIRQ rmb 2 Alternate IRQ vector (CC)
+006D                  (          os9defs):00257         D.KbdSta rmb 2 Keyboard scanner static storage (CC)
+006F                  (          os9defs):00258         D.DskTmr rmb 2 Disk Motor Timer (CC)
+0071                  (          os9defs):00259         D.CBStrt rmb 16 reserved for CC warmstart ($71)
+0081                  (          os9defs):00260         D.Clock rmb 2 Address of Clock Tick Routine (CC)
+                      (          os9defs):00261         
+0083                  (          os9defs):00262         D.Boot rmb 1 Bootstrap attempted flag
+0084                  (          os9defs):00263         D.URtoSs rmb 2 address of user to system routine (VIRQ)
+0086                  (          os9defs):00264         D.CLTB rmb 2 Pointer to clock interrupt table (VIRQ)
+                      (          os9defs):00265         
+                      (          os9defs):00266         * TABLE SIZES
+                      (          os9defs):00267         
+     0020             (          os9defs):00268         BMAPSZ equ 32 BIT MAP SIZE
+     0002             (          os9defs):00269         SVCTNM equ 2 NUMBER OF SERVICE REQUEST TABLES
+     006E             (          os9defs):00270         SVCTSZ equ (256-BMAPSZ)/SVCTNM-2 SERVICE REQUEST TABLE SIZE
+                      (          os9defs):00271         
+                      (          os9defs):00272         
+                      (          os9defs):00273          ttl Structure Formats
+                      (          os9defs):00274          pag
+                      (          os9defs):00275         ************************************************************
+                      (          os9defs):00276         *
+                      (          os9defs):00277         *     Module Definitions
+                      (          os9defs):00278         *
+                      (          os9defs):00279         *     Universal Module Offsets
+                      (          os9defs):00280         *
+                      (          os9defs):00281          ORG 0
+0000                  (          os9defs):00282         M$ID rmb 2 ID Code
+0002                  (          os9defs):00283         M$Size rmb 2 Module Size
+0004                  (          os9defs):00284         M$Name rmb 2 Module Name
+0006                  (          os9defs):00285         M$Type rmb 1 Type / Language
+0007                  (          os9defs):00286         M$Revs rmb 1 Attributes / Revision Level
+0008                  (          os9defs):00287         M$Parity rmb 1 Header Parity
+     0009             (          os9defs):00288         M$IDSize equ . Module ID Size
+                      (          os9defs):00289         *
+                      (          os9defs):00290         *     Type-Dependent Module Offsets
+                      (          os9defs):00291         *
+                      (          os9defs):00292         *   System, File Manager, Device Driver, Program Module
+                      (          os9defs):00293         *
+0009                  (          os9defs):00294         M$Exec rmb 2 Execution Entry Offset
+                      (          os9defs):00295         *
+                      (          os9defs):00296         *   Device Driver, Program Module
+                      (          os9defs):00297         *
+000B                  (          os9defs):00298         M$Mem rmb 2 Stack Requirement
+                      (          os9defs):00299         *
+                      (          os9defs):00300         *   Device Driver, Device Descriptor Module
+                      (          os9defs):00301         *
+000D                  (          os9defs):00302         M$Mode rmb 1 Device Driver Mode Capabilities
+                      (          os9defs):00303         *
+                      (          os9defs):00304         *   Device Descriptor Module
+                      (          os9defs):00305         *
+                      (          os9defs):00306          ORG M$IDSize
+0009                  (          os9defs):00307         M$FMgr rmb 2 File Manager Name Offset
+000B                  (          os9defs):00308         M$PDev rmb 2 Device Driver Name Offset
+000D                  (          os9defs):00309          rmb 1 M$Mode (defined above)
+000E                  (          os9defs):00310         M$Port rmb 3 Port Address
+0011                  (          os9defs):00311         M$Opt rmb 1 Device Default Options
+0012                  (          os9defs):00312         M$DTyp rmb 1 Device Type
+                      (          os9defs):00313         *
+                      (          os9defs):00314         *   Configuration Module Entry Offsets
+                      (          os9defs):00315         *
+                      (          os9defs):00316          ORG M$IDSize
+0009                  (          os9defs):00317         MaxMem rmb 3 Maximum Free Memory
+000C                  (          os9defs):00318         PollCnt rmb 1 Entries in Interrupt Polling Table
+000D                  (          os9defs):00319         DevCnt rmb 1 Entries in Device Table
+000E                  (          os9defs):00320         InitStr rmb 2 Initial Module Name
+0010                  (          os9defs):00321         SysStr rmb 2 System Device Name
+0012                  (          os9defs):00322         StdStr rmb 2 Standard I/O Pathlist
+0014                  (          os9defs):00323         BootStr rmb 2 Bootstrap Module name
+0016                  (          os9defs):00324         ProtFlag rmb 1 Write protect enable flag
+                      (          os9defs):00325          pag
+                      (          os9defs):00326         ************************************************************
+                      (          os9defs):00327         *
+                      (          os9defs):00328         *     Module Field Definitions
+                      (          os9defs):00329         *
+                      (          os9defs):00330         *   ID Field
+                      (          os9defs):00331         *
+     0087             (          os9defs):00332         M$ID1 equ $87 Module ID code byte one
+     00CD             (          os9defs):00333         M$ID2 equ $CD Module ID code byte two
+     87CD             (          os9defs):00334         M$ID12 equ M$ID1*256+M$ID2
+                      (          os9defs):00335         *
+                      (          os9defs):00336         *   Module Type / Language byte
+                      (          os9defs):00337         *
+                      (          os9defs):00338         *   Field Masks
+                      (          os9defs):00339         *
+     00F0             (          os9defs):00340         TypeMask equ %11110000 Type Field
+     000F             (          os9defs):00341         LangMask equ %00001111 Language Field
+                      (          os9defs):00342         *
+                      (          os9defs):00343         *   Type Values
+                      (          os9defs):00344         *
+     00F0             (          os9defs):00345         Devic equ $F0 Device Descriptor Module
+     00E0             (          os9defs):00346         Drivr equ $E0 Physical Device Driver
+     00D0             (          os9defs):00347         FlMgr equ $D0 File Manager
+     00C0             (          os9defs):00348         Systm equ $C0 System Module
+     0040             (          os9defs):00349         Data equ $40 Data Module
+     0030             (          os9defs):00350         Multi equ $30 Multi-Module
+     0020             (          os9defs):00351         Sbrtn equ $20 Subroutine Module
+     0010             (          os9defs):00352         Prgrm equ $10 Program Module
+                      (          os9defs):00353         *
+                      (          os9defs):00354         *   Language Values
+                      (          os9defs):00355         *
+     0001             (          os9defs):00356         Objct equ 1 6809 Object Code Module
+     0002             (          os9defs):00357         ICode equ 2 Basic09 I-code
+     0003             (          os9defs):00358         PCode equ 3 Pascal P-code
+     0004             (          os9defs):00359         CCode equ 4 C I-code
+     0005             (          os9defs):00360         CblCode equ 5 Cobol I-code
+     0006             (          os9defs):00361         FrtnCode equ 6 Fortran I-code
+                      (          os9defs):00362         *
+                      (          os9defs):00363         *   Module Attributes / Revision byte
+                      (          os9defs):00364         *
+                      (          os9defs):00365         *   Field Masks
+                      (          os9defs):00366         *
+     00F0             (          os9defs):00367         AttrMask equ %11110000 Attributes Field
+     000F             (          os9defs):00368         RevsMask equ %00001111 Revision Level Field
+                      (          os9defs):00369         *
+                      (          os9defs):00370         *   Attribute Flags
+                      (          os9defs):00371         *
+     0080             (          os9defs):00372         ReEnt equ %10000000 Re-Entrant Module
+     0040             (          os9defs):00373         Modprot equ %01000000 Gimix Module protection bit
+                      (          os9defs):00374         *                     0=protected, 1=write enable
+                      (          os9defs):00375         
+                      (          os9defs):00376         *
+                      (          os9defs):00377         *   Device Type Values
+                      (          os9defs):00378         *
+     0000             (          os9defs):00379         DT.SCF equ 0 Sequential Character File Type
+     0001             (          os9defs):00380         DT.RBF equ 1 Random Block File Type
+     0002             (          os9defs):00381         DT.Pipe equ 2 Pipe File Type
+     0003             (          os9defs):00382         DT.NFM equ 3 Network File Manager Type
+                      (          os9defs):00383         *
+                      (          os9defs):00384         *   CRC Result Constant
+                      (          os9defs):00385         *
+     0080             (          os9defs):00386         CRCCon1 equ $80
+     0FE3             (          os9defs):00387         CRCCon23 equ $0FE3
+                      (          os9defs):00388          page
+                      (          os9defs):00389         ************************************************************
+                      (          os9defs):00390         *
+                      (          os9defs):00391         *     Process Descriptor Definitions
+                      (          os9defs):00392         *
+     000C             (          os9defs):00393         DefIOSiz equ 12
+     0010             (          os9defs):00394         NumPaths equ 16 Number of Local Paths
+                      (          os9defs):00395         
+                      (          os9defs):00396          ORG 0
+0000                  (          os9defs):00397         P$ID rmb 1 Process ID
+0001                  (          os9defs):00398         P$PID rmb 1 Parent's ID
+0002                  (          os9defs):00399         P$SID rmb 1 Sibling's ID
+0003                  (          os9defs):00400         P$CID rmb 1 Child's ID
+0004                  (          os9defs):00401         P$SP rmb 2 Stack ptr
+0006                  (          os9defs):00402         P$CHAP rmb 1 process chapter number
+0007                  (          os9defs):00403         P$ADDR rmb 1 user address beginning page number
+0008                  (          os9defs):00404         P$PagCnt rmb 1 Memory Page Count
+0009                  (          os9defs):00405         P$User rmb 2 User Index
+000B                  (          os9defs):00406         P$Prior rmb 1 Priority
+000C                  (          os9defs):00407         P$Age rmb 1 Age
+000D                  (          os9defs):00408         P$State rmb 1 Status
+000E                  (          os9defs):00409         P$Queue rmb 2 Queue Link (Process ptr)
+0010                  (          os9defs):00410         P$IOQP rmb 1 Previous I/O Queue Link (Process ID)
+0011                  (          os9defs):00411         P$IOQN rmb 1 Next     I/O Queue Link (Process ID)
+0012                  (          os9defs):00412         P$PModul rmb 2 Primary Module
+0014                  (          os9defs):00413         P$SWI rmb 2 SWI Entry Point
+0016                  (          os9defs):00414         P$SWI2 rmb 2 SWI2 Entry Point
+0018                  (          os9defs):00415         P$SWI3 rmb 2 SWI3 Entry Point
+001A                  (          os9defs):00416         P$DIO rmb DefIOSiz default I/O ptrs
+0026                  (          os9defs):00417         P$PATH rmb NumPaths I/O path table
+0036                  (          os9defs):00418         P$Signal rmb 1 Signal Code
+0037                  (          os9defs):00419         P$SigVec rmb 2 Signal Intercept Vector
+0039                  (          os9defs):00420         P$SigDat rmb 2 Signal Intercept Data Address
+003B                  (          os9defs):00421         P$NIO rmb 4 additional dio pointers for net
+003F                  (          os9defs):00422          rmb $40-. unused
+     0040             (          os9defs):00423         P$Size equ . Size of Process Descriptor
+                      (          os9defs):00424         
+                      (          os9defs):00425         ************************
+                      (          os9defs):00426         *   Process State Flags
+                      (          os9defs):00427         *
+     0080             (          os9defs):00428         SysState equ %10000000
+     0040             (          os9defs):00429         TimSleep equ %01000000
+     0020             (          os9defs):00430         TimOut equ %00100000
+     0010             (          os9defs):00431         ImgChg equ %00010000
+     0002             (          os9defs):00432         Condem equ %00000010
+     0001             (          os9defs):00433         Dead equ %00000001
+                      (          os9defs):00434          page
+                      (          os9defs):00435         ************************************************************
+                      (          os9defs):00436         *
+                      (          os9defs):00437         *     Path Descriptor Offsets
+                      (          os9defs):00438         *
+                      (          os9defs):00439          ORG 0
+0000                  (          os9defs):00440         PD.PD rmb 1 Path Number
+0001                  (          os9defs):00441         PD.MOD rmb 1 Mode (Read/Write/Update)
+0002                  (          os9defs):00442         PD.CNT rmb 1 Number of Open Images
+0003                  (          os9defs):00443         PD.DEV rmb 2 Device Table Entry Address
+0005                  (          os9defs):00444         PD.CPR rmb 1 Current Process
+0006                  (          os9defs):00445         PD.RGS rmb 2 Caller's Register Stack
+0008                  (          os9defs):00446         PD.BUF rmb 2 Buffer Address
+000A                  (          os9defs):00447         PD.FST rmb 32-. File Manager's Storage
+     0020             (          os9defs):00448         PD.OPT equ . PD GetSts(0) Options
+0020                  (          os9defs):00449         PD.DTP rmb 1 Device Type
+0021                  (          os9defs):00450          rmb 64-. Path options
+     0040             (          os9defs):00451         PDSIZE equ .
+                      (          os9defs):00452         
+                      (          os9defs):00453         
+                      (          os9defs):00454         *
+                      (          os9defs):00455         *  Pathlist Special Symbols
+                      (          os9defs):00456         *
+     002F             (          os9defs):00457         PDELIM equ '/ Pathlist Name Separator
+     002E             (          os9defs):00458         PDIR equ '. Directory
+     0040             (          os9defs):00459         PENTIR equ '@ Entire Device
+                      (          os9defs):00460         
+                      (          os9defs):00461         
+                      (          os9defs):00462         ************************************************************
+                      (          os9defs):00463         *
+                      (          os9defs):00464         *      File Access Modes
+                      (          os9defs):00465         *
+     0001             (          os9defs):00466         READ. equ %00000001
+     0002             (          os9defs):00467         WRITE. equ %00000010
+     0003             (          os9defs):00468         UPDAT. equ READ.+WRITE.
+     0004             (          os9defs):00469         EXEC. equ %00000100
+     0008             (          os9defs):00470         PREAD. equ %00001000
+     0010             (          os9defs):00471         PWRIT. equ %00010000
+     0020             (          os9defs):00472         PEXEC. equ %00100000
+     0040             (          os9defs):00473         SHARE. equ %01000000
+     0080             (          os9defs):00474         DIR. equ %10000000
+                      (          os9defs):00475         
+                      (          os9defs):00476          page
+                      (          os9defs):00477         ************************************************************
+                      (          os9defs):00478         *
+                      (          os9defs):00479         *     File Manager Entry Offsets
+                      (          os9defs):00480         *
+                      (          os9defs):00481          ORG 0
+0000                  (          os9defs):00482         FMCREA rmb 3 Create (Open New) File
+0003                  (          os9defs):00483         FMOPEN rmb 3 Open File
+0006                  (          os9defs):00484         FMMDIR rmb 3 Make Directory
+0009                  (          os9defs):00485         FMCDIR rmb 3 Change Directory
+000C                  (          os9defs):00486         FMDLET rmb 3 Delete File
+000F                  (          os9defs):00487         FMSEEK rmb 3 Position File
+0012                  (          os9defs):00488         FMREAD rmb 3 Read from File
+0015                  (          os9defs):00489         FMWRIT rmb 3 Write to File
+0018                  (          os9defs):00490         FMGSTA rmb 3 Get File Status
+001B                  (          os9defs):00491         FMSSTA rmb 3 Set File Status
+001E                  (          os9defs):00492         FMCLOS rmb 3 Close File
+                      (          os9defs):00493         
+                      (          os9defs):00494         
+                      (          os9defs):00495         
+                      (          os9defs):00496         ************************************************************
+                      (          os9defs):00497         *
+                      (          os9defs):00498         *     Device Driver Entry Offsets
+                      (          os9defs):00499         *
+                      (          os9defs):00500          ORG 0
+0000                  (          os9defs):00501         D$INIT rmb 3 Device Initialization
+0003                  (          os9defs):00502         D$READ rmb 3 Read from Device
+0006                  (          os9defs):00503         D$WRIT rmb 3 Write to Device
+0009                  (          os9defs):00504         D$GSTA rmb 3 Get Device Status
+000C                  (          os9defs):00505         D$PSTA rmb 3 Put Device Status
+000F                  (          os9defs):00506         D$TERM rmb 3 Device Termination
+                      (          os9defs):00507          page
+                      (          os9defs):00508         ************************************************************
+                      (          os9defs):00509         *
+                      (          os9defs):00510         *     Device Table Format
+                      (          os9defs):00511         *
+                      (          os9defs):00512          ORG 0
+0000                  (          os9defs):00513         V$DRIV rmb 2 Device Driver module
+0002                  (          os9defs):00514         V$STAT rmb 2 Device Driver Static storage
+0004                  (          os9defs):00515         V$DESC rmb 2 Device Descriptor module
+0006                  (          os9defs):00516         V$FMGR rmb 2 File Manager module
+0008                  (          os9defs):00517         V$USRS rmb 1 use count
+     0009             (          os9defs):00518         DEVSIZ equ .
+                      (          os9defs):00519         
+                      (          os9defs):00520         
+                      (          os9defs):00521         
+                      (          os9defs):00522         ************************************************************
+                      (          os9defs):00523         *
+                      (          os9defs):00524         *     Device Static Storage Offsets
+                      (          os9defs):00525         *
+                      (          os9defs):00526          ORG 0
+0000                  (          os9defs):00527         V.PAGE rmb 1 Port Extended Address
+0001                  (          os9defs):00528         V.PORT rmb 2 Device 'Base' Port Address
+0003                  (          os9defs):00529         V.LPRC rmb 1 Last Active Process ID
+0004                  (          os9defs):00530         V.BUSY rmb 1 Active Process ID (0=UnBusy)
+0005                  (          os9defs):00531         V.WAKE rmb 1 Active PD if Driver MUST Wake-up
+     0006             (          os9defs):00532         V.USER equ . Driver Allocation Origin
+                      (          os9defs):00533         
+                      (          os9defs):00534         
+                      (          os9defs):00535         
+                      (          os9defs):00536         ************************************************************
+                      (          os9defs):00537         *
+                      (          os9defs):00538         *     Interrupt Polling Table Format
+                      (          os9defs):00539         *
+                      (          os9defs):00540          ORG 0
+0000                  (          os9defs):00541         Q$POLL rmb 2 Absolute Polling Address
+0002                  (          os9defs):00542         Q$FLIP rmb 1 Flip (EOR) Byte ..normally Zero
+0003                  (          os9defs):00543         Q$MASK rmb 1 Polling Mask (after Flip)
+0004                  (          os9defs):00544         Q$SERV rmb 2 Absolute Service routine Address
+0006                  (          os9defs):00545         Q$STAT rmb 2 Static Storage Address
+0008                  (          os9defs):00546         Q$PRTY rmb 1 Priority (Low Numbers=Top Priority)
+     0009             (          os9defs):00547         POLSIZ equ .
+                      (          os9defs):00548         
+                      (          os9defs):00549         
+                      (          os9defs):00550         
+                      (          os9defs):00551         ***********************************************************
+                      (          os9defs):00552         *
+                      (          os9defs):00553         *     VIRQ packet format
+                      (          os9defs):00554         *
+                      (          os9defs):00555          ORG 0
+0000                  (          os9defs):00556         Vi.Cnt rmb 2 count down counter
+0002                  (          os9defs):00557         Vi.Rst rmb 2 reset value for counter
+0004                  (          os9defs):00558         Vi.Stat rmb 1 status byte
+                      (          os9defs):00559         
+     0001             (          os9defs):00560         Vi.IFlag equ %00000001 status byte virq flag
+                      (          os9defs):00561         
+                      (          os9defs):00562         
+                      (          os9defs):00563          pag
+                      (          os9defs):00564         ************************************************************
+                      (          os9defs):00565         *
+                      (          os9defs):00566         *   Machine Characteristics Definitions
+                      (          os9defs):00567         *
+     0000             (          os9defs):00568         R$CC equ 0 Condition Codes register
+     0001             (          os9defs):00569         R$A equ 1 A Accumulator
+     0002             (          os9defs):00570         R$B equ 2 B Accumulator
+     0001             (          os9defs):00571         R$D equ R$A Combined A:B Accumulator
+     0003             (          os9defs):00572         R$DP equ 3 Direct Page register
+     0004             (          os9defs):00573         R$X equ 4 X Index register
+     0006             (          os9defs):00574         R$Y equ 6 Y Index register
+     0008             (          os9defs):00575         R$U equ 8 User Stack register
+     000A             (          os9defs):00576         R$PC equ 10 Program Counter register
+     000C             (          os9defs):00577         R$Size equ 12 Total register package size
+                      (          os9defs):00578         
+     0080             (          os9defs):00579         Entire equ %10000000 Full Register Stack flag
+     0040             (          os9defs):00580         FIRQMask equ %01000000 Fast-Interrupt Mask bit
+     0020             (          os9defs):00581         HalfCrry equ %00100000 Half Carry flag
+     0010             (          os9defs):00582         IRQMask equ %00010000 Interrupt Mask bit
+     0008             (          os9defs):00583         Negative equ %00001000 Negative flag
+     0004             (          os9defs):00584         Zero equ %00000100 Zero flag
+     0002             (          os9defs):00585         TwosOvfl equ %00000010 Two's Comp Overflow flag
+     0001             (          os9defs):00586         Carry equ %00000001 Carry bit
+     0050             (          os9defs):00587         IntMasks equ IRQMask+FIRQMask
+     0080             (          os9defs):00588         Sign equ %10000000 sign bit
+                      (          os9defs):00589         
+     0001             (          os9defs):00590         true equ 1 useful name
+     0000             (          os9defs):00591         false equ 0 useful name
+                      (          os9defs):00592         
+                      (          os9defs):00593         
+                      (          os9defs):00594          ttl Error Code Definitions
+                      (          os9defs):00595           pag
+                      (          os9defs):00596         ************************************************************
+                      (          os9defs):00597         *
+                      (          os9defs):00598         *     Error Code Definitions
+                      (          os9defs):00599         *
+                      (          os9defs):00600          org 200
+00C8                  (          os9defs):00601         E$PthFul rmb 1 Path Table full
+00C9                  (          os9defs):00602         E$BPNum rmb 1 Bad Path Number
+00CA                  (          os9defs):00603         E$Poll rmb 1 Polling Table Full
+00CB                  (          os9defs):00604         E$BMode rmb 1 Bad Mode
+00CC                  (          os9defs):00605         E$DevOvf rmb 1 Device Table Overflow
+00CD                  (          os9defs):00606         E$BMID rmb 1 Bad Module ID
+00CE                  (          os9defs):00607         E$DirFul rmb 1 Module Directory Full
+00CF                  (          os9defs):00608         E$MemFul rmb 1 Process Memory Full
+00D0                  (          os9defs):00609         E$UnkSvc rmb 1 Unknown Service Code
+00D1                  (          os9defs):00610         E$ModBsy rmb 1 Module Busy
+00D2                  (          os9defs):00611         E$BPAddr rmb 1 Bad Page Address
+00D3                  (          os9defs):00612         E$EOF rmb 1 End of File
+00D4                  (          os9defs):00613          rmb 1
+00D5                  (          os9defs):00614         E$NES rmb 1 Non-Existing Segment
+00D6                  (          os9defs):00615         E$FNA rmb 1 File Not Accesible
+00D7                  (          os9defs):00616         E$BPNam rmb 1 Bad Path Name
+00D8                  (          os9defs):00617         E$PNNF rmb 1 Path Name Not Found
+00D9                  (          os9defs):00618         E$SLF rmb 1 Segment List Full
+00DA                  (          os9defs):00619         E$CEF rmb 1 Creating Existing File
+00DB                  (          os9defs):00620         E$IBA rmb 1 Illegal Block Address
+00DC                  (          os9defs):00621         E$HangUp rmb 1 Carrier Detect Lost
+00DD                  (          os9defs):00622         E$MNF rmb 1 Module Not Found
+00DE                  (          os9defs):00623          rmb 1
+00DF                  (          os9defs):00624         E$DelSP rmb 1 Deleting Stack Pointer memory
+00E0                  (          os9defs):00625         E$IPrcID rmb 1 Illegal Process ID
+00E1                  (          os9defs):00626          rmb 1
+00E2                  (          os9defs):00627         E$NoChld rmb 1 No Children
+00E3                  (          os9defs):00628         E$ISWI rmb 1 Illegal SWI code
+00E4                  (          os9defs):00629         E$PrcAbt rmb 1 Process Aborted
+00E5                  (          os9defs):00630         E$PrcFul rmb 1 Process Table Full
+00E6                  (          os9defs):00631         E$IForkP rmb 1 Illegal Fork Parameter
+00E7                  (          os9defs):00632         E$KwnMod rmb 1 Known Module
+00E8                  (          os9defs):00633         E$BMCRC rmb 1 Bad Module CRC
+00E9                  (          os9defs):00634         E$USigP rmb 1 Unprocessed Signal Pending
+00EA                  (          os9defs):00635         E$NEMod rmb 1 Non Existing Module
+                      (          os9defs):00636         
+00EB                  (          os9defs):00637         E$BNam rmb 1 Bad Name
+00EC                  (          os9defs):00638         E$BMHP rmb 1 (bad module header parity)
+00ED                  (          os9defs):00639         E$NoRam rmb 1 No Ram Available
+00EE                  (          os9defs):00640         E$BPrcID rmb 1 Bad Process ID
+00EF                  (          os9defs):00641         E$NoTask rmb 1 No available Task number
+                      (          os9defs):00642         
+                      (          os9defs):00643          rmb $F0-. reserved
+                      (          os9defs):00644         
+00F0                  (          os9defs):00645         E$Unit rmb 1 Illegal Unit (drive)
+00F1                  (          os9defs):00646         E$Sect rmb 1 Bad SECTor number
+00F2                  (          os9defs):00647         E$WP   rmb 1 Write Protect
+00F3                  (          os9defs):00648         E$CRC  rmb 1 Bad Check Sum
+00F4                  (          os9defs):00649         E$Read rmb 1 Read Error
+00F5                  (          os9defs):00650         E$Write rmb 1 Write Error
+00F6                  (          os9defs):00651         E$NotRdy rmb 1 Device Not Ready
+00F7                  (          os9defs):00652         E$Seek rmb 1 Seek Error
+00F8                  (          os9defs):00653         E$Full rmb 1 Media Full
+00F9                  (          os9defs):00654         E$BTyp rmb 1 Bad Type (incompatable) media
+00FA                  (          os9defs):00655         E$DevBsy rmb 1 Device Busy
+00FB                  (          os9defs):00656         E$DIDC rmb 1 Disk ID Change
+00FC                  (          os9defs):00657         E$Lock rmb 1 Record is busy (locked out)
+00FD                  (          os9defs):00658         E$Share rmb 1 Non-sharable file busy
+00FE                  (          os9defs):00659         E$DeadLk rmb 1 I/O Deadlock error
+                      (          os9defs):00660         
+                      (          os9defs):00661          opt l
+                      (          os9defs):00662         
+                      (/dd/sourcecode/as):00028                  endc
+     00E1             (/dd/sourcecode/as):00029         tylg     set   Drivr+Objct   
+     0082             (/dd/sourcecode/as):00030         atrv     set   ReEnt+rev
+     0002             (/dd/sourcecode/as):00031         rev      set   $02
+0000 87CD04EA000EE182 (/dd/sourcecode/as):00032                  mod   eom,name,tylg,atrv,start,size
+     36001600BE
+0000.                 (/dd/sourcecode/as):00033         u0000    rmb   1
+0001.                 (/dd/sourcecode/as):00034         u0001    rmb   1
+0002.                 (/dd/sourcecode/as):00035         u0002    rmb   1
+0003.                 (/dd/sourcecode/as):00036         u0003    rmb   1
+0004.                 (/dd/sourcecode/as):00037         u0004    rmb   1
+0005.                 (/dd/sourcecode/as):00038         u0005    rmb   2
+0007.                 (/dd/sourcecode/as):00039         u0007    rmb   1
+0008.                 (/dd/sourcecode/as):00040         u0008    rmb   2
+000A.                 (/dd/sourcecode/as):00041         u000A    rmb   4
+000E.                 (/dd/sourcecode/as):00042         u000E    rmb   1
+000F.                 (/dd/sourcecode/as):00043         u000F    rmb   1
+0010.                 (/dd/sourcecode/as):00044         u0010    rmb   2
+0012.                 (/dd/sourcecode/as):00045         u0012    rmb   1
+0013.                 (/dd/sourcecode/as):00046         u0013    rmb   31
+0032.                 (/dd/sourcecode/as):00047         u0032    rmb   24
+004A.                 (/dd/sourcecode/as):00048         u004A    rmb   6
+0050.                 (/dd/sourcecode/as):00049         u0050    rmb   48
+0080.                 (/dd/sourcecode/as):00050         u0080    rmb   10
+008A.                 (/dd/sourcecode/as):00051         u008A    rmb   8
+0092.                 (/dd/sourcecode/as):00052         u0092    rmb   16
+00A2.                 (/dd/sourcecode/as):00053         u00A2    rmb   5
+00A7.                 (/dd/sourcecode/as):00054         u00A7    rmb   8
+00AF.                 (/dd/sourcecode/as):00055         u00AF    rmb   2
+00B1.                 (/dd/sourcecode/as):00056         u00B1    rmb   11
+00BC.                 (/dd/sourcecode/as):00057         u00BC    rmb   1
+00BD.                 (/dd/sourcecode/as):00058         u00BD    rmb   1
+     00BE             (/dd/sourcecode/as):00059         size     equ   .
+000D FF               (/dd/sourcecode/as):00060                  fcb   $FF 
+     000E             (/dd/sourcecode/as):00061         name     equ   *
+000E 434333446973EB   (/dd/sourcecode/as):00062                  fcs   /CC3Disk/
+0015 A3               (/dd/sourcecode/as):00063                  fcb   $A3 #
+     0016             (/dd/sourcecode/as):00064         start    equ   *
+0016 16002D           (/dd/sourcecode/as):00065                  lbra  L0046
+0019 1600A3           (/dd/sourcecode/as):00066                  lbra  L00BF
+001C 16011C           (/dd/sourcecode/as):00067                  lbra  L013B
+001F 16009A           (/dd/sourcecode/as):00068                  lbra  L00BC
+0022 16034B           (/dd/sourcecode/as):00069                  lbra  L0370
+0025 31C900B1         (/dd/sourcecode/as):00070                  leay  >u00B1,u
+0029 8E0000           (/dd/sourcecode/as):00071                  ldx   #$0000
+002C 103F27           (/dd/sourcecode/as):00072                  os9   F$VIRQ   
+002F 103F2A           (/dd/sourcecode/as):00073                  os9   F$IRQ    
+0032 108EFF76         (/dd/sourcecode/as):00074                  ldy   #nh_data
+0036 103F2A           (/dd/sourcecode/as):00075                  os9   F$IRQ    
+0039 5F               (/dd/sourcecode/as):00076                  clrb  
+003A F7FF40           (/dd/sourcecode/as):00077                  stb   >$FF40
+003D D732             (/dd/sourcecode/as):00078                  stb   <u0032
+003F 39               (/dd/sourcecode/as):00079                  rts   
+0040 00               (/dd/sourcecode/as):00080         L0040    fcb   $00
+0041 01               (/dd/sourcecode/as):00081                  fcb   $01
+0042 09               (/dd/sourcecode/as):00082                  fcb   $09
+0043 80               (/dd/sourcecode/as):00083         L0043    fcb   $80     suba #$80  This doesn't make sense.
+0044 80               (/dd/sourcecode/as):00084                  fcb   $80
+0045 10               (/dd/sourcecode/as):00085                  fcb   $10     fcb $10
+0046 7FFF76           (/dd/sourcecode/as):00086         L0046    clr   >nh_data
+0049 0F32             (/dd/sourcecode/as):00087                  clr   <u0032
+004B 8EFF48           (/dd/sourcecode/as):00088                  ldx   #$FF48
+004E 86D0             (/dd/sourcecode/as):00089                  lda   #$D0
+0050 A784             (/dd/sourcecode/as):00090                  sta   ,x
+0052 1702E5           (/dd/sourcecode/as):00091                  lbsr  L033A
+0055 A684             (/dd/sourcecode/as):00092                  lda   ,x
+0057 86FF             (/dd/sourcecode/as):00093                  lda   #$FF
+0059 A7C900A7         (/dd/sourcecode/as):00094                  sta   >u00A7,u
+005D C604             (/dd/sourcecode/as):00095                  ldb   #$04
+005F 304F             (/dd/sourcecode/as):00096                  leax  u000F,u
+0061 A784             (/dd/sourcecode/as):00097         L0061    sta   ,x
+0063 A78815           (/dd/sourcecode/as):00098                  sta   <$15,x
+0066 308826           (/dd/sourcecode/as):00099                  leax  <$26,x
+0069 5A               (/dd/sourcecode/as):00100                  decb  
+006A 26F5             (/dd/sourcecode/as):00101                  bne   L0061
+006C 308D01CC         (/dd/sourcecode/as):00102                  leax  >L023C,pcr
+0070 9FFC             (/dd/sourcecode/as):00103                  stx   $FC
+0072 3440             (/dd/sourcecode/as):00104                  pshs  u
+0074 33C900A7         (/dd/sourcecode/as):00105                  leau  >u00A7,u
+0078 314E             (/dd/sourcecode/as):00106                  leay  u000E,u
+007A 1F20             (/dd/sourcecode/as):00107                  tfr   y,d
+007C 318D0409         (/dd/sourcecode/as):00108                  leay  >L0489,pcr
+0080 308DFFBC         (/dd/sourcecode/as):00109                  leax  >L0040,pcr
+0084 103F2A           (/dd/sourcecode/as):00110                  os9   F$IRQ    
+0087 3540             (/dd/sourcecode/as):00111                  puls  u
+0089 2532             (/dd/sourcecode/as):00112                  bcs   L00BD
+008B B6FF7F           (/dd/sourcecode/as):00113                  lda   >$FF7F
+008E A7C900BC         (/dd/sourcecode/as):00114                  sta   >u00BC,u
+0092 CCFF76           (/dd/sourcecode/as):00115                  ldd   #nh_data
+0095 318D015E         (/dd/sourcecode/as):00116                  leay  >L01F7,pcr
+0099 308DFFA6         (/dd/sourcecode/as):00117                  leax  >L0043,pcr
+009D 103F2A           (/dd/sourcecode/as):00118                  os9   F$IRQ    
+00A0 251B             (/dd/sourcecode/as):00119                  bcs   L00BD
+00A2 3401             (/dd/sourcecode/as):00120                  pshs  cc
+00A4 1A50             (/dd/sourcecode/as):00121                  orcc  #$50
+00A6 B6FF23           (/dd/sourcecode/as):00122                  lda   >$FF23
+00A9 84FC             (/dd/sourcecode/as):00123                  anda  #$FC
+00AB B7FF23           (/dd/sourcecode/as):00124                  sta   >$FF23
+00AE B6FF22           (/dd/sourcecode/as):00125                  lda   >$FF22
+00B1 9692             (/dd/sourcecode/as):00126                  lda   <u0092
+00B3 8A01             (/dd/sourcecode/as):00127                  ora   #$01
+00B5 9792             (/dd/sourcecode/as):00128                  sta   <u0092
+00B7 B7FF92           (/dd/sourcecode/as):00129                  sta   >$FF92
+00BA 3501             (/dd/sourcecode/as):00130                  puls  cc
+00BC 5F               (/dd/sourcecode/as):00131         L00BC    clrb  
+00BD 39               (/dd/sourcecode/as):00132         L00BD    rts   
+00BE 39               (/dd/sourcecode/as):00133         L00BE    rts   
+00BF 1701A1           (/dd/sourcecode/as):00134         L00BF    lbsr  L0263
+00C2 6F43             (/dd/sourcecode/as):00135                  clr   u0003,u
+00C4 ECC810           (/dd/sourcecode/as):00136                  ldd   <u0010,u
+00C7 264A             (/dd/sourcecode/as):00137                  bne   L0113
+00C9 8D48             (/dd/sourcecode/as):00138                  bsr   L0113
+00CB 25F1             (/dd/sourcecode/as):00139                  bcs   L00BE
+00CD A6A823           (/dd/sourcecode/as):00140                  lda   <$23,y
+00D0 8540             (/dd/sourcecode/as):00141                  bita  #$40
+00D2 102603DA         (/dd/sourcecode/as):00142                  lbne  L04B0
+00D6 AE28             (/dd/sourcecode/as):00143                  ldx   $08,y
+00D8 3430             (/dd/sourcecode/as):00144                  pshs  y,x
+00DA 10AEA81E         (/dd/sourcecode/as):00145                  ldy   <$1E,y
+00DE C614             (/dd/sourcecode/as):00146                  ldb   #$14
+00E0 A685             (/dd/sourcecode/as):00147         L00E0    lda   b,x
+00E2 A7A5             (/dd/sourcecode/as):00148                  sta   b,y
+00E4 5A               (/dd/sourcecode/as):00149                  decb  
+00E5 2AF9             (/dd/sourcecode/as):00150                  bpl   L00E0
+00E7 A6A810           (/dd/sourcecode/as):00151                  lda   <$10,y
+00EA 10AE62           (/dd/sourcecode/as):00152                  ldy   $02,s
+00ED E6A824           (/dd/sourcecode/as):00153                  ldb   <$24,y
+00F0 8502             (/dd/sourcecode/as):00154                  bita  #$02
+00F2 2704             (/dd/sourcecode/as):00155                  beq   L00F8
+00F4 C501             (/dd/sourcecode/as):00156                  bitb  #$01
+00F6 2716             (/dd/sourcecode/as):00157                  beq   L010E
+00F8 8504             (/dd/sourcecode/as):00158         L00F8    bita  #$04
+00FA 2704             (/dd/sourcecode/as):00159                  beq   L0100
+00FC C502             (/dd/sourcecode/as):00160                  bitb  #$02
+00FE 270E             (/dd/sourcecode/as):00161                  beq   L010E
+0100 8501             (/dd/sourcecode/as):00162         L0100    bita  #$01
+0102 2707             (/dd/sourcecode/as):00163                  beq   L010B
+0104 A6A827           (/dd/sourcecode/as):00164                  lda   <$27,y
+0107 8002             (/dd/sourcecode/as):00165                  suba  #$02
+0109 2503             (/dd/sourcecode/as):00166                  bcs   L010E
+010B 5F               (/dd/sourcecode/as):00167         L010B    clrb  
+010C 35B0             (/dd/sourcecode/as):00168                  puls  pc,y,x
+010E 53               (/dd/sourcecode/as):00169         L010E    comb  
+010F C6F9             (/dd/sourcecode/as):00170                  ldb   #$F9
+0111 35B0             (/dd/sourcecode/as):00171                  puls  pc,y,x
+0113 1701BD           (/dd/sourcecode/as):00172         L0113    lbsr  L02D3
+0116 25A6             (/dd/sourcecode/as):00173                  bcs   L00BE
+0118 C680             (/dd/sourcecode/as):00174                  ldb   #$80
+011A 8607             (/dd/sourcecode/as):00175                  lda   #$07
+011C 17007A           (/dd/sourcecode/as):00176                  lbsr  L0199
+011F 1025013C         (/dd/sourcecode/as):00177                  lbcs  L025F
+0123 AE28             (/dd/sourcecode/as):00178                  ldx   $08,y
+0125 C680             (/dd/sourcecode/as):00179                  ldb   #$80
+0127 6D43             (/dd/sourcecode/as):00180                  tst   u0003,u
+0129 260D             (/dd/sourcecode/as):00181                  bne   L0138
+012B 3404             (/dd/sourcecode/as):00182                  pshs  b
+012D FCFF74           (/dd/sourcecode/as):00183         L012D    ldd   >nh_stat
+0130 ED81             (/dd/sourcecode/as):00184                  std   ,x++
+0132 6AE4             (/dd/sourcecode/as):00185                  dec   ,s
+0134 26F7             (/dd/sourcecode/as):00186                  bne   L012D
+0136 3504             (/dd/sourcecode/as):00187                  puls  b
+0138 1CFE             (/dd/sourcecode/as):00188         L0138    andcc #$FE
+013A 39               (/dd/sourcecode/as):00189                  rts   
+013B 170125           (/dd/sourcecode/as):00190         L013B    lbsr  L0263
+013E 8D0D             (/dd/sourcecode/as):00191         L013E    bsr   L014D
+0140 250A             (/dd/sourcecode/as):00192                  bcs   L014C
+0142 6DA828           (/dd/sourcecode/as):00193                  tst   <$28,y
+0145 2604             (/dd/sourcecode/as):00194                  bne   L014B
+0147 8D28             (/dd/sourcecode/as):00195                  bsr   L0171
+0149 25F3             (/dd/sourcecode/as):00196                  bcs   L013E
+014B 5F               (/dd/sourcecode/as):00197         L014B    clrb  
+014C 39               (/dd/sourcecode/as):00198         L014C    rts   
+014D 170183           (/dd/sourcecode/as):00199         L014D    lbsr  L02D3
+0150 25FA             (/dd/sourcecode/as):00200                  bcs   L014C
+0152 AE28             (/dd/sourcecode/as):00201                  ldx   $08,y
+0154 8604             (/dd/sourcecode/as):00202                  lda   #$04
+0156 B7FF76           (/dd/sourcecode/as):00203                  sta   >nh_data
+0159 C680             (/dd/sourcecode/as):00204                  ldb   #$80
+015B 3404             (/dd/sourcecode/as):00205                  pshs  b
+015D EC81             (/dd/sourcecode/as):00206         L015D    ldd   ,x++
+015F FDFF74           (/dd/sourcecode/as):00207                  std   >nh_stat
+0162 6AE4             (/dd/sourcecode/as):00208                  dec   ,s
+0164 26F7             (/dd/sourcecode/as):00209                  bne   L015D
+0166 3504             (/dd/sourcecode/as):00210                  puls  b
+0168 C6A0             (/dd/sourcecode/as):00211                  ldb   #$A0
+016A 8606             (/dd/sourcecode/as):00212                  lda   #$06
+016C 8D2B             (/dd/sourcecode/as):00213                  bsr   L0199
+016E 1600CF           (/dd/sourcecode/as):00214                  lbra  L0240
+0171 A644             (/dd/sourcecode/as):00215         L0171    lda   u0004,u
+0173 3402             (/dd/sourcecode/as):00216                  pshs  a
+0175 6F44             (/dd/sourcecode/as):00217                  clr   u0004,u
+0177 86FF             (/dd/sourcecode/as):00218                  lda   #$FF
+0179 A743             (/dd/sourcecode/as):00219                  sta   u0003,u
+017B 17FF95           (/dd/sourcecode/as):00220                  lbsr  L0113
+017E 2514             (/dd/sourcecode/as):00221                  bcs   L0194
+0180 3404             (/dd/sourcecode/as):00222                  pshs  b
+0182 FCFF74           (/dd/sourcecode/as):00223         L0182    ldd   >nh_stat
+0185 10A381           (/dd/sourcecode/as):00224                  cmpd  ,x++
+0188 2606             (/dd/sourcecode/as):00225                  bne   L0190
+018A 6AE4             (/dd/sourcecode/as):00226                  dec   ,s
+018C 26F4             (/dd/sourcecode/as):00227                  bne   L0182
+018E 2002             (/dd/sourcecode/as):00228                  bra   L0192
+0190 1A01             (/dd/sourcecode/as):00229         L0190    orcc  #$01
+0192 3504             (/dd/sourcecode/as):00230         L0192    puls  b
+0194 3502             (/dd/sourcecode/as):00231         L0194    puls  a
+0196 A744             (/dd/sourcecode/as):00232                  sta   u0004,u
+0198 39               (/dd/sourcecode/as):00233                  rts   
+0199 ED48             (/dd/sourcecode/as):00234         L0199    std   u0008,u
+019B EC48             (/dd/sourcecode/as):00235         L019B    ldd   u0008,u
+019D 8D19             (/dd/sourcecode/as):00236                  bsr   L01B8
+019F 17009E           (/dd/sourcecode/as):00237                  lbsr  L0240
+01A2 2413             (/dd/sourcecode/as):00238                  bcc   L01B7
+01A4 B6FF48           (/dd/sourcecode/as):00239                  lda   >$FF48
+01A7 8540             (/dd/sourcecode/as):00240                  bita  #$40
+01A9 260B             (/dd/sourcecode/as):00241                  bne   L01B6
+01AB 6444             (/dd/sourcecode/as):00242                  lsr   u0004,u
+01AD 2707             (/dd/sourcecode/as):00243                  beq   L01B6
+01AF 24EA             (/dd/sourcecode/as):00244                  bcc   L019B
+01B1 170192           (/dd/sourcecode/as):00245                  lbsr  L0346
+01B4 20E5             (/dd/sourcecode/as):00246                  bra   L019B
+01B6 43               (/dd/sourcecode/as):00247         L01B6    coma  
+01B7 39               (/dd/sourcecode/as):00248         L01B7    rts   
+01B8 3402             (/dd/sourcecode/as):00249         L01B8    pshs  a
+01BA 9650             (/dd/sourcecode/as):00250                  lda   <u0050
+01BC A7C9FF5E         (/dd/sourcecode/as):00251                  sta   >-u00A2,u
+01C0 3502             (/dd/sourcecode/as):00252                  puls  a
+01C2 F7FF48           (/dd/sourcecode/as):00253                  stb   >$FF48
+01C5 8A08             (/dd/sourcecode/as):00254                  ora   #$08
+01C7 B7FF76           (/dd/sourcecode/as):00255                  sta   >nh_data
+01CA C628             (/dd/sourcecode/as):00256                  ldb   #$28
+01CC EA41             (/dd/sourcecode/as):00257                  orb   u0001,u
+01CE F7FF40           (/dd/sourcecode/as):00258                  stb   >$FF40
+01D1 3410             (/dd/sourcecode/as):00259                  pshs  x
+01D3 2010             (/dd/sourcecode/as):00260                  bra   L01E5
+01D5 9E50             (/dd/sourcecode/as):00261         L01D5    ldx   <u0050
+01D7 A60C             (/dd/sourcecode/as):00262                  lda   $0C,x
+01D9 8A08             (/dd/sourcecode/as):00263                  ora   #$08
+01DB A70C             (/dd/sourcecode/as):00264                  sta   $0C,x
+01DD 1CAF             (/dd/sourcecode/as):00265                  andcc #$AF
+01DF 8E0001           (/dd/sourcecode/as):00266                  ldx   #$0001
+01E2 17023F           (/dd/sourcecode/as):00267                  lbsr  L0424
+01E5 1A50             (/dd/sourcecode/as):00268         L01E5    orcc  #$50
+01E7 A6C9FF5E         (/dd/sourcecode/as):00269                  lda   >-u00A2,u
+01EB 26E8             (/dd/sourcecode/as):00270                  bne   L01D5
+01ED 5F               (/dd/sourcecode/as):00271                  clrb  
+01EE C604             (/dd/sourcecode/as):00272                  ldb   #$04
+01F0 F7FF76           (/dd/sourcecode/as):00273                  stb   >nh_data
+01F3 1CAF             (/dd/sourcecode/as):00274                  andcc #$AF
+01F5 3590             (/dd/sourcecode/as):00275                  puls  pc,x
+01F7 A645             (/dd/sourcecode/as):00276         L01F7    lda   u0005,u
+01F9 2738             (/dd/sourcecode/as):00277                  beq   L0233
+01FB F6FF7F           (/dd/sourcecode/as):00278                  ldb   >$FF7F
+01FE E7C900BD         (/dd/sourcecode/as):00279                  stb   >u00BD,u
+0202 E6C900BC         (/dd/sourcecode/as):00280                  ldb   >u00BC,u
+0206 F7FF7F           (/dd/sourcecode/as):00281                  stb   >$FF7F
+0209 C6D0             (/dd/sourcecode/as):00282                  ldb   #$D0
+020B F7FF48           (/dd/sourcecode/as):00283                  stb   >$FF48
+020E C604             (/dd/sourcecode/as):00284                  ldb   #$04
+0210 F7FF76           (/dd/sourcecode/as):00285                  stb   >nh_data
+0213 D6AF             (/dd/sourcecode/as):00286                  ldb   <u00AF
+0215 C4FE             (/dd/sourcecode/as):00287                  andb  #$FE
+0217 D7AF             (/dd/sourcecode/as):00288                  stb   <u00AF
+0219 D692             (/dd/sourcecode/as):00289                  ldb   <u0092
+021B C4FE             (/dd/sourcecode/as):00290                  andb  #$FE
+021D F7FF92           (/dd/sourcecode/as):00291                  stb   >$FF92
+0220 CA01             (/dd/sourcecode/as):00292                  orb   #$01
+0222 F7FF92           (/dd/sourcecode/as):00293                  stb   >$FF92
+0225 5F               (/dd/sourcecode/as):00294                  clrb  
+0226 E745             (/dd/sourcecode/as):00295                  stb   u0005,u
+0228 1F01             (/dd/sourcecode/as):00296                  tfr   d,x
+022A A60C             (/dd/sourcecode/as):00297                  lda   $0C,x
+022C 84F7             (/dd/sourcecode/as):00298                  anda  #$F7
+022E A70C             (/dd/sourcecode/as):00299                  sta   $0C,x
+0230 5F               (/dd/sourcecode/as):00300                  clrb  
+0231 2001             (/dd/sourcecode/as):00301                  bra   L0234
+0233 53               (/dd/sourcecode/as):00302         L0233    comb  
+0234 A6C900BD         (/dd/sourcecode/as):00303         L0234    lda   >u00BD,u
+0238 B7FF7F           (/dd/sourcecode/as):00304                  sta   >$FF7F
+023B 39               (/dd/sourcecode/as):00305                  rts   
+023C 326C             (/dd/sourcecode/as):00306         L023C    leas  $0C,s
+023E 3521             (/dd/sourcecode/as):00307                  puls  y,cc
+0240 F6FF48           (/dd/sourcecode/as):00308         L0240    ldb   >$FF48
+0243 7FFF76           (/dd/sourcecode/as):00309                  clr   >nh_data
+0246 C4F8             (/dd/sourcecode/as):00310                  andb  #$F8
+0248 270E             (/dd/sourcecode/as):00311                  beq   L0258
+024A 3410             (/dd/sourcecode/as):00312                  pshs  x
+024C 308C0A           (/dd/sourcecode/as):00313                  leax  <L0259,pcr
+024F 3001             (/dd/sourcecode/as):00314         L024F    leax  $01,x
+0251 59               (/dd/sourcecode/as):00315                  rolb  
+0252 24FB             (/dd/sourcecode/as):00316                  bcc   L024F
+0254 E684             (/dd/sourcecode/as):00317                  ldb   ,x
+0256 3590             (/dd/sourcecode/as):00318                  puls  pc,x
+0258 5F               (/dd/sourcecode/as):00319         L0258    clrb  
+0259 39               (/dd/sourcecode/as):00320         L0259    rts   
+025A F6               (/dd/sourcecode/as):00321                  fcb   $F6
+025B F2               (/dd/sourcecode/as):00322                  fcb   $F2
+025C F5               (/dd/sourcecode/as):00323                  fcb   $F5
+025D F7               (/dd/sourcecode/as):00324                  fcb   $F7
+025E F3               (/dd/sourcecode/as):00325                  fcb   $F3
+025F 53               (/dd/sourcecode/as):00326         L025F    comb  
+0260 C6F4             (/dd/sourcecode/as):00327                  ldb   #$F4
+0262 39               (/dd/sourcecode/as):00328                  rts   
+0263 33C900A7         (/dd/sourcecode/as):00329         L0263    leau  >u00A7,u
+0267 6F47             (/dd/sourcecode/as):00330                  clr   u0007,u
+0269 8691             (/dd/sourcecode/as):00331                  lda   #$91
+026B A744             (/dd/sourcecode/as):00332                  sta   u0004,u
+026D 5D               (/dd/sourcecode/as):00333                  tstb  
+026E 260F             (/dd/sourcecode/as):00334                  bne   L027F
+0270 1F10             (/dd/sourcecode/as):00335                  tfr   x,d
+0272 EDC810           (/dd/sourcecode/as):00336                  std   <u0010,u
+0275 272A             (/dd/sourcecode/as):00337                  beq   L02A1
+0277 AEA81E           (/dd/sourcecode/as):00338                  ldx   <$1E,y
+027A 10A301           (/dd/sourcecode/as):00339                  cmpd  $01,x
+027D 2506             (/dd/sourcecode/as):00340                  bcs   L0285
+027F 53               (/dd/sourcecode/as):00341         L027F    comb  
+0280 C6F1             (/dd/sourcecode/as):00342                  ldb   #$F1
+0282 3262             (/dd/sourcecode/as):00343                  leas  $02,s
+0284 39               (/dd/sourcecode/as):00344                  rts   
+0285 6FE2             (/dd/sourcecode/as):00345         L0285    clr   ,-s
+0287 2002             (/dd/sourcecode/as):00346                  bra   L028B
+0289 6CE4             (/dd/sourcecode/as):00347         L0289    inc   ,s
+028B A38811           (/dd/sourcecode/as):00348         L028B    subd  <$11,x
+028E 24F9             (/dd/sourcecode/as):00349                  bcc   L0289
+0290 E38811           (/dd/sourcecode/as):00350                  addd  <$11,x
+0293 A68810           (/dd/sourcecode/as):00351                  lda   <$10,x
+0296 44               (/dd/sourcecode/as):00352                  lsra  
+0297 2406             (/dd/sourcecode/as):00353                  bcc   L029F
+0299 64E4             (/dd/sourcecode/as):00354                  lsr   ,s
+029B 2402             (/dd/sourcecode/as):00355                  bcc   L029F
+029D 6C47             (/dd/sourcecode/as):00356                  inc   u0007,u
+029F 3502             (/dd/sourcecode/as):00357         L029F    puls  a
+02A1 ED45             (/dd/sourcecode/as):00358         L02A1    std   u0005,u
+02A3 5F               (/dd/sourcecode/as):00359                  clrb  
+02A4 39               (/dd/sourcecode/as):00360                  rts   
+02A5 6F42             (/dd/sourcecode/as):00361         L02A5    clr   u0002,u
+02A7 A6A821           (/dd/sourcecode/as):00362                  lda   <$21,y
+02AA 8104             (/dd/sourcecode/as):00363                  cmpa  #$04
+02AC 2504             (/dd/sourcecode/as):00364                  bcs   L02B2
+02AE 53               (/dd/sourcecode/as):00365                  comb  
+02AF C6F0             (/dd/sourcecode/as):00366                  ldb   #$F0
+02B1 39               (/dd/sourcecode/as):00367                  rts   
+02B2 3416             (/dd/sourcecode/as):00368         L02B2    pshs  x,b,a
+02B4 A1C4             (/dd/sourcecode/as):00369                  cmpa  ,u
+02B6 2702             (/dd/sourcecode/as):00370                  beq   L02BA
+02B8 6342             (/dd/sourcecode/as):00371                  com   u0002,u
+02BA A7C4             (/dd/sourcecode/as):00372         L02BA    sta   ,u
+02BC 308C09           (/dd/sourcecode/as):00373                  leax  <L02C8,pcr
+02BF E686             (/dd/sourcecode/as):00374                  ldb   a,x
+02C1 E741             (/dd/sourcecode/as):00375                  stb   u0001,u
+02C3 170178           (/dd/sourcecode/as):00376                  lbsr  L043E
+02C6 3596             (/dd/sourcecode/as):00377                  puls  pc,x,b,a
+02C8 01020440         (/dd/sourcecode/as):00378         L02C8    fcb   $01,$02,$04,$40
+02CC 3402             (/dd/sourcecode/as):00379         L02CC    pshs  a
+02CE E68815           (/dd/sourcecode/as):00380                  ldb   <$15,x
+02D1 2037             (/dd/sourcecode/as):00381                  bra   L030A
+02D3 17FFCF           (/dd/sourcecode/as):00382         L02D3    lbsr  L02A5
+02D6 2555             (/dd/sourcecode/as):00383                  bcs   L032D
+02D8 EC45             (/dd/sourcecode/as):00384                  ldd   u0005,u
+02DA 3402             (/dd/sourcecode/as):00385                  pshs  a
+02DC A647             (/dd/sourcecode/as):00386                  lda   u0007,u
+02DE 2706             (/dd/sourcecode/as):00387                  beq   L02E6
+02E0 A641             (/dd/sourcecode/as):00388                  lda   u0001,u
+02E2 8A40             (/dd/sourcecode/as):00389                  ora   #$40
+02E4 A741             (/dd/sourcecode/as):00390                  sta   u0001,u
+02E6 A6A823           (/dd/sourcecode/as):00391         L02E6    lda   <$23,y
+02E9 8502             (/dd/sourcecode/as):00392                  bita  #$02
+02EB 2601             (/dd/sourcecode/as):00393                  bne   L02EE
+02ED 5C               (/dd/sourcecode/as):00394                  incb  
+02EE F7FF4A           (/dd/sourcecode/as):00395         L02EE    stb   >$FF4A
+02F1 AEA81E           (/dd/sourcecode/as):00396                  ldx   <$1E,y
+02F4 E68815           (/dd/sourcecode/as):00397                  ldb   <$15,x
+02F7 A68810           (/dd/sourcecode/as):00398                  lda   <$10,x
+02FA 44               (/dd/sourcecode/as):00399                  lsra  
+02FB A8A824           (/dd/sourcecode/as):00400                  eora  <$24,y
+02FE 8402             (/dd/sourcecode/as):00401                  anda  #$02
+0300 3402             (/dd/sourcecode/as):00402                  pshs  a
+0302 A661             (/dd/sourcecode/as):00403                  lda   $01,s
+0304 6DE0             (/dd/sourcecode/as):00404                  tst   ,s+
+0306 2702             (/dd/sourcecode/as):00405                  beq   L030A
+0308 48               (/dd/sourcecode/as):00406                  lsla  
+0309 58               (/dd/sourcecode/as):00407                  lslb  
+030A F7FF49           (/dd/sourcecode/as):00408         L030A    stb   >$FF49
+030D 6D42             (/dd/sourcecode/as):00409                  tst   u0002,u
+030F 2607             (/dd/sourcecode/as):00410                  bne   L0318
+0311 E6E4             (/dd/sourcecode/as):00411                  ldb   ,s
+0313 E18815           (/dd/sourcecode/as):00412                  cmpb  <$15,x
+0316 270C             (/dd/sourcecode/as):00413                  beq   L0324
+0318 B7FF4B           (/dd/sourcecode/as):00414         L0318    sta   >$FF4B
+031B E6A822           (/dd/sourcecode/as):00415                  ldb   <$22,y
+031E C403             (/dd/sourcecode/as):00416                  andb  #$03
+0320 C81B             (/dd/sourcecode/as):00417                  eorb  #$1B
+0322 8D0A             (/dd/sourcecode/as):00418                  bsr   L032E
+0324 3502             (/dd/sourcecode/as):00419         L0324    puls  a
+0326 A78815           (/dd/sourcecode/as):00420                  sta   <$15,x
+0329 B7FF49           (/dd/sourcecode/as):00421                  sta   >$FF49
+032C 5F               (/dd/sourcecode/as):00422                  clrb  
+032D 39               (/dd/sourcecode/as):00423         L032D    rts   
+032E 8604             (/dd/sourcecode/as):00424         L032E    lda   #$04
+0330 17FE85           (/dd/sourcecode/as):00425                  lbsr  L01B8
+0333 B6FF48           (/dd/sourcecode/as):00426                  lda   >$FF48
+0336 7FFF76           (/dd/sourcecode/as):00427                  clr   >nh_data
+0339 39               (/dd/sourcecode/as):00428                  rts   
+033A 6FC812           (/dd/sourcecode/as):00429         L033A    clr   <u0012,u
+033D 6CC812           (/dd/sourcecode/as):00430                  inc   <u0012,u
+0340 69C812           (/dd/sourcecode/as):00431         L0340    rol   <u0012,u
+0343 2AFB             (/dd/sourcecode/as):00432                  bpl   L0340
+0345 39               (/dd/sourcecode/as):00433                  rts   
+0346 3414             (/dd/sourcecode/as):00434         L0346    pshs  x,b
+0348 17FF5A           (/dd/sourcecode/as):00435                  lbsr  L02A5
+034B 2521             (/dd/sourcecode/as):00436                  bcs   L036E
+034D AEA81E           (/dd/sourcecode/as):00437                  ldx   <$1E,y
+0350 6F8815           (/dd/sourcecode/as):00438                  clr   <$15,x
+0353 8604             (/dd/sourcecode/as):00439                  lda   #$04
+0355 E6A822           (/dd/sourcecode/as):00440         L0355    ldb   <$22,y
+0358 C403             (/dd/sourcecode/as):00441                  andb  #$03
+035A C84B             (/dd/sourcecode/as):00442                  eorb  #$4B
+035C 3402             (/dd/sourcecode/as):00443                  pshs  a
+035E 8DCE             (/dd/sourcecode/as):00444                  bsr   L032E
+0360 3502             (/dd/sourcecode/as):00445                  puls  a
+0362 4A               (/dd/sourcecode/as):00446                  deca  
+0363 26F0             (/dd/sourcecode/as):00447                  bne   L0355
+0365 E6A822           (/dd/sourcecode/as):00448                  ldb   <$22,y
+0368 C403             (/dd/sourcecode/as):00449                  andb  #$03
+036A C80B             (/dd/sourcecode/as):00450                  eorb  #$0B
+036C 8DC0             (/dd/sourcecode/as):00451                  bsr   L032E
+036E 3594             (/dd/sourcecode/as):00452         L036E    puls  pc,x,b
+0370 33C900A7         (/dd/sourcecode/as):00453         L0370    leau  >u00A7,u
+0374 AE26             (/dd/sourcecode/as):00454                  ldx   $06,y
+0376 E602             (/dd/sourcecode/as):00455                  ldb   $02,x
+0378 C104             (/dd/sourcecode/as):00456                  cmpb  #$04
+037A 2708             (/dd/sourcecode/as):00457                  beq   L0384
+037C C103             (/dd/sourcecode/as):00458                  cmpb  #$03
+037E 27C6             (/dd/sourcecode/as):00459                  beq   L0346
+0380 53               (/dd/sourcecode/as):00460                  comb  
+0381 C6D0             (/dd/sourcecode/as):00461                  ldb   #$D0
+0383 39               (/dd/sourcecode/as):00462                  rts   
+0384 3460             (/dd/sourcecode/as):00463         L0384    pshs  u,y
+0386 CC1A00           (/dd/sourcecode/as):00464                  ldd   #$1A00
+0389 103F28           (/dd/sourcecode/as):00465                  os9   F$SRqMem 
+038C 10250052         (/dd/sourcecode/as):00466                  lbcs  L03E2
+0390 AE62             (/dd/sourcecode/as):00467                  ldx   $02,s
+0392 EF8813           (/dd/sourcecode/as):00468                  stu   <$13,x
+0395 9E50             (/dd/sourcecode/as):00469                  ldx   <u0050
+0397 A606             (/dd/sourcecode/as):00470                  lda   $06,x
+0399 D6D0             (/dd/sourcecode/as):00471                  ldb   $D0
+039B 10AEE4           (/dd/sourcecode/as):00472                  ldy   ,s
+039E AE26             (/dd/sourcecode/as):00473                  ldx   $06,y
+03A0 AE04             (/dd/sourcecode/as):00474                  ldx   $04,x
+03A2 108E1A00         (/dd/sourcecode/as):00475                  ldy   #$1A00
+03A6 103F38           (/dd/sourcecode/as):00476                  os9   F$Move   
+03A9 2528             (/dd/sourcecode/as):00477                  bcs   L03D3
+03AB 3560             (/dd/sourcecode/as):00478                  puls  u,y
+03AD 3460             (/dd/sourcecode/as):00479                  pshs  u,y
+03AF 17FEF3           (/dd/sourcecode/as):00480                  lbsr  L02A5
+03B2 251F             (/dd/sourcecode/as):00481                  bcs   L03D3
+03B4 AE26             (/dd/sourcecode/as):00482                  ldx   $06,y
+03B6 E607             (/dd/sourcecode/as):00483                  ldb   $07,x
+03B8 C501             (/dd/sourcecode/as):00484                  bitb  #$01
+03BA 2708             (/dd/sourcecode/as):00485                  beq   L03C4
+03BC A641             (/dd/sourcecode/as):00486                  lda   u0001,u
+03BE 8A40             (/dd/sourcecode/as):00487                  ora   #$40
+03C0 A741             (/dd/sourcecode/as):00488                  sta   u0001,u
+03C2 A747             (/dd/sourcecode/as):00489                  sta   u0007,u
+03C4 A609             (/dd/sourcecode/as):00490         L03C4    lda   $09,x
+03C6 AEA81E           (/dd/sourcecode/as):00491                  ldx   <$1E,y
+03C9 17FF00           (/dd/sourcecode/as):00492                  lbsr  L02CC
+03CC 2505             (/dd/sourcecode/as):00493                  bcs   L03D3
+03CE AEC813           (/dd/sourcecode/as):00494                  ldx   <u0013,u
+03D1 8D11             (/dd/sourcecode/as):00495                  bsr   L03E4
+03D3 EE62             (/dd/sourcecode/as):00496         L03D3    ldu   $02,s
+03D5 3405             (/dd/sourcecode/as):00497                  pshs  b,cc
+03D7 EEC813           (/dd/sourcecode/as):00498                  ldu   <u0013,u
+03DA CC1A00           (/dd/sourcecode/as):00499                  ldd   #$1A00
+03DD 103F29           (/dd/sourcecode/as):00500                  os9   F$SRtMem 
+03E0 3505             (/dd/sourcecode/as):00501                  puls  b,cc
+03E2 35E0             (/dd/sourcecode/as):00502         L03E2    puls  pc,u,y
+03E4 3421             (/dd/sourcecode/as):00503         L03E4    pshs  y,cc
+03E6 1A50             (/dd/sourcecode/as):00504                  orcc  #$50
+03E8 C6F0             (/dd/sourcecode/as):00505                  ldb   #$F0
+03EA F7FF48           (/dd/sourcecode/as):00506                  stb   >$FF48
+03ED 108EFFFF         (/dd/sourcecode/as):00507                  ldy   #$FFFF
+03F1 C628             (/dd/sourcecode/as):00508                  ldb   #$28
+03F3 EA41             (/dd/sourcecode/as):00509                  orb   u0001,u
+03F5 F7FF40           (/dd/sourcecode/as):00510                  stb   >$FF40
+03F8 CAA8             (/dd/sourcecode/as):00511                  orb   #$A8
+03FA 8602             (/dd/sourcecode/as):00512                  lda   #$02
+03FC 17FF3B           (/dd/sourcecode/as):00513                  lbsr  L033A
+03FF B5FF48           (/dd/sourcecode/as):00514         L03FF    bita  >$FF48
+0402 2616             (/dd/sourcecode/as):00515                  bne   L041A
+0404 313F             (/dd/sourcecode/as):00516                  leay  -$01,y
+0406 26F7             (/dd/sourcecode/as):00517                  bne   L03FF
+0408 A641             (/dd/sourcecode/as):00518                  lda   u0001,u
+040A 8A08             (/dd/sourcecode/as):00519                  ora   #$08
+040C B7FF40           (/dd/sourcecode/as):00520                  sta   >$FF40
+040F 86D0             (/dd/sourcecode/as):00521                  lda   #$D0
+0411 B7FF48           (/dd/sourcecode/as):00522                  sta   >$FF48
+0414 3521             (/dd/sourcecode/as):00523                  puls  y,cc
+0416 53               (/dd/sourcecode/as):00524                  comb  
+0417 C6F5             (/dd/sourcecode/as):00525                  ldb   #$F5
+0419 39               (/dd/sourcecode/as):00526                  rts   
+041A A680             (/dd/sourcecode/as):00527         L041A    lda   ,x+
+041C B7FF4B           (/dd/sourcecode/as):00528                  sta   >$FF4B
+041F F7FF40           (/dd/sourcecode/as):00529                  stb   >$FF40
+0422 20F6             (/dd/sourcecode/as):00530                  bra   L041A
+0424 3406             (/dd/sourcecode/as):00531         L0424    pshs  b,a
+0426 DC50             (/dd/sourcecode/as):00532                  ldd   <u0050
+0428 10934A           (/dd/sourcecode/as):00533                  cmpd  <u004A
+042B 3506             (/dd/sourcecode/as):00534                  puls  b,a
+042D 2704             (/dd/sourcecode/as):00535                  beq   L0433
+042F 103F0A           (/dd/sourcecode/as):00536                  os9   F$Sleep  
+0432 39               (/dd/sourcecode/as):00537                  rts   
+0433 8EA000           (/dd/sourcecode/as):00538         L0433    ldx   #$A000
+0436 12               (/dd/sourcecode/as):00539         L0436    nop   
+0437 12               (/dd/sourcecode/as):00540                  nop   
+0438 12               (/dd/sourcecode/as):00541                  nop   
+0439 301F             (/dd/sourcecode/as):00542                  leax  -$01,x
+043B 26F9             (/dd/sourcecode/as):00543                  bne   L0436
+043D 39               (/dd/sourcecode/as):00544                  rts   
+043E 3436             (/dd/sourcecode/as):00545         L043E    pshs  y,x,b,a
+0440 CC00F0           (/dd/sourcecode/as):00546                  ldd   #$00F0
+0443 ED4A             (/dd/sourcecode/as):00547                  std   u000A,u
+0445 A641             (/dd/sourcecode/as):00548                  lda   u0001,u
+0447 8A08             (/dd/sourcecode/as):00549                  ora   #$08
+0449 B7FF40           (/dd/sourcecode/as):00550                  sta   >$FF40
+044C 8E0028           (/dd/sourcecode/as):00551                  ldx   #$0028
+044F 9632             (/dd/sourcecode/as):00552                  lda   <u0032
+0451 2B18             (/dd/sourcecode/as):00553                  bmi   L046B
+0453 2714             (/dd/sourcecode/as):00554                  beq   L0469
+0455 6D42             (/dd/sourcecode/as):00555                  tst   u0002,u
+0457 2714             (/dd/sourcecode/as):00556                  beq   L046D
+0459 A6A823           (/dd/sourcecode/as):00557                  lda   <$23,y
+045C 8510             (/dd/sourcecode/as):00558                  bita  #$10
+045E 270D             (/dd/sourcecode/as):00559                  beq   L046D
+0460 8DC2             (/dd/sourcecode/as):00560                  bsr   L0424
+0462 CC00F0           (/dd/sourcecode/as):00561                  ldd   #$00F0
+0465 ED4A             (/dd/sourcecode/as):00562                  std   u000A,u
+0467 2004             (/dd/sourcecode/as):00563                  bra   L046D
+0469 8DB9             (/dd/sourcecode/as):00564         L0469    bsr   L0424
+046B 8D03             (/dd/sourcecode/as):00565         L046B    bsr   L0470
+046D 5F               (/dd/sourcecode/as):00566         L046D    clrb  
+046E 35B6             (/dd/sourcecode/as):00567                  puls  pc,y,x,b,a
+0470 8601             (/dd/sourcecode/as):00568         L0470    lda   #$01
+0472 9732             (/dd/sourcecode/as):00569                  sta   <u0032
+0474 8E0001           (/dd/sourcecode/as):00570                  ldx   #$0001
+0477 314A             (/dd/sourcecode/as):00571                  leay  u000A,u
+0479 6F24             (/dd/sourcecode/as):00572                  clr   $04,y
+047B CC00F0           (/dd/sourcecode/as):00573                  ldd   #$00F0
+047E 103F27           (/dd/sourcecode/as):00574                  os9   F$VIRQ   
+0481 2404             (/dd/sourcecode/as):00575                  bcc   L0487
+0483 8680             (/dd/sourcecode/as):00576                  lda   #$80
+0485 9732             (/dd/sourcecode/as):00577                  sta   <u0032
+0487 4F               (/dd/sourcecode/as):00578         L0487    clra  
+0488 39               (/dd/sourcecode/as):00579                  rts   
+0489 3402             (/dd/sourcecode/as):00580         L0489    pshs  a
+048B A6C9FF5E         (/dd/sourcecode/as):00581                  lda   >-u00A2,u
+048F 270E             (/dd/sourcecode/as):00582                  beq   L049F
+0491 C60C             (/dd/sourcecode/as):00583                  ldb   #$0C
+0493 F7FF76           (/dd/sourcecode/as):00584                  stb   >nh_data
+0496 86D8             (/dd/sourcecode/as):00585                  lda   #$D8
+0498 B7FF48           (/dd/sourcecode/as):00586                  sta   >$FF48
+049B 6F44             (/dd/sourcecode/as):00587                  clr   u0004,u
+049D 2004             (/dd/sourcecode/as):00588                  bra   L04A3
+049F 968A             (/dd/sourcecode/as):00589         L049F    lda   <u008A
+04A1 2704             (/dd/sourcecode/as):00590                  beq   L04A7
+04A3 8DCB             (/dd/sourcecode/as):00591         L04A3    bsr   L0470
+04A5 2007             (/dd/sourcecode/as):00592                  bra   L04AE
+04A7 B7FF40           (/dd/sourcecode/as):00593         L04A7    sta   >$FF40
+04AA 6F4E             (/dd/sourcecode/as):00594                  clr   u000E,u
+04AC 0F32             (/dd/sourcecode/as):00595                  clr   <u0032
+04AE 3582             (/dd/sourcecode/as):00596         L04AE    puls  pc,a
+04B0 AEA81E           (/dd/sourcecode/as):00597         L04B0    ldx   <$1E,y
+04B3 C614             (/dd/sourcecode/as):00598                  ldb   #$14
+04B5 6F85             (/dd/sourcecode/as):00599         L04B5    clr   b,x
+04B7 5A               (/dd/sourcecode/as):00600                  decb  
+04B8 2AFB             (/dd/sourcecode/as):00601                  bpl   L04B5
+04BA E6A826           (/dd/sourcecode/as):00602                  ldb   <$26,y
+04BD A6A827           (/dd/sourcecode/as):00603                  lda   <$27,y
+04C0 3D               (/dd/sourcecode/as):00604                  mul   
+04C1 830001           (/dd/sourcecode/as):00605                  subd  #$0001
+04C4 A6A82A           (/dd/sourcecode/as):00606                  lda   <$2A,y
+04C7 A703             (/dd/sourcecode/as):00607                  sta   $03,x
+04C9 A78812           (/dd/sourcecode/as):00608                  sta   <$12,x
+04CC 3D               (/dd/sourcecode/as):00609                  mul   
+04CD E3A82B           (/dd/sourcecode/as):00610                  addd  <$2B,y
+04D0 ED01             (/dd/sourcecode/as):00611                  std   $01,x
+04D2 8607             (/dd/sourcecode/as):00612                  lda   #$07
+04D4 A70D             (/dd/sourcecode/as):00613                  sta   $0D,x
+04D6 A6A824           (/dd/sourcecode/as):00614                  lda   <$24,y
+04D9 48               (/dd/sourcecode/as):00615                  lsla  
+04DA 3402             (/dd/sourcecode/as):00616                  pshs  a
+04DC A6A827           (/dd/sourcecode/as):00617                  lda   <$27,y
+04DF 4A               (/dd/sourcecode/as):00618                  deca  
+04E0 AAE0             (/dd/sourcecode/as):00619                  ora   ,s+
+04E2 A78810           (/dd/sourcecode/as):00620                  sta   <$10,x
+04E5 5F               (/dd/sourcecode/as):00621                  clrb  
+04E6 39               (/dd/sourcecode/as):00622                  rts   
+04E7 A27877           (/dd/sourcecode/as):00623                  emod
+     04EA             (/dd/sourcecode/as):00624         eom      equ   *

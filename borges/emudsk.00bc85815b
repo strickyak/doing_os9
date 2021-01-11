@@ -1,0 +1,1060 @@
+                      (/dd/sourcecode/as):00001         ********************************************************************
+                      (/dd/sourcecode/as):00002         * Emudsk - Virtual disk driver for CoCo emulators
+                      (/dd/sourcecode/as):00003         *
+                      (/dd/sourcecode/as):00004         * $Id: emudsk.asm,v 1.1 2002/08/28 14:52:42 tlindner Exp $
+                      (/dd/sourcecode/as):00005         *
+                      (/dd/sourcecode/as):00006         * Ed.    Comments                                       Who YY/MM/DD
+                      (/dd/sourcecode/as):00007         * ------------------------------------------------------------------
+                      (/dd/sourcecode/as):00008         *  01    Modified to compile under OS9Source            tjl 02/08/28
+                      (/dd/sourcecode/as):00009         
+                      (/dd/sourcecode/as):00010         * EmuDisk floppy disk controller driver
+                      (/dd/sourcecode/as):00011         * Edition #1
+                      (/dd/sourcecode/as):00012         * 04/18/96 : Written from scratch by Alan DeKok
+                      (/dd/sourcecode/as):00013         *                                 aland@sandelman.ocunix.on.ca
+                      (/dd/sourcecode/as):00014         *
+                      (/dd/sourcecode/as):00015         *  This program is Copyright (C) 1996 by Alan DeKok,
+                      (/dd/sourcecode/as):00016         *                  All Rights Reserved.
+                      (/dd/sourcecode/as):00017         *  License is given to individuals for personal use only.
+                      (/dd/sourcecode/as):00018         *
+                      (/dd/sourcecode/as):00019         *
+                      (/dd/sourcecode/as):00020         *  Comments: Ensure that device descriptors mark it as a hard drive
+                      (/dd/sourcecode/as):00021         *
+                      (/dd/sourcecode/as):00022         *
+                      (/dd/sourcecode/as):00023         *   $FF80-$FF82: logical record number
+     FF80             (/dd/sourcecode/as):00024         LSN      equ  $FF80           where to put the logical sector number
+                      (/dd/sourcecode/as):00025         
+                      (/dd/sourcecode/as):00026         *
+                      (/dd/sourcecode/as):00027         *   $FF83: command/status register.
+                      (/dd/sourcecode/as):00028         *          Output: 0=read, 1=write, 2=close.  
+                      (/dd/sourcecode/as):00029         *          Input: 0=no error, non-zero=error codes (see below).
+     FF83             (/dd/sourcecode/as):00030         command  equ  $FF83           where to put the commands
+                      (/dd/sourcecode/as):00031         
+                      (/dd/sourcecode/as):00032         *
+                      (/dd/sourcecode/as):00033         *   $FF84-$FF85: 6809's 16-bit buffer address (cannot cross an 8K boundary due
+                      (/dd/sourcecode/as):00034         *          to interference from the MMU emulation).
+     FF84             (/dd/sourcecode/as):00035         buffer   equ  $FF84           pointer to the buffer
+                      (/dd/sourcecode/as):00036         
+                      (/dd/sourcecode/as):00037         *
+                      (/dd/sourcecode/as):00038         * Returns:
+                      (/dd/sourcecode/as):00039         *
+                      (/dd/sourcecode/as):00040         * 0=successful
+                      (/dd/sourcecode/as):00041         * 2=not enabled
+                      (/dd/sourcecode/as):00042         * 4=too many MS-DOS files open,
+                      (/dd/sourcecode/as):00043         * 5=access denied (virtual HD file locked by another program
+                      (/dd/sourcecode/as):00044         *      or MS-DOS read-only status)
+                      (/dd/sourcecode/as):00045         * 6/12=internal error
+                      (/dd/sourcecode/as):00046         * 254=invalid command byte
+                      (/dd/sourcecode/as):00047         * 255=power-on state or closed.
+                      (/dd/sourcecode/as):00048         *
+                      (/dd/sourcecode/as):00049         *  The "close" command just flushes all the read/write buffers and
+                      (/dd/sourcecode/as):00050         * restores the metacontroller to its power-up state.  The hard drive must be
+                      (/dd/sourcecode/as):00051         * enabled by the user using the MS-DOS command "ECHO >COCO3.VHD" (another
+                      (/dd/sourcecode/as):00052         * crash safeguard), so error code 2 indicates this has not been done.
+                      (/dd/sourcecode/as):00053           
+                      (/dd/sourcecode/as):00054         
+                      (/dd/sourcecode/as):00055                  nam   EmuDsk
+                      (/dd/sourcecode/as):00056                  ttl   os9 device driver    
+                      (/dd/sourcecode/as):00057         
+                      (/dd/sourcecode/as):00058                  ifp1
+                      (/dd/sourcecode/as):00059                  use   os9defs
+                      (          os9defs):00001          opt -l
+                      (          os9defs):00002          ttl OS-9 System Symbol Definitions
+                      (          os9defs):00003         
+                      (          os9defs):00004         ***************
+                      (          os9defs):00005         * Edition History
+                      (          os9defs):00006         
+                      (          os9defs):00007         *   Date    Changes Made
+                      (          os9defs):00008         * -------- ----------------------------------------------
+                      (          os9defs):00009         * 83/03/01 Six new Status codes added: SS.BlkRd - SS.ELog
+                      (          os9defs):00010         * 83/03/08 New status code added: SS.SSig
+                      (          os9defs):00011         * 83/04/21 added new F$ call for 7 day clock function
+                      (          os9defs):00012         *          for com-trol level II.
+                      (          os9defs):00013         * 83/05/04 F$GCMDir service request added for NCM  by  WGP
+                      (          os9defs):00014         * 83/06/29 Added ProtFlag to init module offsets
+                      (          os9defs):00015         * 83/10/12 Added SS.AlfaS for coco  MGH
+                      (          os9defs):00016         * 83/10/28 Added SS.Break for ACIA Break command RES
+                      (          os9defs):00017         * 83/11/19 Added SS.RsBit to reserve (not allocate in) bitmap sector
+                      (          os9defs):00018         * 84/02/17 Added reserved status codes for Hoshi and Gimix
+                      (          os9defs):00019         * 84/03/07 Added SS.Cursr and SS.ScSiz for Coco MGH
+                      (          os9defs):00020         *          Added New signal code S$Window .. coco future MGH
+                      (          os9defs):00021         * 84/04/11 Addes SS.Sound for COCO                       MGH
+                      (          os9defs):00022         * 84/06/05 Added label SS.SetMF to Gimix Reserved byte   MGH
+                      (          os9defs):00023         * 85/03/04 Changed SS.Sound to SS.KySns                  MGH
+                      (          os9defs):00024         * 85/04/28 Added SS.ComSt Communication Set (Parity,Baud)MGH
+                      (          os9defs):00025         * 85/05/02 Added F$VIRQ for Virtual IRQ                  TAH
+                      (          os9defs):00026         * 85/05/30 Added SS.Open,SS.Close,SS.HngUP               MGH
+                      (          os9defs):00027         * 85/06/01 Added E$HangUp error for CDC Lost             MGH
+                      (          os9defs):00028         * 85/06/03 Added DT.NFM device type                      DJN
+                      (          os9defs):00029         * 85/06/20 Added SS.AAGBf, SS.SLGBf                      MGH
+                      (          os9defs):00030         
+                      (          os9defs):00031          pag
+                      (          os9defs):00032         ************************************************************
+                      (          os9defs):00033         *
+                      (          os9defs):00034         *     System Service Request Code Definitions
+                      (          os9defs):00035         *
+                      (          os9defs):00036          ORG 0
+0000                  (          os9defs):00037         F$Link rmb 1 Link to Module
+0001                  (          os9defs):00038         F$Load rmb 1 Load Module from File
+0002                  (          os9defs):00039         F$UnLink rmb 1 Unlink Module
+0003                  (          os9defs):00040         F$Fork rmb 1 Start New Process
+0004                  (          os9defs):00041         F$Wait rmb 1 Wait for Child Process to Die
+0005                  (          os9defs):00042         F$Chain rmb 1 Chain Process to New Module
+0006                  (          os9defs):00043         F$Exit rmb 1 Terminate Process
+0007                  (          os9defs):00044         F$Mem rmb 1 Set Memory Size
+0008                  (          os9defs):00045         F$Send rmb 1 Send Signal to Process
+0009                  (          os9defs):00046         F$Icpt rmb 1 Set Signal Intercept
+000A                  (          os9defs):00047         F$Sleep rmb 1 Suspend Process
+000B                  (          os9defs):00048         F$SSpd rmb 1 Suspend Process
+000C                  (          os9defs):00049         F$ID rmb 1 Return Process ID
+000D                  (          os9defs):00050         F$SPrior rmb 1 Set Process Priority
+000E                  (          os9defs):00051         F$SSWI rmb 1 Set Software Interrupt
+000F                  (          os9defs):00052         F$PErr rmb 1 Print Error
+0010                  (          os9defs):00053         F$PrsNam rmb 1 Parse Pathlist Name
+0011                  (          os9defs):00054         F$CmpNam rmb 1 Compare Two Names
+0012                  (          os9defs):00055         F$SchBit rmb 1 Search Bit Map
+0013                  (          os9defs):00056         F$AllBit rmb 1 Allocate in Bit Map
+0014                  (          os9defs):00057         F$DelBit rmb 1 Deallocate in Bit Map
+0015                  (          os9defs):00058         F$Time rmb 1 Get Current Time
+0016                  (          os9defs):00059         F$STime rmb 1 Set Current Time
+0017                  (          os9defs):00060         F$CRC rmb 1 Generate CRC
+0018                  (          os9defs):00061         F$GPrDsc rmb 1 get Process Descriptor copy
+0019                  (          os9defs):00062         F$GBlkMp rmb 1 get System Block Map copy
+001A                  (          os9defs):00063         F$GModDr rmb 1 get Module Directory copy
+001B                  (          os9defs):00064         F$CpyMem rmb 1 Copy External Memory
+001C                  (          os9defs):00065         F$SUser rmb 1 Set User ID number
+001D                  (          os9defs):00066         F$UnLoad rmb 1 Unlink Module by name
+                      (          os9defs):00067         *F$Ctime rmb 1 Com-Trol clock read
+                      (          os9defs):00068         *F$Cstime rmb 1 Com-Trol set time
+                      (          os9defs):00069         *F$CTswi2 rmb 1 Com-Trol double postbyte swi2
+001E                  (          os9defs):00070          rmb 3 reserved - see above
+                      (          os9defs):00071          ORG $27 Beginning of System Reserved Calls
+0027                  (          os9defs):00072         F$VIRQ rmb 1 Install/Delete Virtual IRQ
+0028                  (          os9defs):00073         F$SRqMem rmb 1 System Memory Request
+0029                  (          os9defs):00074         F$SRtMem rmb 1 System Memory Return
+002A                  (          os9defs):00075         F$IRQ rmb 1 Enter IRQ Polling Table
+002B                  (          os9defs):00076         F$IOQu rmb 1 Enter I/O Queue
+002C                  (          os9defs):00077         F$AProc rmb 1 Enter Active Process Queue
+002D                  (          os9defs):00078         F$NProc rmb 1 Start Next Process
+002E                  (          os9defs):00079         F$VModul rmb 1 Validate Module
+002F                  (          os9defs):00080         F$Find64 rmb 1 Find Process/Path Descriptor
+0030                  (          os9defs):00081         F$All64 rmb 1 Allocate Process/Path Descriptor
+0031                  (          os9defs):00082         F$Ret64 rmb 1 Return Process/Path Descriptor
+0032                  (          os9defs):00083         F$SSvc rmb 1 Service Request Table Initialization
+0033                  (          os9defs):00084         F$IODel rmb 1 Delete I/O Module
+0034                  (          os9defs):00085         F$SLink rmb 1 System Link
+0035                  (          os9defs):00086         F$Boot rmb 1 Bootstrap System
+0036                  (          os9defs):00087         F$BtMem rmb 1 Bootstrap Memory Request
+0037                  (          os9defs):00088         F$GProcP rmb 1 Get Process ptr
+0038                  (          os9defs):00089         F$Move rmb 1 Move Data (low bound first)
+0039                  (          os9defs):00090         F$AllRAM rmb 1 Allocate RAM blocks
+003A                  (          os9defs):00091         F$AllImg rmb 1 Allocate Image RAM blocks
+003B                  (          os9defs):00092         F$DelImg rmb 1 Deallocate Image RAM blocks
+003C                  (          os9defs):00093         F$SetImg rmb 1 Set Process DAT Image
+003D                  (          os9defs):00094         F$FreeLB rmb 1 Get Free Low Block
+003E                  (          os9defs):00095         F$FreeHB rmb 1 Get Free High Block
+003F                  (          os9defs):00096         F$AllTsk rmb 1 Allocate Process Task number
+0040                  (          os9defs):00097         F$DelTsk rmb 1 Deallocate Process Task number
+0041                  (          os9defs):00098         F$SetTsk rmb 1 Set Process Task DAT registers
+0042                  (          os9defs):00099         F$ResTsk rmb 1 Reserve Task number
+0043                  (          os9defs):00100         F$RelTsk rmb 1 Release Task number
+0044                  (          os9defs):00101         F$DATLog rmb 1 Convert DAT Block/Offset to Logical
+                      (          os9defs):00102         ***** With non-contiguous modules this system call will become obsolete
+0045                  (          os9defs):00103         F$DATTmp rmb 1 Make temporary DAT image
+                      (          os9defs):00104         *****
+0046                  (          os9defs):00105         F$LDAXY rmb 1 Load A [X,[Y]]
+0047                  (          os9defs):00106         F$LDAXYP rmb 1 Load A [X+,[Y]]
+0048                  (          os9defs):00107         F$LDDDXY rmb 1 Load D [D+X,[Y]]
+0049                  (          os9defs):00108         F$LDABX rmb 1 Load A from 0,X in task B
+004A                  (          os9defs):00109         F$STABX rmb 1 Store A at 0,X in task B
+004B                  (          os9defs):00110         F$AllPrc rmb 1 Allocate Process Descriptor
+004C                  (          os9defs):00111         F$DelPrc rmb 1 Deallocate Process Descriptor
+004D                  (          os9defs):00112         F$ELink rmb 1 Link using Module Directory Entry
+004E                  (          os9defs):00113         F$FModul rmb 1 Find Module Directory Entry
+004F                  (          os9defs):00114         F$MapBlk rmb 1 Map Specific Block
+0050                  (          os9defs):00115         F$ClrBlk rmb 1 Clear Specific Block
+0051                  (          os9defs):00116         F$DelRAM rmb 1 Deallocate RAM blocks
+0052                  (          os9defs):00117         F$GCMDir rmb 1 Pack module directory
+                      (          os9defs):00118          pag
+                      (          os9defs):00119         ************************************************************
+                      (          os9defs):00120         *
+                      (          os9defs):00121         *     I/O Service Request Code Definitions
+                      (          os9defs):00122         *
+                      (          os9defs):00123          ORG $80
+0080                  (          os9defs):00124         I$Attach rmb 1 Attach I/O Device
+0081                  (          os9defs):00125         I$Detach rmb 1 Detach I/O Device
+0082                  (          os9defs):00126         I$Dup rmb 1 Duplicate Path
+0083                  (          os9defs):00127         I$Create rmb 1 Create New File
+0084                  (          os9defs):00128         I$Open rmb 1 Open Existing File
+0085                  (          os9defs):00129         I$MakDir rmb 1 Make Directory File
+0086                  (          os9defs):00130         I$ChgDir rmb 1 Change Default Directory
+0087                  (          os9defs):00131         I$Delete rmb 1 Delete File
+0088                  (          os9defs):00132         I$Seek rmb 1 Change Current Position
+0089                  (          os9defs):00133         I$Read rmb 1 Read Data
+008A                  (          os9defs):00134         I$Write rmb 1 Write Data
+008B                  (          os9defs):00135         I$ReadLn rmb 1 Read Line of ASCII Data
+008C                  (          os9defs):00136         I$WritLn rmb 1 Write Line of ASCII Data
+008D                  (          os9defs):00137         I$GetStt rmb 1 Get Path Status
+008E                  (          os9defs):00138         I$SetStt rmb 1 Set Path Status
+008F                  (          os9defs):00139         I$Close rmb 1 Close Path
+0090                  (          os9defs):00140         I$DeletX rmb 1 Delete from current exec dir
+                      (          os9defs):00141         
+                      (          os9defs):00142          pag
+                      (          os9defs):00143         ************************************************************
+                      (          os9defs):00144         *
+                      (          os9defs):00145         *     Signal Codes
+                      (          os9defs):00146         *
+                      (          os9defs):00147          ORG 0
+0000                  (          os9defs):00148         S$Kill rmb 1 Non-Interceptable Abort
+0001                  (          os9defs):00149         S$Wake rmb 1 Wake-up Sleeping Process
+0002                  (          os9defs):00150         S$Abort rmb 1 Keyboard Abort
+0003                  (          os9defs):00151         S$Intrpt rmb 1 Keyboard Interrupt
+0004                  (          os9defs):00152         S$Window rmb 1 Window Change
+                      (          os9defs):00153         
+                      (          os9defs):00154         
+                      (          os9defs):00155         ************************************************************
+                      (          os9defs):00156         *
+                      (          os9defs):00157         *     Status Codes for GetStat/PutStat
+                      (          os9defs):00158         *
+                      (          os9defs):00159          ORG 0
+0000                  (          os9defs):00160         SS.Opt rmb 1 Read/Write PD Options
+0001                  (          os9defs):00161         SS.Ready rmb 1 Check for Device Ready
+0002                  (          os9defs):00162         SS.Size rmb 1 Read/Write File Size
+0003                  (          os9defs):00163         SS.Reset rmb 1 Device Restore
+0004                  (          os9defs):00164         SS.WTrk rmb 1 Device Write Track
+0005                  (          os9defs):00165         SS.Pos rmb 1 Get File Current Position
+0006                  (          os9defs):00166         SS.EOF rmb 1 Test for End of File
+0007                  (          os9defs):00167         SS.Link rmb 1 Link to Status routines
+0008                  (          os9defs):00168         SS.ULink rmb 1 Unlink Status routines
+0009                  (          os9defs):00169         SS.Feed rmb 1 issue form feed
+000A                  (          os9defs):00170         SS.Frz rmb 1 Freeze DD. information
+000B                  (          os9defs):00171         SS.SPT rmb 1 Set DD.TKS to given value
+000C                  (          os9defs):00172         SS.SQD rmb 1 Sequence down hard disk
+000D                  (          os9defs):00173         SS.DCmd rmb 1 Send direct command to disk
+000E                  (          os9defs):00174         SS.DevNm rmb 1 Return Device name (32-bytes at [X])
+000F                  (          os9defs):00175         SS.FD rmb 1 Return File Descriptor (Y-bytes at [X])
+0010                  (          os9defs):00176         SS.Ticks rmb 1 Set Lockout honor duration
+0011                  (          os9defs):00177         SS.Lock rmb 1 Lock/Release record
+0012                  (          os9defs):00178         SS.DStat rmb 1 Return Display Status (CoCo)
+0013                  (          os9defs):00179         SS.Joy rmb 1 Return Joystick Value (CoCo)
+0014                  (          os9defs):00180         SS.BlkRd rmb 1 Block Read
+0015                  (          os9defs):00181         SS.BlkWr rmb 1 Block Write
+0016                  (          os9defs):00182         SS.Reten rmb 1 Retension cycle
+0017                  (          os9defs):00183         SS.WFM rmb 1 Write File Mark
+0018                  (          os9defs):00184         SS.RFM rmb 1 Read past File Mark
+0019                  (          os9defs):00185         SS.ELog rmb 1 Read Error Log
+001A                  (          os9defs):00186         SS.SSig rmb 1 Send signal on data ready
+001B                  (          os9defs):00187         SS.Relea rmb 1 Release device
+001C                  (          os9defs):00188         SS.AlfaS rmb 1 Return Alfa Display Status (CoCo)
+001D                  (          os9defs):00189         SS.Break rmb 1 Send break signal out acia
+001E                  (          os9defs):00190         SS.RsBit rmb 1 Reserve bitmap sector (do not allocate in) LSB(X)=sct#
+001F                  (          os9defs):00191          rmb 1 reserved
+0020                  (          os9defs):00192          rmb 4 reserve $20-$23 for Japanese version (Hoshi)
+0024                  (          os9defs):00193         SS.SetMF rmb 1 reserve $24 for Gimix G68 (Flex compatability?)
+0025                  (          os9defs):00194         SS.Cursr rmb 1 Cursor information for COCO
+0026                  (          os9defs):00195         SS.ScSiz rmb 1 Return screen size for COCO
+0027                  (          os9defs):00196         SS.KySns rmb 1 Getstat/Putstat for COCO keyboard
+0028                  (          os9defs):00197         SS.ComSt rmb 1 Getstat/Putstat for Baud/Parity
+0029                  (          os9defs):00198         SS.Open rmb 1 Putstat to tell driver a path was opened
+002A                  (          os9defs):00199         SS.Close rmb 1 Putstat to tell driver a path was closed
+002B                  (          os9defs):00200         SS.HngUp rmb 1 Putstat to tell driver to hangup phone
+                      (          os9defs):00201         * System Specific and User defined codes above $80
+                      (          os9defs):00202          org 80 
+0050                  (          os9defs):00203         SS.AAGBf rmb 1 Putstat to Allocate Additional Graphic Buffer
+0051                  (          os9defs):00204         SS.SLGBf rmb 1 Putstat to Select a different Graphic Buffer
+                      (          os9defs):00205         
+                      (          os9defs):00206          ttl Direct Page Definitions
+                      (          os9defs):00207          page
+                      (          os9defs):00208         ************************************************************
+                      (          os9defs):00209         *
+                      (          os9defs):00210         *     Direct Page Variable Definitions
+                      (          os9defs):00211         *
+                      (          os9defs):00212          org $20 reserve first 32 bytes
+0020                  (          os9defs):00213         D.FMBM rmb 4 Free memory bit map pointers
+0024                  (          os9defs):00214         D.MLIM rmb 2 Memory limit
+0026                  (          os9defs):00215         D.ModDir rmb 4 Module directory
+002A                  (          os9defs):00216         D.Init rmb 2 Rom base address
+002C                  (          os9defs):00217         D.SWI3 rmb 2 Swi3 vector
+002E                  (          os9defs):00218         D.SWI2 rmb 2 Swi2 vector
+0030                  (          os9defs):00219         D.FIRQ rmb 2 Firq vector
+0032                  (          os9defs):00220         D.IRQ rmb 2 Irq vector
+0034                  (          os9defs):00221         D.SWI rmb 2 Swi vector
+0036                  (          os9defs):00222         D.NMI rmb 2 Nmi vector
+0038                  (          os9defs):00223         D.SvcIRQ rmb 2 Interrupt service entry
+003A                  (          os9defs):00224         D.Poll rmb 2 Interrupt polling routine
+003C                  (          os9defs):00225         D.UsrIRQ rmb 2 User irq routine
+003E                  (          os9defs):00226         D.SysIRQ rmb 2 System irq routine
+0040                  (          os9defs):00227         D.UsrSvc rmb 2 User service request routine
+0042                  (          os9defs):00228         D.SysSvc rmb 2 System service request routine
+0044                  (          os9defs):00229         D.UsrDis rmb 2 User service request dispatch table
+0046                  (          os9defs):00230         D.SysDis rmb 2 System service reuest dispatch table
+0048                  (          os9defs):00231         D.Slice rmb 1 Process time slice count
+0049                  (          os9defs):00232         D.PrcDBT rmb 2 Process descriptor block address
+004B                  (          os9defs):00233         D.Proc rmb 2 Process descriptor address
+004D                  (          os9defs):00234         D.AProcQ rmb 2 Active process queue
+004F                  (          os9defs):00235         D.WProcQ rmb 2 Waiting process queue
+0051                  (          os9defs):00236         D.SProcQ rmb 2 Sleeping process queue
+     0053             (          os9defs):00237         D.Time equ . Time
+0053                  (          os9defs):00238         D.Year rmb 1
+0054                  (          os9defs):00239         D.Month rmb 1
+0055                  (          os9defs):00240         D.Day rmb 1
+0056                  (          os9defs):00241         D.Hour rmb 1
+0057                  (          os9defs):00242         D.Min rmb 1
+0058                  (          os9defs):00243         D.Sec rmb 1
+0059                  (          os9defs):00244         D.Tick rmb 1
+005A                  (          os9defs):00245         D.TSec rmb 1 Ticks / second
+005B                  (          os9defs):00246         D.TSlice rmb 1 Ticks / time-slice
+005C                  (          os9defs):00247         D.IOML rmb 2 I/O mgr free memory low bound
+005E                  (          os9defs):00248         D.IOMH rmb 2 I/O mgr free memory hi  bound
+0060                  (          os9defs):00249         D.DevTbl rmb 2 Device driver table addr
+0062                  (          os9defs):00250         D.PolTbl rmb 2 Irq polling table addr
+0064                  (          os9defs):00251         D.PthDBT rmb 2 Path descriptor block table addr
+0066                  (          os9defs):00252         D.BTLO rmb 2 Bootstrap low address
+0068                  (          os9defs):00253         D.BTHI rmb 2 Bootstrap hi address
+006A                  (          os9defs):00254         D.DMAReq rmb 1 DMA in use flag
+                      (          os9defs):00255         
+006B                  (          os9defs):00256         D.AltIRQ rmb 2 Alternate IRQ vector (CC)
+006D                  (          os9defs):00257         D.KbdSta rmb 2 Keyboard scanner static storage (CC)
+006F                  (          os9defs):00258         D.DskTmr rmb 2 Disk Motor Timer (CC)
+0071                  (          os9defs):00259         D.CBStrt rmb 16 reserved for CC warmstart ($71)
+0081                  (          os9defs):00260         D.Clock rmb 2 Address of Clock Tick Routine (CC)
+                      (          os9defs):00261         
+0083                  (          os9defs):00262         D.Boot rmb 1 Bootstrap attempted flag
+0084                  (          os9defs):00263         D.URtoSs rmb 2 address of user to system routine (VIRQ)
+0086                  (          os9defs):00264         D.CLTB rmb 2 Pointer to clock interrupt table (VIRQ)
+                      (          os9defs):00265         
+                      (          os9defs):00266         * TABLE SIZES
+                      (          os9defs):00267         
+     0020             (          os9defs):00268         BMAPSZ equ 32 BIT MAP SIZE
+     0002             (          os9defs):00269         SVCTNM equ 2 NUMBER OF SERVICE REQUEST TABLES
+     006E             (          os9defs):00270         SVCTSZ equ (256-BMAPSZ)/SVCTNM-2 SERVICE REQUEST TABLE SIZE
+                      (          os9defs):00271         
+                      (          os9defs):00272         
+                      (          os9defs):00273          ttl Structure Formats
+                      (          os9defs):00274          pag
+                      (          os9defs):00275         ************************************************************
+                      (          os9defs):00276         *
+                      (          os9defs):00277         *     Module Definitions
+                      (          os9defs):00278         *
+                      (          os9defs):00279         *     Universal Module Offsets
+                      (          os9defs):00280         *
+                      (          os9defs):00281          ORG 0
+0000                  (          os9defs):00282         M$ID rmb 2 ID Code
+0002                  (          os9defs):00283         M$Size rmb 2 Module Size
+0004                  (          os9defs):00284         M$Name rmb 2 Module Name
+0006                  (          os9defs):00285         M$Type rmb 1 Type / Language
+0007                  (          os9defs):00286         M$Revs rmb 1 Attributes / Revision Level
+0008                  (          os9defs):00287         M$Parity rmb 1 Header Parity
+     0009             (          os9defs):00288         M$IDSize equ . Module ID Size
+                      (          os9defs):00289         *
+                      (          os9defs):00290         *     Type-Dependent Module Offsets
+                      (          os9defs):00291         *
+                      (          os9defs):00292         *   System, File Manager, Device Driver, Program Module
+                      (          os9defs):00293         *
+0009                  (          os9defs):00294         M$Exec rmb 2 Execution Entry Offset
+                      (          os9defs):00295         *
+                      (          os9defs):00296         *   Device Driver, Program Module
+                      (          os9defs):00297         *
+000B                  (          os9defs):00298         M$Mem rmb 2 Stack Requirement
+                      (          os9defs):00299         *
+                      (          os9defs):00300         *   Device Driver, Device Descriptor Module
+                      (          os9defs):00301         *
+000D                  (          os9defs):00302         M$Mode rmb 1 Device Driver Mode Capabilities
+                      (          os9defs):00303         *
+                      (          os9defs):00304         *   Device Descriptor Module
+                      (          os9defs):00305         *
+                      (          os9defs):00306          ORG M$IDSize
+0009                  (          os9defs):00307         M$FMgr rmb 2 File Manager Name Offset
+000B                  (          os9defs):00308         M$PDev rmb 2 Device Driver Name Offset
+000D                  (          os9defs):00309          rmb 1 M$Mode (defined above)
+000E                  (          os9defs):00310         M$Port rmb 3 Port Address
+0011                  (          os9defs):00311         M$Opt rmb 1 Device Default Options
+0012                  (          os9defs):00312         M$DTyp rmb 1 Device Type
+                      (          os9defs):00313         *
+                      (          os9defs):00314         *   Configuration Module Entry Offsets
+                      (          os9defs):00315         *
+                      (          os9defs):00316          ORG M$IDSize
+0009                  (          os9defs):00317         MaxMem rmb 3 Maximum Free Memory
+000C                  (          os9defs):00318         PollCnt rmb 1 Entries in Interrupt Polling Table
+000D                  (          os9defs):00319         DevCnt rmb 1 Entries in Device Table
+000E                  (          os9defs):00320         InitStr rmb 2 Initial Module Name
+0010                  (          os9defs):00321         SysStr rmb 2 System Device Name
+0012                  (          os9defs):00322         StdStr rmb 2 Standard I/O Pathlist
+0014                  (          os9defs):00323         BootStr rmb 2 Bootstrap Module name
+0016                  (          os9defs):00324         ProtFlag rmb 1 Write protect enable flag
+                      (          os9defs):00325          pag
+                      (          os9defs):00326         ************************************************************
+                      (          os9defs):00327         *
+                      (          os9defs):00328         *     Module Field Definitions
+                      (          os9defs):00329         *
+                      (          os9defs):00330         *   ID Field
+                      (          os9defs):00331         *
+     0087             (          os9defs):00332         M$ID1 equ $87 Module ID code byte one
+     00CD             (          os9defs):00333         M$ID2 equ $CD Module ID code byte two
+     87CD             (          os9defs):00334         M$ID12 equ M$ID1*256+M$ID2
+                      (          os9defs):00335         *
+                      (          os9defs):00336         *   Module Type / Language byte
+                      (          os9defs):00337         *
+                      (          os9defs):00338         *   Field Masks
+                      (          os9defs):00339         *
+     00F0             (          os9defs):00340         TypeMask equ %11110000 Type Field
+     000F             (          os9defs):00341         LangMask equ %00001111 Language Field
+                      (          os9defs):00342         *
+                      (          os9defs):00343         *   Type Values
+                      (          os9defs):00344         *
+     00F0             (          os9defs):00345         Devic equ $F0 Device Descriptor Module
+     00E0             (          os9defs):00346         Drivr equ $E0 Physical Device Driver
+     00D0             (          os9defs):00347         FlMgr equ $D0 File Manager
+     00C0             (          os9defs):00348         Systm equ $C0 System Module
+     0040             (          os9defs):00349         Data equ $40 Data Module
+     0030             (          os9defs):00350         Multi equ $30 Multi-Module
+     0020             (          os9defs):00351         Sbrtn equ $20 Subroutine Module
+     0010             (          os9defs):00352         Prgrm equ $10 Program Module
+                      (          os9defs):00353         *
+                      (          os9defs):00354         *   Language Values
+                      (          os9defs):00355         *
+     0001             (          os9defs):00356         Objct equ 1 6809 Object Code Module
+     0002             (          os9defs):00357         ICode equ 2 Basic09 I-code
+     0003             (          os9defs):00358         PCode equ 3 Pascal P-code
+     0004             (          os9defs):00359         CCode equ 4 C I-code
+     0005             (          os9defs):00360         CblCode equ 5 Cobol I-code
+     0006             (          os9defs):00361         FrtnCode equ 6 Fortran I-code
+                      (          os9defs):00362         *
+                      (          os9defs):00363         *   Module Attributes / Revision byte
+                      (          os9defs):00364         *
+                      (          os9defs):00365         *   Field Masks
+                      (          os9defs):00366         *
+     00F0             (          os9defs):00367         AttrMask equ %11110000 Attributes Field
+     000F             (          os9defs):00368         RevsMask equ %00001111 Revision Level Field
+                      (          os9defs):00369         *
+                      (          os9defs):00370         *   Attribute Flags
+                      (          os9defs):00371         *
+     0080             (          os9defs):00372         ReEnt equ %10000000 Re-Entrant Module
+     0040             (          os9defs):00373         Modprot equ %01000000 Gimix Module protection bit
+                      (          os9defs):00374         *                     0=protected, 1=write enable
+                      (          os9defs):00375         
+                      (          os9defs):00376         *
+                      (          os9defs):00377         *   Device Type Values
+                      (          os9defs):00378         *
+     0000             (          os9defs):00379         DT.SCF equ 0 Sequential Character File Type
+     0001             (          os9defs):00380         DT.RBF equ 1 Random Block File Type
+     0002             (          os9defs):00381         DT.Pipe equ 2 Pipe File Type
+     0003             (          os9defs):00382         DT.NFM equ 3 Network File Manager Type
+                      (          os9defs):00383         *
+                      (          os9defs):00384         *   CRC Result Constant
+                      (          os9defs):00385         *
+     0080             (          os9defs):00386         CRCCon1 equ $80
+     0FE3             (          os9defs):00387         CRCCon23 equ $0FE3
+                      (          os9defs):00388          page
+                      (          os9defs):00389         ************************************************************
+                      (          os9defs):00390         *
+                      (          os9defs):00391         *     Process Descriptor Definitions
+                      (          os9defs):00392         *
+     000C             (          os9defs):00393         DefIOSiz equ 12
+     0010             (          os9defs):00394         NumPaths equ 16 Number of Local Paths
+                      (          os9defs):00395         
+                      (          os9defs):00396          ORG 0
+0000                  (          os9defs):00397         P$ID rmb 1 Process ID
+0001                  (          os9defs):00398         P$PID rmb 1 Parent's ID
+0002                  (          os9defs):00399         P$SID rmb 1 Sibling's ID
+0003                  (          os9defs):00400         P$CID rmb 1 Child's ID
+0004                  (          os9defs):00401         P$SP rmb 2 Stack ptr
+0006                  (          os9defs):00402         P$CHAP rmb 1 process chapter number
+0007                  (          os9defs):00403         P$ADDR rmb 1 user address beginning page number
+0008                  (          os9defs):00404         P$PagCnt rmb 1 Memory Page Count
+0009                  (          os9defs):00405         P$User rmb 2 User Index
+000B                  (          os9defs):00406         P$Prior rmb 1 Priority
+000C                  (          os9defs):00407         P$Age rmb 1 Age
+000D                  (          os9defs):00408         P$State rmb 1 Status
+000E                  (          os9defs):00409         P$Queue rmb 2 Queue Link (Process ptr)
+0010                  (          os9defs):00410         P$IOQP rmb 1 Previous I/O Queue Link (Process ID)
+0011                  (          os9defs):00411         P$IOQN rmb 1 Next     I/O Queue Link (Process ID)
+0012                  (          os9defs):00412         P$PModul rmb 2 Primary Module
+0014                  (          os9defs):00413         P$SWI rmb 2 SWI Entry Point
+0016                  (          os9defs):00414         P$SWI2 rmb 2 SWI2 Entry Point
+0018                  (          os9defs):00415         P$SWI3 rmb 2 SWI3 Entry Point
+001A                  (          os9defs):00416         P$DIO rmb DefIOSiz default I/O ptrs
+0026                  (          os9defs):00417         P$PATH rmb NumPaths I/O path table
+0036                  (          os9defs):00418         P$Signal rmb 1 Signal Code
+0037                  (          os9defs):00419         P$SigVec rmb 2 Signal Intercept Vector
+0039                  (          os9defs):00420         P$SigDat rmb 2 Signal Intercept Data Address
+003B                  (          os9defs):00421         P$NIO rmb 4 additional dio pointers for net
+003F                  (          os9defs):00422          rmb $40-. unused
+     0040             (          os9defs):00423         P$Size equ . Size of Process Descriptor
+                      (          os9defs):00424         
+                      (          os9defs):00425         ************************
+                      (          os9defs):00426         *   Process State Flags
+                      (          os9defs):00427         *
+     0080             (          os9defs):00428         SysState equ %10000000
+     0040             (          os9defs):00429         TimSleep equ %01000000
+     0020             (          os9defs):00430         TimOut equ %00100000
+     0010             (          os9defs):00431         ImgChg equ %00010000
+     0002             (          os9defs):00432         Condem equ %00000010
+     0001             (          os9defs):00433         Dead equ %00000001
+                      (          os9defs):00434          page
+                      (          os9defs):00435         ************************************************************
+                      (          os9defs):00436         *
+                      (          os9defs):00437         *     Path Descriptor Offsets
+                      (          os9defs):00438         *
+                      (          os9defs):00439          ORG 0
+0000                  (          os9defs):00440         PD.PD rmb 1 Path Number
+0001                  (          os9defs):00441         PD.MOD rmb 1 Mode (Read/Write/Update)
+0002                  (          os9defs):00442         PD.CNT rmb 1 Number of Open Images
+0003                  (          os9defs):00443         PD.DEV rmb 2 Device Table Entry Address
+0005                  (          os9defs):00444         PD.CPR rmb 1 Current Process
+0006                  (          os9defs):00445         PD.RGS rmb 2 Caller's Register Stack
+0008                  (          os9defs):00446         PD.BUF rmb 2 Buffer Address
+000A                  (          os9defs):00447         PD.FST rmb 32-. File Manager's Storage
+     0020             (          os9defs):00448         PD.OPT equ . PD GetSts(0) Options
+0020                  (          os9defs):00449         PD.DTP rmb 1 Device Type
+0021                  (          os9defs):00450          rmb 64-. Path options
+     0040             (          os9defs):00451         PDSIZE equ .
+                      (          os9defs):00452         
+                      (          os9defs):00453         
+                      (          os9defs):00454         *
+                      (          os9defs):00455         *  Pathlist Special Symbols
+                      (          os9defs):00456         *
+     002F             (          os9defs):00457         PDELIM equ '/ Pathlist Name Separator
+     002E             (          os9defs):00458         PDIR equ '. Directory
+     0040             (          os9defs):00459         PENTIR equ '@ Entire Device
+                      (          os9defs):00460         
+                      (          os9defs):00461         
+                      (          os9defs):00462         ************************************************************
+                      (          os9defs):00463         *
+                      (          os9defs):00464         *      File Access Modes
+                      (          os9defs):00465         *
+     0001             (          os9defs):00466         READ. equ %00000001
+     0002             (          os9defs):00467         WRITE. equ %00000010
+     0003             (          os9defs):00468         UPDAT. equ READ.+WRITE.
+     0004             (          os9defs):00469         EXEC. equ %00000100
+     0008             (          os9defs):00470         PREAD. equ %00001000
+     0010             (          os9defs):00471         PWRIT. equ %00010000
+     0020             (          os9defs):00472         PEXEC. equ %00100000
+     0040             (          os9defs):00473         SHARE. equ %01000000
+     0080             (          os9defs):00474         DIR. equ %10000000
+                      (          os9defs):00475         
+                      (          os9defs):00476          page
+                      (          os9defs):00477         ************************************************************
+                      (          os9defs):00478         *
+                      (          os9defs):00479         *     File Manager Entry Offsets
+                      (          os9defs):00480         *
+                      (          os9defs):00481          ORG 0
+0000                  (          os9defs):00482         FMCREA rmb 3 Create (Open New) File
+0003                  (          os9defs):00483         FMOPEN rmb 3 Open File
+0006                  (          os9defs):00484         FMMDIR rmb 3 Make Directory
+0009                  (          os9defs):00485         FMCDIR rmb 3 Change Directory
+000C                  (          os9defs):00486         FMDLET rmb 3 Delete File
+000F                  (          os9defs):00487         FMSEEK rmb 3 Position File
+0012                  (          os9defs):00488         FMREAD rmb 3 Read from File
+0015                  (          os9defs):00489         FMWRIT rmb 3 Write to File
+0018                  (          os9defs):00490         FMGSTA rmb 3 Get File Status
+001B                  (          os9defs):00491         FMSSTA rmb 3 Set File Status
+001E                  (          os9defs):00492         FMCLOS rmb 3 Close File
+                      (          os9defs):00493         
+                      (          os9defs):00494         
+                      (          os9defs):00495         
+                      (          os9defs):00496         ************************************************************
+                      (          os9defs):00497         *
+                      (          os9defs):00498         *     Device Driver Entry Offsets
+                      (          os9defs):00499         *
+                      (          os9defs):00500          ORG 0
+0000                  (          os9defs):00501         D$INIT rmb 3 Device Initialization
+0003                  (          os9defs):00502         D$READ rmb 3 Read from Device
+0006                  (          os9defs):00503         D$WRIT rmb 3 Write to Device
+0009                  (          os9defs):00504         D$GSTA rmb 3 Get Device Status
+000C                  (          os9defs):00505         D$PSTA rmb 3 Put Device Status
+000F                  (          os9defs):00506         D$TERM rmb 3 Device Termination
+                      (          os9defs):00507          page
+                      (          os9defs):00508         ************************************************************
+                      (          os9defs):00509         *
+                      (          os9defs):00510         *     Device Table Format
+                      (          os9defs):00511         *
+                      (          os9defs):00512          ORG 0
+0000                  (          os9defs):00513         V$DRIV rmb 2 Device Driver module
+0002                  (          os9defs):00514         V$STAT rmb 2 Device Driver Static storage
+0004                  (          os9defs):00515         V$DESC rmb 2 Device Descriptor module
+0006                  (          os9defs):00516         V$FMGR rmb 2 File Manager module
+0008                  (          os9defs):00517         V$USRS rmb 1 use count
+     0009             (          os9defs):00518         DEVSIZ equ .
+                      (          os9defs):00519         
+                      (          os9defs):00520         
+                      (          os9defs):00521         
+                      (          os9defs):00522         ************************************************************
+                      (          os9defs):00523         *
+                      (          os9defs):00524         *     Device Static Storage Offsets
+                      (          os9defs):00525         *
+                      (          os9defs):00526          ORG 0
+0000                  (          os9defs):00527         V.PAGE rmb 1 Port Extended Address
+0001                  (          os9defs):00528         V.PORT rmb 2 Device 'Base' Port Address
+0003                  (          os9defs):00529         V.LPRC rmb 1 Last Active Process ID
+0004                  (          os9defs):00530         V.BUSY rmb 1 Active Process ID (0=UnBusy)
+0005                  (          os9defs):00531         V.WAKE rmb 1 Active PD if Driver MUST Wake-up
+     0006             (          os9defs):00532         V.USER equ . Driver Allocation Origin
+                      (          os9defs):00533         
+                      (          os9defs):00534         
+                      (          os9defs):00535         
+                      (          os9defs):00536         ************************************************************
+                      (          os9defs):00537         *
+                      (          os9defs):00538         *     Interrupt Polling Table Format
+                      (          os9defs):00539         *
+                      (          os9defs):00540          ORG 0
+0000                  (          os9defs):00541         Q$POLL rmb 2 Absolute Polling Address
+0002                  (          os9defs):00542         Q$FLIP rmb 1 Flip (EOR) Byte ..normally Zero
+0003                  (          os9defs):00543         Q$MASK rmb 1 Polling Mask (after Flip)
+0004                  (          os9defs):00544         Q$SERV rmb 2 Absolute Service routine Address
+0006                  (          os9defs):00545         Q$STAT rmb 2 Static Storage Address
+0008                  (          os9defs):00546         Q$PRTY rmb 1 Priority (Low Numbers=Top Priority)
+     0009             (          os9defs):00547         POLSIZ equ .
+                      (          os9defs):00548         
+                      (          os9defs):00549         
+                      (          os9defs):00550         
+                      (          os9defs):00551         ***********************************************************
+                      (          os9defs):00552         *
+                      (          os9defs):00553         *     VIRQ packet format
+                      (          os9defs):00554         *
+                      (          os9defs):00555          ORG 0
+0000                  (          os9defs):00556         Vi.Cnt rmb 2 count down counter
+0002                  (          os9defs):00557         Vi.Rst rmb 2 reset value for counter
+0004                  (          os9defs):00558         Vi.Stat rmb 1 status byte
+                      (          os9defs):00559         
+     0001             (          os9defs):00560         Vi.IFlag equ %00000001 status byte virq flag
+                      (          os9defs):00561         
+                      (          os9defs):00562         
+                      (          os9defs):00563          pag
+                      (          os9defs):00564         ************************************************************
+                      (          os9defs):00565         *
+                      (          os9defs):00566         *   Machine Characteristics Definitions
+                      (          os9defs):00567         *
+     0000             (          os9defs):00568         R$CC equ 0 Condition Codes register
+     0001             (          os9defs):00569         R$A equ 1 A Accumulator
+     0002             (          os9defs):00570         R$B equ 2 B Accumulator
+     0001             (          os9defs):00571         R$D equ R$A Combined A:B Accumulator
+     0003             (          os9defs):00572         R$DP equ 3 Direct Page register
+     0004             (          os9defs):00573         R$X equ 4 X Index register
+     0006             (          os9defs):00574         R$Y equ 6 Y Index register
+     0008             (          os9defs):00575         R$U equ 8 User Stack register
+     000A             (          os9defs):00576         R$PC equ 10 Program Counter register
+     000C             (          os9defs):00577         R$Size equ 12 Total register package size
+                      (          os9defs):00578         
+     0080             (          os9defs):00579         Entire equ %10000000 Full Register Stack flag
+     0040             (          os9defs):00580         FIRQMask equ %01000000 Fast-Interrupt Mask bit
+     0020             (          os9defs):00581         HalfCrry equ %00100000 Half Carry flag
+     0010             (          os9defs):00582         IRQMask equ %00010000 Interrupt Mask bit
+     0008             (          os9defs):00583         Negative equ %00001000 Negative flag
+     0004             (          os9defs):00584         Zero equ %00000100 Zero flag
+     0002             (          os9defs):00585         TwosOvfl equ %00000010 Two's Comp Overflow flag
+     0001             (          os9defs):00586         Carry equ %00000001 Carry bit
+     0050             (          os9defs):00587         IntMasks equ IRQMask+FIRQMask
+     0080             (          os9defs):00588         Sign equ %10000000 sign bit
+                      (          os9defs):00589         
+     0001             (          os9defs):00590         true equ 1 useful name
+     0000             (          os9defs):00591         false equ 0 useful name
+                      (          os9defs):00592         
+                      (          os9defs):00593         
+                      (          os9defs):00594          ttl Error Code Definitions
+                      (          os9defs):00595           pag
+                      (          os9defs):00596         ************************************************************
+                      (          os9defs):00597         *
+                      (          os9defs):00598         *     Error Code Definitions
+                      (          os9defs):00599         *
+                      (          os9defs):00600          org 200
+00C8                  (          os9defs):00601         E$PthFul rmb 1 Path Table full
+00C9                  (          os9defs):00602         E$BPNum rmb 1 Bad Path Number
+00CA                  (          os9defs):00603         E$Poll rmb 1 Polling Table Full
+00CB                  (          os9defs):00604         E$BMode rmb 1 Bad Mode
+00CC                  (          os9defs):00605         E$DevOvf rmb 1 Device Table Overflow
+00CD                  (          os9defs):00606         E$BMID rmb 1 Bad Module ID
+00CE                  (          os9defs):00607         E$DirFul rmb 1 Module Directory Full
+00CF                  (          os9defs):00608         E$MemFul rmb 1 Process Memory Full
+00D0                  (          os9defs):00609         E$UnkSvc rmb 1 Unknown Service Code
+00D1                  (          os9defs):00610         E$ModBsy rmb 1 Module Busy
+00D2                  (          os9defs):00611         E$BPAddr rmb 1 Bad Page Address
+00D3                  (          os9defs):00612         E$EOF rmb 1 End of File
+00D4                  (          os9defs):00613          rmb 1
+00D5                  (          os9defs):00614         E$NES rmb 1 Non-Existing Segment
+00D6                  (          os9defs):00615         E$FNA rmb 1 File Not Accesible
+00D7                  (          os9defs):00616         E$BPNam rmb 1 Bad Path Name
+00D8                  (          os9defs):00617         E$PNNF rmb 1 Path Name Not Found
+00D9                  (          os9defs):00618         E$SLF rmb 1 Segment List Full
+00DA                  (          os9defs):00619         E$CEF rmb 1 Creating Existing File
+00DB                  (          os9defs):00620         E$IBA rmb 1 Illegal Block Address
+00DC                  (          os9defs):00621         E$HangUp rmb 1 Carrier Detect Lost
+00DD                  (          os9defs):00622         E$MNF rmb 1 Module Not Found
+00DE                  (          os9defs):00623          rmb 1
+00DF                  (          os9defs):00624         E$DelSP rmb 1 Deleting Stack Pointer memory
+00E0                  (          os9defs):00625         E$IPrcID rmb 1 Illegal Process ID
+00E1                  (          os9defs):00626          rmb 1
+00E2                  (          os9defs):00627         E$NoChld rmb 1 No Children
+00E3                  (          os9defs):00628         E$ISWI rmb 1 Illegal SWI code
+00E4                  (          os9defs):00629         E$PrcAbt rmb 1 Process Aborted
+00E5                  (          os9defs):00630         E$PrcFul rmb 1 Process Table Full
+00E6                  (          os9defs):00631         E$IForkP rmb 1 Illegal Fork Parameter
+00E7                  (          os9defs):00632         E$KwnMod rmb 1 Known Module
+00E8                  (          os9defs):00633         E$BMCRC rmb 1 Bad Module CRC
+00E9                  (          os9defs):00634         E$USigP rmb 1 Unprocessed Signal Pending
+00EA                  (          os9defs):00635         E$NEMod rmb 1 Non Existing Module
+                      (          os9defs):00636         
+00EB                  (          os9defs):00637         E$BNam rmb 1 Bad Name
+00EC                  (          os9defs):00638         E$BMHP rmb 1 (bad module header parity)
+00ED                  (          os9defs):00639         E$NoRam rmb 1 No Ram Available
+00EE                  (          os9defs):00640         E$BPrcID rmb 1 Bad Process ID
+00EF                  (          os9defs):00641         E$NoTask rmb 1 No available Task number
+                      (          os9defs):00642         
+                      (          os9defs):00643          rmb $F0-. reserved
+                      (          os9defs):00644         
+00F0                  (          os9defs):00645         E$Unit rmb 1 Illegal Unit (drive)
+00F1                  (          os9defs):00646         E$Sect rmb 1 Bad SECTor number
+00F2                  (          os9defs):00647         E$WP   rmb 1 Write Protect
+00F3                  (          os9defs):00648         E$CRC  rmb 1 Bad Check Sum
+00F4                  (          os9defs):00649         E$Read rmb 1 Read Error
+00F5                  (          os9defs):00650         E$Write rmb 1 Write Error
+00F6                  (          os9defs):00651         E$NotRdy rmb 1 Device Not Ready
+00F7                  (          os9defs):00652         E$Seek rmb 1 Seek Error
+00F8                  (          os9defs):00653         E$Full rmb 1 Media Full
+00F9                  (          os9defs):00654         E$BTyp rmb 1 Bad Type (incompatable) media
+00FA                  (          os9defs):00655         E$DevBsy rmb 1 Device Busy
+00FB                  (          os9defs):00656         E$DIDC rmb 1 Disk ID Change
+00FC                  (          os9defs):00657         E$Lock rmb 1 Record is busy (locked out)
+00FD                  (          os9defs):00658         E$Share rmb 1 Non-sharable file busy
+00FE                  (          os9defs):00659         E$DeadLk rmb 1 I/O Deadlock error
+                      (          os9defs):00660         
+                      (          os9defs):00661          opt l
+                      (          os9defs):00662         
+                      (/dd/sourcecode/as):00060                  use   rbfdefs
+                      (          rbfdefs):00001          opt -l
+                      (          rbfdefs):00002          ttl Random Block File Manager Definitions
+                      (          rbfdefs):00003         
+                      (          rbfdefs):00004         ***************
+                      (          rbfdefs):00005         * Modification History
+                      (          rbfdefs):00006         
+                      (          rbfdefs):00007         * 82/07/13   PD.Exten added to path descriptor              rfd
+                      (          rbfdefs):00008         * 82/07/13   PE entries defined                             rfd
+                      (          rbfdefs):00009         * 82/07/15   V.FileHd inserted in drive static              rfd
+                      (          rbfdefs):00010         * 82/09/10   Level One/ Level two cond added                WGP
+                      (          rbfdefs):00011         * 82/09/17   Record Lock cond added                         WGP
+                      (          rbfdefs):00012         * 82/09/17   PD.SLE renamed to PD.Creat                     rfd
+                      (          rbfdefs):00013         * 82/09/17   V.DiskID, V.BMapSz, V.MapSct added for smart
+                      (          rbfdefs):00014         *               multi-sector bitmap searching by            rfd
+                      (          rbfdefs):00015         * 82/09/20   reserved areas added in static storage.
+                      (          rbfdefs):00016         * 83/06/07   Added InDriver flag in PD.SMF.                 rfd
+                      (          rbfdefs):00017         * 83/06/13   Added PE.Req tmp save for PE.Lock              rfd
+                      (          rbfdefs):00018         * 83/08/08   reserved PD.SToff for Japanese                 rfd
+                      (          rbfdefs):00019         * 83/11/19   Added V.ResBit in drive tables.                rfd
+                      (          rbfdefs):00020         * 83/12/12   Added PE.Prior to save process priority.       rfd
+                      (          rbfdefs):00021         * 83/12/13   Added BufBusy bit in state flag (PD.SMF)       rfd
+                      (          rbfdefs):00022         
+                      (          rbfdefs):00023          pag
+                      (          rbfdefs):00024         ************************************************************
+                      (          rbfdefs):00025         *
+                      (          rbfdefs):00026         *  Random Block Path Descriptor Format
+                      (          rbfdefs):00027         *
+                      (          rbfdefs):00028          org PD.FST
+000A                  (          rbfdefs):00029         PD.SMF rmb 1 State flags
+000B                  (          rbfdefs):00030         PD.CP rmb 4 Current logical byte position
+000F                  (          rbfdefs):00031         PD.SIZ rmb 4 File size
+0013                  (          rbfdefs):00032         PD.SBL rmb 3 Segment beginning lsn
+0016                  (          rbfdefs):00033         PD.SBP rmb 3 Segment beginning psn
+0019                  (          rbfdefs):00034         PD.SSZ rmb 3 Segment size
+001C                  (          rbfdefs):00035         PD.DSK rmb 2 Disk id
+001E                  (          rbfdefs):00036         PD.DTB rmb 2 Drive table ptr
+                      (          rbfdefs):00037          org PD.OPT
+0020                  (          rbfdefs):00038          rmb 1 Device type
+0021                  (          rbfdefs):00039         PD.DRV rmb 1 Drive number
+0022                  (          rbfdefs):00040         PD.STP rmb 1 Step rate
+0023                  (          rbfdefs):00041         PD.TYP rmb 1 Disk device type (5" 8" other)
+0024                  (          rbfdefs):00042         PD.DNS rmb 1 Density capability
+0025                  (          rbfdefs):00043         PD.CYL rmb 2 Number of cylinders
+0027                  (          rbfdefs):00044         PD.SID rmb 1 Number of surfaces
+0028                  (          rbfdefs):00045         PD.VFY rmb 1 0=verify disk writes
+0029                  (          rbfdefs):00046         PD.SCT rmb 2 Default sectors/track
+002B                  (          rbfdefs):00047         PD.T0S rmb 2 Default sectors/track tr00,s0
+002D                  (          rbfdefs):00048         PD.ILV rmb 1 Sector interleave offset
+002E                  (          rbfdefs):00049         PD.SAS rmb 1 Segment allocation size
+002F                  (          rbfdefs):00050         PD.TFM rmb 1 DMA Transfer Mode
+0030                  (          rbfdefs):00051         PD.Exten rmb 2 Path Extension (PE) for record locking
+0032                  (          rbfdefs):00052         PD.SToff rmb 1 Sector/Track offsets (for "foreign" disk formats)
+0033                  (          rbfdefs):00053         PD.ATT rmb 1 File attributes
+0034                  (          rbfdefs):00054         PD.FD rmb 3 File descriptor psn
+0037                  (          rbfdefs):00055         PD.DFD rmb 3 Directory file descriptor psn
+003A                  (          rbfdefs):00056         PD.DCP rmb 4 File directory entry ptr
+003E                  (          rbfdefs):00057         PD.DVT rmb 2 User readable dev tbl ptr
+                      (          rbfdefs):00058         
+                      (          rbfdefs):00059         * State Flags
+     0001             (          rbfdefs):00060         BUFMOD equ $01 Buffer modified
+     0002             (          rbfdefs):00061         SINBUF equ $02 Sector in buffer
+     0004             (          rbfdefs):00062         FDBUF equ  $04 File descriptor in buffer
+                      (          rbfdefs):00063         *EOFSEC equ $08 End of file sector
+                      (          rbfdefs):00064         *EOF equ $10 End of file
+     0020             (          rbfdefs):00065         InDriver equ $20 Currently in Disk Driver, or queued
+     0040             (          rbfdefs):00066         BufBusy equ $40 Buffer is currently busy
+                      (          rbfdefs):00067         
+                      (          rbfdefs):00068         *
+                      (          rbfdefs):00069         * Device Descriptor Format
+                      (          rbfdefs):00070         *
+                      (          rbfdefs):00071         
+                      (          rbfdefs):00072          org 0
+0000                  (          rbfdefs):00073         DD.TOT rmb 3 Total number of sectors
+0003                  (          rbfdefs):00074         DD.TKS rmb 1 Track size in sectors
+0004                  (          rbfdefs):00075         DD.MAP rmb 2 Number of bytes in allocation bit map
+0006                  (          rbfdefs):00076         DD.BIT rmb 2 Number of sectors/bit
+0008                  (          rbfdefs):00077         DD.DIR rmb 3 Address of root directory fd
+000B                  (          rbfdefs):00078         DD.OWN rmb 2 Owner
+000D                  (          rbfdefs):00079         DD.ATT rmb 1 Attributes
+000E                  (          rbfdefs):00080         DD.DSK rmb 2 Disk id
+0010                  (          rbfdefs):00081         DD.FMT rmb 1 Disk format; density/sides
+0011                  (          rbfdefs):00082         DD.SPT rmb 2 Sectors/track
+0013                  (          rbfdefs):00083         DD.RES rmb 2 Reserved for future use
+     0015             (          rbfdefs):00084         DD.SIZ equ . Device descriptor minimum size
+0015                  (          rbfdefs):00085         DD.BT rmb 3 System bootstrap sector
+0018                  (          rbfdefs):00086         DD.BSZ rmb 2 Size of system bootstrap
+001A                  (          rbfdefs):00087         DD.DAT rmb 5 Creation date
+001F                  (          rbfdefs):00088         DD.NAM rmb 32 Volume name
+003F                  (          rbfdefs):00089         DD.OPT rmb 32 option area
+                      (          rbfdefs):00090         
+                      (          rbfdefs):00091         
+                      (          rbfdefs):00092         *
+                      (          rbfdefs):00093         * File Descriptor Format
+                      (          rbfdefs):00094         *
+                      (          rbfdefs):00095         
+                      (          rbfdefs):00096          org 0
+0000                  (          rbfdefs):00097         FD.ATT rmb 1 Attributes
+0001                  (          rbfdefs):00098         FD.OWN rmb 2 Owner
+0003                  (          rbfdefs):00099         FD.DAT rmb 5 Date last modified
+0008                  (          rbfdefs):00100         FD.LNK rmb 1 Link count
+0009                  (          rbfdefs):00101         FD.SIZ rmb 4 File size
+000D                  (          rbfdefs):00102         FD.Creat rmb 3 Segment list extension
+     0010             (          rbfdefs):00103         FD.SEG equ . Beginning of segment list
+                      (          rbfdefs):00104         
+                      (          rbfdefs):00105         * Segment List Entry Format
+                      (          rbfdefs):00106          org 0
+0000                  (          rbfdefs):00107         FDSL.A rmb 3 Segment beginning physical sector number
+0003                  (          rbfdefs):00108         FDSL.B rmb 2 Segment size
+     0005             (          rbfdefs):00109         FDSL.S equ . Segment list entry size
+                      (          rbfdefs):00110         
+     00FB             (          rbfdefs):00111         FD.LS1 equ FD.SEG+((256-FD.SEG)/FDSL.S-1)*FDSL.S
+     00FA             (          rbfdefs):00112         FD.LS2 equ (256/FDSL.S-1)*FDSL.S
+                      (          rbfdefs):00113         
+     0010             (          rbfdefs):00114         MINSEC set 16
+                      (          rbfdefs):00115         
+                      (          rbfdefs):00116         
+                      (          rbfdefs):00117         
+                      (          rbfdefs):00118         *
+                      (          rbfdefs):00119         * Directory Entry Format
+                      (          rbfdefs):00120         *
+                      (          rbfdefs):00121         
+                      (          rbfdefs):00122          org 0
+0000                  (          rbfdefs):00123         DIR.NM rmb 29 File name
+001D                  (          rbfdefs):00124         DIR.FD rmb 3 File descriptor physical sector number
+     0020             (          rbfdefs):00125         DIR.SZ equ . Diectory record size
+                      (          rbfdefs):00126         
+                      (          rbfdefs):00127         
+                      (          rbfdefs):00128         ****************
+                      (          rbfdefs):00129         *
+                      (          rbfdefs):00130         *  Static Storage
+                      (          rbfdefs):00131         *
+                      (          rbfdefs):00132         *
+                      (          rbfdefs):00133         * Overall Disk Static Storage
+                      (          rbfdefs):00134         *
+                      (          rbfdefs):00135         *  Note:  This does Not reserve Any memory for Drive Tables
+                      (          rbfdefs):00136         *         Each Driver is responsible for reserving sufficient
+                      (          rbfdefs):00137         *         memory for the appropriate number of tables.
+                      (          rbfdefs):00138         *
+                      (          rbfdefs):00139          org V.USER Reserve required
+0006                  (          rbfdefs):00140         V.NDRV rmb 1 Number of drives
+0007                  (          rbfdefs):00141          rmb 8 reserved
+     000F             (          rbfdefs):00142         DRVBEG equ . Beginning of drive tables
+                      (          rbfdefs):00143         *
+                      (          rbfdefs):00144         * Global Storage For Disk Drive Tables
+                      (          rbfdefs):00145         * Each Table Contains The First 'DD.Siz' Bytes
+                      (          rbfdefs):00146         * From Sector 0, And The Current Track, Stepping Rate,
+                      (          rbfdefs):00147         * Bit-Map Use Flag, And Disk Type
+                      (          rbfdefs):00148         *
+                      (          rbfdefs):00149          org 0
+0000                  (          rbfdefs):00150          rmb DD.SIZ Device descriptor, sector 0
+0015                  (          rbfdefs):00151         V.TRAK rmb 2 Current track
+0017                  (          rbfdefs):00152         V.BMB rmb 1 Bit-map use flag
+0018                  (          rbfdefs):00153         V.FileHd rmb 2 open file list for this drive
+001A                  (          rbfdefs):00154         V.DiskID rmb 2 Disk ID
+001C                  (          rbfdefs):00155         V.BMapSz rmb 1 Bitmap Size
+001D                  (          rbfdefs):00156         V.MapSct rmb 1 lowest reasonable bitmap sector
+001E                  (          rbfdefs):00157         V.ResBit rmb 1 reserved bitmap sector (for compaction)
+001F                  (          rbfdefs):00158          rmb 7 reserved
+     0026             (          rbfdefs):00159         DRVMEM equ .
+                      (          rbfdefs):00160         
+                      (          rbfdefs):00161          opt l
+                      (/dd/sourcecode/as):00061                  endc
+                      (/dd/sourcecode/as):00062         
+     00E1             (/dd/sourcecode/as):00063         tylg     set   Drivr+Objct   
+     0081             (/dd/sourcecode/as):00064         atrv     set   ReEnt+rev
+     0001             (/dd/sourcecode/as):00065         rev      set   $01
+                      (/dd/sourcecode/as):00066         
+0000 87CD00BC000FE181 (/dd/sourcecode/as):00067                  mod   eom,name,tylg,atrv,start,size
+     66002100FF
+000D FF               (/dd/sourcecode/as):00068                  fcb   $ff
+                      (/dd/sourcecode/as):00069         
+                      (/dd/sourcecode/as):00070                  org   0
+0000.                 (/dd/sourcecode/as):00071         u0000    rmb   $FF            Normal RBF device mem for 4 drives
+     00FF             (/dd/sourcecode/as):00072         size     equ   .
+                      (/dd/sourcecode/as):00073         
+000E FF               (/dd/sourcecode/as):00074                  fcb   $FF            This byte is the driver permissions
+000F 456D754473EB     (/dd/sourcecode/as):00075         name     fcs   /EmuDsk/
+0015 01               (/dd/sourcecode/as):00076                  fcb   1              edition #1
+                      (/dd/sourcecode/as):00077         
+                      (/dd/sourcecode/as):00078         
+                      (/dd/sourcecode/as):00079         * Entry: Y=Ptr to device descriptor
+                      (/dd/sourcecode/as):00080         *        U=Ptr to device mem
+                      (/dd/sourcecode/as):00081         *
+                      (/dd/sourcecode/as):00082         * Default to only one drive supported, there's really no need for more.
+0016 86FF             (/dd/sourcecode/as):00083         INIT     lda   #$FF          'Invalid' value & # of drives
+0018 304F             (/dd/sourcecode/as):00084                  leax  DRVBEG,u       Point to start of drive tables
+001A A784             (/dd/sourcecode/as):00085                  sta   ,x             DD.TOT MSB to bogus value
+001C A78815           (/dd/sourcecode/as):00086                  sta   <V.TRAK,x      Init current track # to bogus value
+                      (/dd/sourcecode/as):00087         
+                      (/dd/sourcecode/as):00088         * for now, TERM routine goes here.  Perhaps it should be pointing to the
+                      (/dd/sourcecode/as):00089         * park routine? ... probably not.
+001F                  (/dd/sourcecode/as):00090         TERM
+001F 5F               (/dd/sourcecode/as):00091         GETSTA   clrb                 no GetStt calls - return, no error, ignore
+0020 39               (/dd/sourcecode/as):00092         L0086    rts   
+                      (/dd/sourcecode/as):00093         
+0021 16FFF2           (/dd/sourcecode/as):00094         start    lbra   INIT           3 bytes per entry to keep RBF happy
+0024 16000C           (/dd/sourcecode/as):00095                  lbra   READ
+0027 160022           (/dd/sourcecode/as):00096                  lbra   WRITE
+002A 16FFF2           (/dd/sourcecode/as):00097                  lbra   GETSTA
+002D 16006E           (/dd/sourcecode/as):00098                  lbra   SETSTA
+0030 16FFEC           (/dd/sourcecode/as):00099                  lbra   TERM
+                      (/dd/sourcecode/as):00100         
+                      (/dd/sourcecode/as):00101         * Entry: B:X = LSN
+                      (/dd/sourcecode/as):00102         *        Y   = path dsc. ptr
+                      (/dd/sourcecode/as):00103         *        U   = Device mem ptr
+0033 4F               (/dd/sourcecode/as):00104         READ     clra                 READ the sector
+0034 8D18             (/dd/sourcecode/as):00105                  bsr   GetSect        Go read the sector, exiting if there's an error
+0036 5D               (/dd/sourcecode/as):00106                  tstb
+0037 26E6             (/dd/sourcecode/as):00107                  bne   GETSTA         if not sector 0, return
+0039 3084             (/dd/sourcecode/as):00108                  leax  ,x             sets CC.Z bit
+003B 26E2             (/dd/sourcecode/as):00109                  bne   GETSTA         if not sector zero, return
+                      (/dd/sourcecode/as):00110         
+                      (/dd/sourcecode/as):00111         * LSN0, standard OS-9 format
+                      (/dd/sourcecode/as):00112         * Actually, this isn't really necessary for a HD, as the information in
+                      (/dd/sourcecode/as):00113         * LSN0 never changes after it's read in once.  But we'll do it anyhow
+003D AE28             (/dd/sourcecode/as):00114                  ldx   PD.BUF,y       Get ptr to sector buffer
+003F 334F             (/dd/sourcecode/as):00115                  leau  DRVBEG,u       point to the beginning of the drive tables
+0041 C615             (/dd/sourcecode/as):00116                  ldb   #DD.SIZ        copy bytes over
+0043 A680             (/dd/sourcecode/as):00117         copy.0   lda   ,x+            grab from LSN0
+0045 A7C0             (/dd/sourcecode/as):00118                  sta   ,u+            save into device static storage 
+0047 5A               (/dd/sourcecode/as):00119                  decb
+0048 26F9             (/dd/sourcecode/as):00120                  bne   copy.0
+004A 5F               (/dd/sourcecode/as):00121                  clrb
+004B 39               (/dd/sourcecode/as):00122                  rts   
+                      (/dd/sourcecode/as):00123         
+004C 8601             (/dd/sourcecode/as):00124         WRITE    lda   #$01           WRITE to emulator disk, and fall thru to GetSect
+                      (/dd/sourcecode/as):00125         
+                      (/dd/sourcecode/as):00126         * Get Sector comes here with:
+                      (/dd/sourcecode/as):00127         * Entry: A = read/write command code (0/1)
+                      (/dd/sourcecode/as):00128         *        B,X = LSN to read/write
+                      (/dd/sourcecode/as):00129         *        Y   = path dsc. ptr
+                      (/dd/sourcecode/as):00130         *        U   = Device static storage ptr
+                      (/dd/sourcecode/as):00131         * Exit:  A   = error status from command register
+004E 6DA821           (/dd/sourcecode/as):00132         GetSect  tst   <PD.DRV,y      get drive number requested
+0051 2617             (/dd/sourcecode/as):00133                  bne   DrivErr        only one drive allowed, return error
+                      (/dd/sourcecode/as):00134         
+0053 3414             (/dd/sourcecode/as):00135                  pshs  x,b            save LSN for later
+0055 F7FF80           (/dd/sourcecode/as):00136                  stb   >LSN
+0058 BFFF81           (/dd/sourcecode/as):00137                  stx   >LSN+1
+                      (/dd/sourcecode/as):00138         
+005B AE28             (/dd/sourcecode/as):00139                  ldx   PD.BUF,y       where the 256-byte LSN should go
+                      (/dd/sourcecode/as):00140         * Note: OS-9 allocates buffers from system memory on page boundaries, so
+                      (/dd/sourcecode/as):00141         * the low byte of X should now be $00, ensuring that the sector is not
+                      (/dd/sourcecode/as):00142         * falling over an 8K MMU block boundary.
+                      (/dd/sourcecode/as):00143         
+005D BFFF84           (/dd/sourcecode/as):00144                  stx   >buffer        set up the buffer address
+0060 B7FF83           (/dd/sourcecode/as):00145                  sta   >command       get the emulator to blast over the sector
+0063 B6FF83           (/dd/sourcecode/as):00146                  lda   >command       restore the error status
+0066 2608             (/dd/sourcecode/as):00147                  bne   FixErr         if non-zero, go fix the error and exit
+0068 3594             (/dd/sourcecode/as):00148                  puls  b,x,pc         restore LSN and exit
+                      (/dd/sourcecode/as):00149         
+006A 3262             (/dd/sourcecode/as):00150         DrivErr  leas  2,s            kill address of calling routine (Read/Write)
+006C 53               (/dd/sourcecode/as):00151                  comb
+                      (/dd/sourcecode/as):00152         * FIND ERROR CODE TO USE
+                      (/dd/sourcecode/as):00153         *        ldb   #E$            find appropriate error code...
+006D C6F6             (/dd/sourcecode/as):00154                  ldb   #E$NotRdy      not ready
+006F 39               (/dd/sourcecode/as):00155                  rts
+                      (/dd/sourcecode/as):00156         
+                      (/dd/sourcecode/as):00157         * Emulator error codes translated to OS-9 error codes.
+                      (/dd/sourcecode/as):00158         *
+                      (/dd/sourcecode/as):00159         * 2=not enabled
+                      (/dd/sourcecode/as):00160         *      E$NotRDy - drive is not ready
+                      (/dd/sourcecode/as):00161         *
+                      (/dd/sourcecode/as):00162         * 4=too many MS-DOS files open,
+                      (/dd/sourcecode/as):00163         *      E$
+                      (/dd/sourcecode/as):00164         *
+                      (/dd/sourcecode/as):00165         * 5=access denied (virtual HD file locked by another program
+                      (/dd/sourcecode/as):00166         *      or MS-DOS read-only status)
+                      (/dd/sourcecode/as):00167         *      E$WP  - write protect
+                      (/dd/sourcecode/as):00168         *
+                      (/dd/sourcecode/as):00169         * 6/12=internal error
+                      (/dd/sourcecode/as):00170         *      E$CRC - CRC error
+                      (/dd/sourcecode/as):00171         *
+                      (/dd/sourcecode/as):00172         * 254=invalid command byte
+                      (/dd/sourcecode/as):00173         *      E$
+                      (/dd/sourcecode/as):00174         *
+                      (/dd/sourcecode/as):00175         * 255=power-on state or closed.
+                      (/dd/sourcecode/as):00176         *      E$NotRdy - drive is not ready
+                      (/dd/sourcecode/as):00177         *
+0070 3265             (/dd/sourcecode/as):00178         FixErr   leas  5,s         kill B,X,PC from GetSect routine
+0072 8102             (/dd/sourcecode/as):00179                  cmpa  #02
+0074 2714             (/dd/sourcecode/as):00180                  beq   NotRdy
+0076 81FF             (/dd/sourcecode/as):00181                  cmpa  #255
+0078 2710             (/dd/sourcecode/as):00182                  beq   NotRdy
+007A 8105             (/dd/sourcecode/as):00183                  cmpa  #5
+007C 2710             (/dd/sourcecode/as):00184                  beq   WP
+007E 8106             (/dd/sourcecode/as):00185                  cmpa  #6
+0080 2710             (/dd/sourcecode/as):00186                  beq   CRC
+0082 810C             (/dd/sourcecode/as):00187                  cmpa  #12
+0084 270C             (/dd/sourcecode/as):00188                  beq   CRC
+                      (/dd/sourcecode/as):00189         
+                      (/dd/sourcecode/as):00190         * if it's something we don't recognize, it's a seek error
+0086 53               (/dd/sourcecode/as):00191                  comb
+0087 C6F7             (/dd/sourcecode/as):00192                  ldb   #E$Seek        seek error
+0089 39               (/dd/sourcecode/as):00193                  rts   
+                      (/dd/sourcecode/as):00194         
+008A 53               (/dd/sourcecode/as):00195         NotRdy   comb  
+008B C6F6             (/dd/sourcecode/as):00196                  ldb   #E$NotRdy      not ready
+008D 39               (/dd/sourcecode/as):00197                  rts   
+                      (/dd/sourcecode/as):00198         
+008E 53               (/dd/sourcecode/as):00199         WP       comb  
+008F C6F2             (/dd/sourcecode/as):00200                  ldb   #E$WP          write protect
+0091 39               (/dd/sourcecode/as):00201                  rts   
+                      (/dd/sourcecode/as):00202         
+0092 53               (/dd/sourcecode/as):00203         CRC      comb  
+0093 C6F3             (/dd/sourcecode/as):00204                  ldb   #E$CRC         CRC error
+0095 39               (/dd/sourcecode/as):00205                  rts   
+                      (/dd/sourcecode/as):00206         
+0096 53               (/dd/sourcecode/as):00207         L03D4    comb  
+0097 C6F5             (/dd/sourcecode/as):00208                  ldb   #E$Write       write error
+0099 39               (/dd/sourcecode/as):00209                  rts   
+                      (/dd/sourcecode/as):00210         
+                      (/dd/sourcecode/as):00211         
+009A 53               (/dd/sourcecode/as):00212         L03E0    comb  
+009B C6F4             (/dd/sourcecode/as):00213                  ldb   #E$Read        Read error
+009D 39               (/dd/sourcecode/as):00214                  rts   
+                      (/dd/sourcecode/as):00215         
+009E AE26             (/dd/sourcecode/as):00216         SETSTA   ldx   PD.RGS,y       Get caller's register stack ptr
+00A0 E602             (/dd/sourcecode/as):00217                  ldb   R$B,x          Get function code
+00A2 C104             (/dd/sourcecode/as):00218                  cmpb  #SS.WTrk       Write track?
+00A4 2711             (/dd/sourcecode/as):00219                  beq   format         Yes, ignore it
+00A6 C103             (/dd/sourcecode/as):00220                  cmpb  #SS.Reset      Restore head to track 0?
+00A8 270D             (/dd/sourcecode/as):00221                  beq   format         Yes, ignore it
+00AA C10C             (/dd/sourcecode/as):00222                  cmpb  #SS.SQD        sequence down the drive (i.e. park it)?
+00AC 2704             (/dd/sourcecode/as):00223                  beq   park
+00AE 53               (/dd/sourcecode/as):00224                  comb                 set carry for error
+00AF C6D0             (/dd/sourcecode/as):00225                  ldb   #E$UnkSvc      return illegal service request error
+00B1 39               (/dd/sourcecode/as):00226                  rts   
+                      (/dd/sourcecode/as):00227         
+00B2 C602             (/dd/sourcecode/as):00228         park     ldb   #$02           close the drive
+00B4 F7FF83           (/dd/sourcecode/as):00229                  stb   >command       save in command register
+                      (/dd/sourcecode/as):00230         
+00B7 5F               (/dd/sourcecode/as):00231         format   clrb                 ignore physical formats.  They're not
+00B8 39               (/dd/sourcecode/as):00232                  rts                  necessary
+                      (/dd/sourcecode/as):00233         
+00B9 85815B           (/dd/sourcecode/as):00234                  emod
+                      (/dd/sourcecode/as):00235         
+     00BC             (/dd/sourcecode/as):00236         eom      equ   *
