@@ -31,6 +31,7 @@ var flag_asm_listing_path = flag.String("asm_listing_path", "/home/strick/COCO/b
 var flag_lwasm = flag.String("lwasm", "/opt/bin-os9/lwasm", "lwasm command")
 var flag_lwlink = flag.String("lwlink", "/opt/bin-os9/lwlink-v", "lwlink command")
 var flag_cmoc = flag.String("cmoc", "/opt/yak/cmoc/bin/cmoc", "cmoc")
+var flag_borges_dir = flag.String("borges_dir", "/home/strick/go/src/github.com/strickyak/doing_os9/borges/", "cmoc")
 
 var flag_o = flag.String("o", "", "output binary name")
 
@@ -49,7 +50,8 @@ func main() {
 			Cmoc:           *flag_cmoc,
 			OutputBinary:   *flag_o,
 			Args:           flag.Args(),
-		}.Run()
+			BorgesDir:      *flag_borges_dir,
+		}.RunAll()
 	}
 }
 

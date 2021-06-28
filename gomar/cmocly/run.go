@@ -19,6 +19,7 @@ type RunSpec struct {
 	Cmoc           string
 	OutputBinary   string
 	Args           []string
+	BorgesDir      string
 }
 
 func (rs RunSpec) RunCompiler(filename string) {
@@ -51,7 +52,7 @@ func (rs RunSpec) RunLinker(ofiles []string, outbin string) {
 		log.Fatalf("cmoc/lwlink linker failed: %v: %v", cmd, err)
 	}
 }
-func (rs RunSpec) Run() {
+func (rs RunSpec) RunAll() {
 	if len(rs.Args) == 0 {
 		log.Fatalf("no filanames to compile")
 	}
@@ -92,9 +93,23 @@ func (rs RunSpec) Run() {
 		log.Fatalf("Cannot read Output Binary: %q: %v", rs.OutputBinary, err)
 	}
 
-	fd, err := os.Create(rs.OutputBinary + ".listing")
+	modname := GetOs9ModuleName(mod)
+	log.Printf("Module Name: %q", modname)
+	log.Printf("Module Length: %04x", len(mod))
+	checksum := mod[len(mod)-3:]
+	log.Printf("Module CheckSum: %02x", checksum)
+	borges_version := fmt.Sprintf("%s.%04x%02x", strings.ToLower(modname), len(mod), checksum)
+	log.Printf("borges Version: %q", borges_version)
+
+	list_out_filename := rs.OutputBinary + ".listing"
+	if rs.BorgesDir != "" {
+		// Change to use the lowercase module name and version suffix, in the Borges Dir.
+		list_out_filename = filepath.Join(rs.BorgesDir, borges_version)
+	}
+
+	fd, err := os.Create(list_out_filename)
 	if err != nil {
-		log.Fatalf("Cannot create Output listing: %q: %v", rs.OutputBinary+".listing", err)
+		log.Fatalf("Cannot create Output listing: %q: %v", list_out_filename, err)
 	}
 	w := bufio.NewWriter(fd)
 
@@ -102,25 +117,7 @@ func (rs RunSpec) Run() {
 	w.Flush()
 	fd.Close()
 
-	modname := GetOs9ModuleName(mod)
-	log.Printf("Module Name: %q", modname)
-	log.Printf("Module Length: %04x", len(mod))
-	checksum := mod[len(mod)-3:]
-	log.Printf("Module CheckSum: %02x", checksum)
-
-	r2, err := os.Open(rs.OutputBinary + ".listing")
-	borges_name := fmt.Sprintf("%s.listing~%s.%04x%02x", rs.OutputBinary, modname, len(mod), checksum)
-	log.Printf("Borges name: %q", borges_name)
-	w2, err := os.Create(borges_name)
-	if err != nil {
-		log.Fatalf("Cannot create Borges listing: %q: %v", borges_name, err)
-	}
-	_, err = io.Copy(w2, r2)
-	if err != nil {
-		log.Fatalf("error copying to Borges listing: %q: %v", borges_name, err)
-	}
-	r2.Close()
-	w2.Close()
+	log.Printf("WROTE FINAL LISTING TO %q", list_out_filename)
 }
 
 func OutputFinalListing(
@@ -130,9 +127,11 @@ func OutputFinalListing(
 	w io.Writer) {
 	for _, rec := range lmap {
 		if rec.Section == "" {
+			// It's a Symbol, not a Section.
 			continue
 		}
 		if rec.Section == "bss" {
+			// BSS have no instructions.
 			continue
 		}
 		start := rec.Start
@@ -157,7 +156,6 @@ func OutputFinalListing(
 				log.Printf("Line location too big (>= %d): %#v", n, line)
 				continue
 			}
-			log.Printf("loc %x + start %x = @%04x: %#v", line.Location, start, line.Location+start, line)
 
 			hex := line.Bytes
 			/*
@@ -173,8 +171,6 @@ func OutputFinalListing(
 			*/
 
 			inst := fmt.Sprintf("%s:%05d | %s", strings.Trim(name, " "), line.LineNum, line.Instruction)
-			// fmt.Fprintf(w, "%04x %-16s (%17s):%05d         %s\n", line.Location + start, hex, line.Filename, line.LineNum, line.Instruction)
-			// fmt.Fprintf(w, "%04X %-16s (%s):%05d         %s\n", line.Location + start, hex, name, line.LineNum, line.Instruction)
 			fmt.Fprintf(w, "%04X %-16s (%s):%05d         %s\n", line.Location+start, hex, name, line.LineNum, inst)
 		}
 		fmt.Fprintf(w, "\n")
