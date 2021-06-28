@@ -49,10 +49,9 @@ func Lookup(module string, offset uint, startTrace func()) string {
 	return s // Empty if offset not found.
 }
 
-//var parse = regexp.MustCompile(`^([0-9A-F]{4}) [0-9A-F]+ +[(].*?[)]:[0-9]{5} +(.*)$`)
-var parse = regexp.MustCompile(`^([0-9A-F]{4}) [0-9A-F]+ +[(].*?[)]:[0-9]{5}         (.*)$`)
-var parseSection = regexp.MustCompile(`^ +[(].*?[)]:[0-9]{5} +(?i:section) +([A-Za-z0-9_]+)`)
-var parseEndSection = regexp.MustCompile(`^ +[(].*?[)]:[0-9]{5} +(?i:endsection)`)
+var parse = regexp.MustCompile(`^([[:xdigit:]]{4}) [[:xdigit:]]+ +[(].*?[)]:[0-9]{5}         (.*)$`)
+var parseSection = regexp.MustCompile(`^ +[(].*?[)]:[[:digit:]]{5} +(?i:section) +([[:word:]]+)`)
+var parseEndSection = regexp.MustCompile(`^ +[(].*?[)]:[[:digit:]]{5} +(?i:endsection)`)
 
 func LoadFile(filename string) *ModSrc {
 	d := make(map[uint]string)
