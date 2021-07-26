@@ -182,71 +182,73 @@ func (d *Display) Loop() {
 			if err != nil {
 				log.Fatalf("cannot LoadFont %q: %v", *FONT, err)
 			}
-			//_ = ft
 			log.Printf("LoadFont: %q: (%T) %v", *FONT, ft, ft)
 		}
 		cv.SetFont(ft, *SIZE)
 		cv.SetFillStyle("#F0F")
 
-		if coco != nil && coco.Graphics {
-			// Graphics
-			const N = 4
-			p := coco.VirtOffsetAddr
-			bpr := coco.GraphicsBytesPerRow
-			colorBits := coco.GraphicsColorBits
-
-			xlen := (8 * bpr) / colorBits
-			ylen := coco.LinesPerField
-			if z == nil || xlen != zxlen || ylen != zylen {
-				z = image.NewRGBA(image.Rect(0, 0, N*xlen, N*ylen))
-				zxlen, zylen = xlen, ylen
+		switch {
+		case coco == nil:
+			{
+				cv.FillText("(nil)", 10, 10)
 			}
-			// For interpreting mouse position:
-			w, h = float64(N*xlen), float64(N*ylen)
 
-			shift := 8 - colorBits
-			mask := ^(byte(0xFF) << uint(colorBits))
-			for y := 0; y < coco.LinesPerField; y++ {
-				endRow := p + bpr
-				m := d.Mem[p]
-				// for x := 0; x < xlen; x++ ///
-				for x := 0; p < endRow; x++ {
-					pixel := (m >> uint(shift)) & mask
-					// log.Printf("DISPLAY: y=%x x=%x p=%x shift=%x mask=%x pixel=%x", y, x, p, shift, mask, pixel)
-					shift -= colorBits
-					if shift < 0 {
-						shift = 8 - colorBits
-						mask = ^(byte(0xFF) << uint(colorBits))
-						p++
-						m = d.Mem[p]
-					}
-					clr := coco.ColorMap[pixel]
-					r := ((clr & 0x20) >> 4) | ((clr & 0x04) >> 2)
-					g := ((clr & 0x10) >> 3) | ((clr & 0x02) >> 1)
-					b := ((clr & 0x08) >> 2) | ((clr & 0x01) >> 0)
-					// log.Printf("DISPLAY:   clr=%x r=%x g=%x b=%", clr, r, g, b)
-					colour := color.RGBA{r << 6, g << 6, b << 6, 255}
-					for j := 0; j < N; j++ {
-						for i := 0; i < N; i++ {
-							z.SetRGBA(x*N+i, y*N+j, colour)
+		case coco.Graphics:
+			{
+				// Graphics
+				const N = 4
+				p := coco.VirtOffsetAddr
+				bpr := coco.GraphicsBytesPerRow
+				colorBits := coco.GraphicsColorBits
+
+				xlen := (8 * bpr) / colorBits
+				ylen := coco.LinesPerField
+				if z == nil || xlen != zxlen || ylen != zylen {
+					z = image.NewRGBA(image.Rect(0, 0, N*xlen, N*ylen))
+					zxlen, zylen = xlen, ylen
+				}
+				// For interpreting mouse position:
+				w, h = float64(N*xlen), float64(N*ylen)
+
+				shift := 8 - colorBits
+				mask := ^(byte(0xFF) << uint(colorBits))
+				for y := 0; y < coco.LinesPerField; y++ {
+					endRow := p + bpr
+					m := d.Mem[p]
+					// for x := 0; x < xlen; x++ ///
+					for x := 0; p < endRow; x++ {
+						pixel := (m >> uint(shift)) & mask
+						// log.Printf("DISPLAY: y=%x x=%x p=%x shift=%x mask=%x pixel=%x", y, x, p, shift, mask, pixel)
+						shift -= colorBits
+						if shift < 0 {
+							shift = 8 - colorBits
+							mask = ^(byte(0xFF) << uint(colorBits))
+							p++
+							m = d.Mem[p]
+						}
+						clr := coco.ColorMap[pixel]
+						r := ((clr & 0x20) >> 4) | ((clr & 0x04) >> 2)
+						g := ((clr & 0x10) >> 3) | ((clr & 0x02) >> 1)
+						b := ((clr & 0x08) >> 2) | ((clr & 0x01) >> 0)
+						// log.Printf("DISPLAY:   clr=%x r=%x g=%x b=%", clr, r, g, b)
+						colour := color.RGBA{r << 6, g << 6, b << 6, 255}
+						for j := 0; j < N; j++ {
+							for i := 0; i < N; i++ {
+								z.SetRGBA(x*N+i, y*N+j, colour)
+							}
 						}
 					}
-				}
-				if p != endRow {
-					log.Fatalf("p=%x endRow=%x len=%x,%x %x,%x,%x,%x", p, endRow, xlen, ylen, bpr, colorBits, shift, mask)
-				}
-			}
-			cv.DrawImage(z, 0, 0)
-		} else {
-			// Alpha
-			if coco == nil {
-				cv.FillText("(nil)", 10, 10)
-				/*
-					for y := 0; y < d.NumRows; y++ {
-						cv.FillText(string(d.Rows[y]), 10, float64((y+1)*30))
+					if p != endRow {
+						log.Fatalf("p=%x endRow=%x len=%x,%x %x,%x,%x,%x", p, endRow, xlen, ylen, bpr, colorBits, shift, mask)
 					}
-				*/
-			} else {
+				}
+				cv.DrawImage(z, 0, 0)
+				log.Printf("DISPLAY: Graphics DRAWN.")
+			} // end Graphics
+
+		default:
+			{
+				// Alpha
 
 				numRows := coco.LinesPerField / coco.LinesPerCharRow
 				numCols := coco.AlphaCharsPerRow
@@ -271,8 +273,9 @@ func (d *Display) Loop() {
 					}
 					cv.FillText(buf.String(), 10, float64((y)*30))
 				}
-			}
-		}
+				log.Printf("DISPLAY: Alpha DRAWN.")
+			} // end Alpha
+		} // end switch
 
 		{ // draw mouse
 			if MouseDown {

@@ -114,7 +114,7 @@ func PrintInode(inode int, path string) {
 				D.PrintRecords(D.DirEntry, bb)
 				name := D.FindString(D.DirEntry, bb, "DIR.NM")
 				// Grr. Some flawed disks led me to the "nth >= 2" heuristic hack.
-				if name != "." && name != ".." && nth >= 2 {
+				if name != "" && name != "." && name != ".." && nth >= 2 {
 					subName := path + "/" + name
 					if path == "/" {
 						subName = "/" + name

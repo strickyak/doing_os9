@@ -19,6 +19,9 @@ func FindString(recs []Record, b []byte, field string) string {
 				{
 					z := ""
 					for i := 0; i < rec.Len; i++ {
+						if b[k+i] == 0 {
+							break
+						}
 						z += string([]byte{b[k+i] & 127})
 						if b[k+i]&128 != 0 {
 							break

@@ -917,34 +917,36 @@ func ModuleId(begin Word, m Mapping) string {
 }
 
 func MemoryModules() {
-	DumpAllMemory()
-	DumpPageZero()
-	DumpProcesses()
-	DumpAllPathDescs()
-	L("\n#MemoryModules(")
+	if false {
+		DumpAllMemory()
+		DumpPageZero()
+		DumpProcesses()
+		DumpAllPathDescs()
+		L("\n#MemoryModules(")
 
-	var buf bytes.Buffer
-	Z(&buf, "MOD name begin:end(len/blocklen) [addr:dat,blocklen,begin,links] dat\n")
+		var buf bytes.Buffer
+		Z(&buf, "MOD name begin:end(len/blocklen) [addr:dat,blocklen,begin,links] dat\n")
 
-	dirStart := SysMemW(sym.D_ModDir)
-	dirLimit := SysMemW(sym.D_ModEnd)
-	for i := dirStart; i < dirLimit; i += 8 {
-		datPtr := SysMemW(i + 0)
-		usedBytes := SysMemW(i + 2)
-		begin := SysMemW(i + 4)
-		links := SysMemW(i + 6)
-		if datPtr == 0 {
-			continue
+		dirStart := SysMemW(sym.D_ModDir)
+		dirLimit := SysMemW(sym.D_ModEnd)
+		for i := dirStart; i < dirLimit; i += 8 {
+			datPtr := SysMemW(i + 0)
+			usedBytes := SysMemW(i + 2)
+			begin := SysMemW(i + 4)
+			links := SysMemW(i + 6)
+			if datPtr == 0 {
+				continue
+			}
+
+			m := GetMapping(datPtr)
+			end := begin + PeekWWithMapping(begin+2, m)
+			name := begin + PeekWWithMapping(begin+4, m)
+
+			Z(&buf, "MOD %s %x:%x(%x/%x) [%x:%x,%x,%x,%x] %v\n", Os9StringWithMapping(name, m), begin, end, end-begin, usedBytes, i, datPtr, usedBytes, begin, links, m)
 		}
-
-		m := GetMapping(datPtr)
-		end := begin + PeekWWithMapping(begin+2, m)
-		name := begin + PeekWWithMapping(begin+4, m)
-
-		Z(&buf, "MOD %s %x:%x(%x/%x) [%x:%x,%x,%x,%x] %v\n", Os9StringWithMapping(name, m), begin, end, end-begin, usedBytes, i, datPtr, usedBytes, begin, links, m)
+		L("%s", buf.String())
+		L("#MemoryModules)")
 	}
-	L("%s", buf.String())
-	L("#MemoryModules)")
 }
 
 func HandleBtBug() {
