@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -30,6 +31,64 @@ func (rs RunSpec) RunCompiler(filename string) {
 		log.Fatalf("cmoc compiler failed: %v: %v", cmd, err)
 	}
 }
+func (rs RunSpec) TweakAssembler(filename string) {
+	err := os.Rename(filename+".s", filename+".s-orig")
+	if err != nil {
+		log.Fatalf("cannot rename %q to %q: %v",
+			filename+".s", filename+".s-orig", err)
+	}
+
+	orig_filename := filename + ".s-orig"
+	r, err := os.Open(orig_filename)
+	if err != nil {
+		log.Fatalf("cannot open: %q: %v", orig_filename, err)
+	}
+	new_filename := filename + ".s"
+	w, err := os.Create(new_filename)
+	if err != nil {
+		log.Fatalf("cannot create: %q: %v", new_filename, err)
+	}
+
+	skip := 0
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		s := scanner.Text()
+		m1 := FindCommaYTab(s)
+		m2 := FindCommaYEnd(s)
+		if m1 != nil {
+			s = fmt.Sprintf("%s\t%s", m1[1], m1[2])
+		} else if m2 != nil {
+			s = fmt.Sprintf("%s\t;", m2[1])
+		}
+
+		m3 := FindLeaxVar(s)
+		if m3 != nil {
+			s = fmt.Sprintf("%s\tLDX\t#%s\t%s", m3[1], m3[2], m3[3])
+		}
+
+		m4 := FindLbsrStkcheck(s)
+		if m4 != nil {
+			skip = 2
+		}
+
+		if skip == 0 {
+			fmt.Fprintf(w, "%s\n", s)
+		} else {
+			skip--
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("reading standard input:", err)
+	}
+	r.Close()
+	w.Close()
+}
+
+var FindCommaYTab = regexp.MustCompile("(.*),Y\t(.*)").FindStringSubmatch
+var FindCommaYEnd = regexp.MustCompile("(.*),Y$").FindStringSubmatch
+var FindLeaxVar = regexp.MustCompile("(.*)\tLEAX\t([[:word:]]+[+][[:digit:]]+)\t(.*)").FindStringSubmatch
+var FindLbsrStkcheck = regexp.MustCompile("LBSR\t_stkcheck").FindStringSubmatch
+
 func (rs RunSpec) RunAssembler(filename string) {
 	cmd := exec.Command(
 		rs.LwAsm, "--obj", "--6809",
@@ -39,7 +98,7 @@ func (rs RunSpec) RunAssembler(filename string) {
 	log.Printf("RUNNING: %v", cmd)
 	err := cmd.Run()
 	if err != nil {
-		log.Fatalf("lwasm aassembler failed: %v: %v", cmd, err)
+		log.Fatalf("lwasm assembler failed: %v: %v", cmd, err)
 	}
 }
 func (rs RunSpec) RunLinker(ofiles []string, outbin string) {
@@ -65,6 +124,7 @@ func (rs RunSpec) RunAll() {
 		}
 		rs.RunCompiler(filename)
 		filebase := strings.TrimSuffix(filename, ".c")
+		rs.TweakAssembler(filebase)
 		rs.RunAssembler(filebase)
 		alist := ReadAsmListing(filebase + ".o.list")
 		alists[Basename(filename)] = alist

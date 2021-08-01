@@ -28,8 +28,8 @@ var flag_linker_map = flag.String("linker_map", "", "filename of linker map")
 var flag_asm_listing = flag.String("asm_listing", "", "filename of asm listing")
 var flag_asm_listing_path = flag.String("asm_listing_path", "/home/strick/COCO/build/cmoc-rebuild/src/stdlib/", "where to look for listings")
 
-var flag_lwasm = flag.String("lwasm", "/opt/bin-os9/lwasm", "lwasm command")
-var flag_lwlink = flag.String("lwlink", "/opt/bin-os9/lwlink-v", "lwlink command")
+var flag_lwasm = flag.String("lwasm", "/opt/yak/bin-os9/lwasm", "lwasm command")
+var flag_lwlink = flag.String("lwlink", "/opt/yak/bin-os9/lwlink", "lwlink command")
 var flag_cmoc = flag.String("cmoc", "/opt/yak/cmoc/bin/cmoc", "cmoc")
 var flag_borges_dir = flag.String("borges_dir", "/home/strick/go/src/github.com/strickyak/doing_os9/borges/", "cmoc")
 
