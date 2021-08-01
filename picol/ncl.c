@@ -1339,6 +1339,22 @@ int picolCommandImplode(int argc, char **argv, void *pd) {
   return PICOL_OK;
 }
 
+//- peek addr
+int picolCommandPeek(int argc, char **argv, void *pd) {
+  byte* addr = (byte*) atoi(argv[1]);
+  picolSetResult(StaticD(*addr));
+  return PICOL_OK;
+}
+
+//- poke addr value
+int picolCommandPoke(int argc, char **argv, void *pd) {
+  byte* addr = (byte*) atoi(argv[1]);
+  int val = atoi(argv[2]);
+  *addr = (byte)val;
+  picolSetResult("");
+  return PICOL_OK;
+}
+
 //- incr varname ?value?
 int picolCommandIncr(int argc, char **argv, void *pd) {
   struct picolVar *var = picolGetVar(argv[1]);
@@ -1820,6 +1836,8 @@ void picolRegisterCoreCommands() {
   picolRegisterCommand("list", 0, 0, picolCommandList, NULL);
   picolRegisterCommand("explode", 2, 2, picolCommandExplode, NULL);
   picolRegisterCommand("implode", 2, 2, picolCommandImplode, NULL);
+  picolRegisterCommand("peek", 2, 2, picolCommandPeek, NULL);
+  picolRegisterCommand("poke", 3, 3, picolCommandPoke, NULL);
   picolRegisterCommand("incr", 2, 3, picolCommandIncr, NULL);
   picolRegisterCommand("append", 2, 0, picolCommandAppend, NULL);
   picolRegisterCommand("lappend", 2, 0, picolCommandListAppend, NULL);

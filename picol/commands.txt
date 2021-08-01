@@ -51,6 +51,8 @@
  lt a b -> z (string compare: a<b; returns 0 or 1)
  ne a b -> z (string compare: a!=b; returns 0 or 1)
  or {cond1} {cond2}... -> first_true_or_zero (stop evaluating if one is true)
+ peek addr
+ poke addr value
  proc name varlist body (defines a new proc)
  puts ?-nonewline? ?fd? str (write str to fd, default is stdout)
  read fd num_bytes -> list_of_numbers (numbers are byte values)
