@@ -105,6 +105,8 @@ func (rs RunSpec) RunAssembler(filename string) {
 		"-o", filename+".o",
 		filename+".s")
 	log.Printf("RUNNING: %v", cmd)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
 		log.Fatalf("lwasm assembler failed: %v: %v", cmd, err)
