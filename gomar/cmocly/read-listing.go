@@ -26,20 +26,33 @@ func ReadAsmListing(filename string) map[string][]*AsmListingRecord {
 	sc := bufio.NewScanner(fd)
 	z := make(map[string][]*AsmListingRecord)
 	section := kDEFAULT
-    prevLineLabel := ""
-    lineLabel := ""
+	lineLabel := ""
+	comment := ""
 	for sc.Scan() {
 		line := sc.Text()
-        prevLineLabel = lineLabel
-        lineLabel = ""
 		{
 			m := matchNormal.FindStringSubmatch(line)
 			if m != nil {
 				vec, _ := z[section]
-                instruction := m[5]
-                if prevLineLabel != "" {
-                    instruction = prevLineLabel + " " + instruction
-                }
+				instruction := m[5]
+				if lineLabel != "" {
+					n := len(lineLabel)
+					if n > 6 {
+						n = 6
+					}
+					// remove up to n+1 leading blanks from instruction.
+					for i := 0; i < n+1; i++ {
+						if len(instruction) > 0 && instruction[0] == ' ' {
+							instruction = instruction[1:]
+						}
+					}
+					instruction = lineLabel + " " + instruction
+					lineLabel = ""
+				}
+				if comment != "" {
+					instruction = instruction + ";" + comment
+					comment = "" // start comment over.
+				}
 				z[section] = append(vec, &AsmListingRecord{
 					Location:    parseHex(m[1]),
 					Bytes:       m[2],
@@ -70,6 +83,23 @@ func ReadAsmListing(filename string) map[string][]*AsmListingRecord {
 				continue
 			}
 		}
+		{
+			m := matchStarComment.FindStringSubmatch(line)
+			if m != nil {
+				if strings.HasPrefix(m[3], "* Useless label") {
+					continue
+				}
+				comment = comment + ";" + m[3]
+				continue
+			}
+		}
+		{
+			m := matchEmptySourceLine.FindStringSubmatch(line)
+			if m != nil {
+				comment = "" // Reset after empty lines.
+				continue
+			}
+		}
 	}
 	if err = sc.Err(); err != nil {
 		log.Fatalf("ReadLinkerMap: while reading %q: %v", filename, err)
@@ -87,3 +117,9 @@ var matchDirective = regexp.MustCompile(
 //      0399             (          chain.s):00838         _ChainIterMore  EQU     *
 var matchLabelEquStar = regexp.MustCompile(
 	`^     ([[:xdigit:]]{4}) *[(]([^()]+)[)]:([[:digit:]]{5}) *([[:word:]]+) *EQU *[*] *(.*)`)
+
+var matchStarComment = regexp.MustCompile(
+	`^          *[(]([^()]+)[)]:([[:digit:]]{5}) *([*].*)$`)
+
+var matchEmptySourceLine = regexp.MustCompile(
+	`^          *[(]([^()]+)[)]:([[:digit:]]{5}) *$`)
