@@ -26,18 +26,26 @@ func ReadAsmListing(filename string) map[string][]*AsmListingRecord {
 	sc := bufio.NewScanner(fd)
 	z := make(map[string][]*AsmListingRecord)
 	section := kDEFAULT
+    prevLineLabel := ""
+    lineLabel := ""
 	for sc.Scan() {
 		line := sc.Text()
+        prevLineLabel = lineLabel
+        lineLabel = ""
 		{
 			m := matchNormal.FindStringSubmatch(line)
 			if m != nil {
 				vec, _ := z[section]
+                instruction := m[5]
+                if prevLineLabel != "" {
+                    instruction = prevLineLabel + " " + instruction
+                }
 				z[section] = append(vec, &AsmListingRecord{
 					Location:    parseHex(m[1]),
 					Bytes:       m[2],
 					Filename:    m[3],
 					LineNum:     parseDec(m[4]),
-					Instruction: m[5],
+					Instruction: instruction,
 				})
 				continue
 			}
@@ -55,6 +63,13 @@ func ReadAsmListing(filename string) map[string][]*AsmListingRecord {
 				continue
 			}
 		}
+		{
+			m := matchLabelEquStar.FindStringSubmatch(line)
+			if m != nil {
+				lineLabel = m[4]
+				continue
+			}
+		}
 	}
 	if err = sc.Err(); err != nil {
 		log.Fatalf("ReadLinkerMap: while reading %q: %v", filename, err)
@@ -67,3 +82,8 @@ var matchNormal = regexp.MustCompile(
 
 var matchDirective = regexp.MustCompile(
 	`^ *[(]([^()]+)[)]:([[:digit:]]{5})         [ ]*([[:word:]]+) *([[:word:]]*)`)
+
+// 12345
+//      0399             (          chain.s):00838         _ChainIterMore  EQU     *
+var matchLabelEquStar = regexp.MustCompile(
+	`^     ([[:xdigit:]]{4}) *[(]([^()]+)[)]:([[:digit:]]{5}) *([[:word:]]+) *EQU *[*] *(.*)`)
