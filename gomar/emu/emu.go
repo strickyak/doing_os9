@@ -6,6 +6,7 @@ import (
 	"github.com/strickyak/doing_os9/gomar/display"
 	"github.com/strickyak/doing_os9/gomar/sym"
 
+	"bufio"
 	"bytes"
 	"flag"
 	"fmt"
@@ -21,6 +22,7 @@ var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagStressTest = flag.String("stress", "", "If nonempty, string to repeat")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
+var FlagSwiFatalCoreDump = flag.Bool("swi_fatal_coredump", false, "coredump and stop on plain SWI");
 
 var FlagWatch = flag.String("watch", "", "Sequence of module:addr:reg:message,...")
 var FlagTriggerPc = flag.Uint64("trigger_pc", 0xC00D, "")
@@ -119,6 +121,53 @@ const ARegEA EA = 0x10000008
 const BRegEA EA = 0x10000009
 const CCRegEA EA = 0x1000000A
 const DPRegEA EA = 0x1000000B
+
+func FatalCoreDump() {
+    const NAME = "/tmp/coredump09"
+    fd, err := os.Create(NAME)
+    if err != nil {
+        log.Fatalf("cannot create %q: %v", NAME, err)
+    }
+    w := bufio.NewWriter(fd)
+    for i:=0; i < 0x10000; i++ {
+        w.WriteByte(EA(i).GetB())
+    }
+    for i := DRegEA; i <= PCRegEA; i++ {
+        word := EA(i).GetW()
+        w.WriteByte(byte(word>>8))
+        w.WriteByte(byte(word>>0))
+    }
+    w.WriteByte(CCRegEA.GetB())
+    w.WriteByte(DPRegEA.GetB())
+    w.Flush()
+    fd.Close()
+
+    fmt.Printf("\nBegin Frame Chain\n")
+    fp := EA(URegEA.GetW())
+    p := EA(SRegEA.GetW())
+    fmt.Printf("S: %04x  U: %04x\n", p, fp)
+    gap := int(fp) - int(p)
+    for 0<=gap && gap<=64 {
+        fmt.Printf("\n@%04x: ", int(p))
+        if p < fp && ((fp-p)&1)==1 {
+          fmt.Printf("%02x, ", EA(p).GetB())
+          p += 1 
+        }
+        for p < fp {
+          fmt.Printf("%04x, ", EA(p).GetW())
+          p += 2
+        }
+        if (p != fp) {
+          fmt.Printf("\nMismatched: p %04x != fp %04x\n", p, fp)
+          break
+        }
+        fp = EA(fp.GetW())
+        gap = int(fp) - int(p)
+    }
+    fmt.Printf("\nEnd Frame Chain\n");
+
+    log.Fatalf("EMULATOR CORE DUMPED: %q", NAME)
+}
 
 func TfrReg(b byte) EA {
 	if 6 == b || b == 7 || b > 11 {
@@ -2339,6 +2388,9 @@ func swi() {
 	var handler Word
 	switch iflag {
 	case 0: /* SWI */
+        if *FlagSwiFatalCoreDump {
+            FatalCoreDump()
+        }
 		ccreg |= 0xd0
 		handler = W(0xfffa)
 	case 1: /* SWI2 */
