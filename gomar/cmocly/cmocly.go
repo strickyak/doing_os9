@@ -32,6 +32,7 @@ var flag_lwasm = flag.String("lwasm", "/opt/yak/bin-os9/lwasm", "lwasm command")
 var flag_lwlink = flag.String("lwlink", "/opt/yak/bin-os9/lwlink", "lwlink command")
 var flag_cmoc = flag.String("cmoc", "/opt/yak/cmoc/bin/cmoc", "cmoc")
 var flag_borges_dir = flag.String("borges_dir", "/home/strick/go/src/github.com/strickyak/doing_os9/borges/", "cmoc")
+var flag_linker_map_in = flag.String("linker_map_in", "", "read linker map for direct page vars")
 
 var flag_o = flag.String("o", "", "output binary name")
 

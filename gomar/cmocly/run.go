@@ -25,13 +25,14 @@ type RunSpec struct {
 
 func (rs RunSpec) RunCompiler(filename string) {
 	cmd := exec.Command(rs.Cmoc, "--os9", "-S", filename)
+	cmd.Stderr = os.Stderr
 	log.Printf("RUNNING: %v", cmd)
 	err := cmd.Run()
 	if err != nil {
 		log.Fatalf("cmoc compiler failed: %v: %v", cmd, err)
 	}
 }
-func (rs RunSpec) TweakAssembler(filename string) {
+func (rs RunSpec) TweakAssembler(filename string, directs map[string]bool) {
 	err := os.Rename(filename+".s", filename+".s-orig")
 	if err != nil {
 		log.Fatalf("cannot rename %q to %q: %v",
@@ -71,6 +72,13 @@ func (rs RunSpec) TweakAssembler(filename string) {
 			skip = 2
 		}
 
+		m5 := FindPotentiallyDirect(s)
+		if m5 != nil {
+			if _, ok := directs[m5[4]]; ok {
+				s = fmt.Sprintf("%s\t%s\t%s<%s%s", m5[1], m5[2], m5[3], m5[4], m5[5])
+			}
+		}
+
 		if skip == 0 {
 			fmt.Fprintf(w, "%s\n", s)
 		} else {
@@ -88,6 +96,7 @@ var FindCommaYTab = regexp.MustCompile("(.*),Y\t(.*)").FindStringSubmatch
 var FindCommaYEnd = regexp.MustCompile("(.*),Y$").FindStringSubmatch
 var FindLeaxVar = regexp.MustCompile("(.*)\tLEAX\t([[:word:]]+[+][[:digit:]]+)\t(.*)").FindStringSubmatch
 var FindLbsrStkcheck = regexp.MustCompile("LBSR\t_stkcheck").FindStringSubmatch
+var FindPotentiallyDirect = regexp.MustCompile("(.*)\t(LDD|STD|ADDD|CMPD|LDX|STX|LEAX)\t([[]?)(_[[:word:]]+)([+]0.*)").FindStringSubmatch
 
 func (rs RunSpec) RunAssembler(filename string) {
 	cmd := exec.Command(
@@ -96,6 +105,8 @@ func (rs RunSpec) RunAssembler(filename string) {
 		"-o", filename+".o",
 		filename+".s")
 	log.Printf("RUNNING: %v", cmd)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
 		log.Fatalf("lwasm assembler failed: %v: %v", cmd, err)
@@ -116,37 +127,48 @@ func (rs RunSpec) RunAll() {
 		log.Fatalf("no filanames to compile")
 	}
 
+	directs := make(map[string]bool)
 	alists := make(map[string]map[string][]*AsmListingRecord)
-	var ofiles []string
-	for _, filename := range rs.Args {
-		if !strings.HasSuffix(filename, ".c") {
-			log.Fatalf("filename should end in .c: %q", filename)
+	var lmap []*LinkerMapRecord
+	for phase := 1; phase <= 2; phase++ {
+		var ofiles []string
+		for _, filename := range rs.Args {
+			if !strings.HasSuffix(filename, ".c") {
+				log.Fatalf("filename should end in .c: %q", filename)
+			}
+			rs.RunCompiler(filename)
+			filebase := strings.TrimSuffix(filename, ".c")
+			rs.TweakAssembler(filebase, directs)
+			rs.RunAssembler(filebase)
+			if phase == 2 {
+				alist := ReadAsmListing(filebase + ".o.list")
+				alists[Basename(filename)] = alist
+			}
+			ofiles = append(ofiles, filebase+".o")
 		}
-		rs.RunCompiler(filename)
-		filebase := strings.TrimSuffix(filename, ".c")
-		rs.TweakAssembler(filebase)
-		rs.RunAssembler(filebase)
-		alist := ReadAsmListing(filebase + ".o.list")
-		alists[Basename(filename)] = alist
-		ofiles = append(ofiles, filebase+".o")
-	}
-	rs.RunLinker(ofiles, rs.OutputBinary)
+		rs.RunLinker(ofiles, rs.OutputBinary)
 
-	lmap := ReadLinkerMap(rs.OutputBinary + ".map")
-	for _, e := range lmap {
-		log.Printf("... %#v", *e)
+		// Read the linker map.
+		// The first time is for the `directs` set of potential direct page variables.
+		// The second time is for finding all the linked object files and output the final listing.
+		lmap = ReadLinkerMap(rs.OutputBinary + ".map")
+		for _, e := range lmap {
+			if e.Section == "" && strings.HasPrefix(e.Symbol, "_") && e.Start < 256 {
+				directs[e.Symbol] = true
+			}
+		}
 	}
 
 	listing_dirs := strings.Split(rs.AsmListingPath, ":")
 	SearchForNeededListings(alists, lmap, listing_dirs)
 
-	for filename, alist := range alists {
-		for section, records := range alist {
-			for _, rec := range records {
-				log.Printf("%q ... %q ... %#v", filename, section, *rec)
-			}
-		}
-	}
+	//for filename, alist := range alists {
+	//for section, records := range alist {
+	//for _, rec := range records {
+	//log.Printf("%q ... %q ... %#v", filename, section, *rec)
+	//}
+	//}
+	//}
 
 	mod, err := ioutil.ReadFile(rs.OutputBinary)
 	if err != nil {
