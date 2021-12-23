@@ -1,0 +1,11 @@
+H6309    equ    0           set to 1 for 6309 native mode
+
+LEVEL    equ    2
+*         opt    -c
+*         opt    f
+
+*       ifp1
+         use    os9defs
+         use    scfdefs
+         use    rbfdefs
+*       endc
