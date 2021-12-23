@@ -24,14 +24,15 @@ start    leax  hello,pcr
          os9   I$WritLn 
 
 Payload
-         ldx #$FF68
-         lda #$80
-         lda #$03
-Loop     sta 0,x
-         stb 0,x
-         clr 1,x
-         clr 2,x
-         ldb 3,x
+         orcc #$50   ; disable interrupts
+         ldx #$FF68  ; CoCoIO port
+         lda #$80    ; RESET command
+         lda #$03    ; AutoInc command
+Loop     sta 0,x     ; Reset.
+         stb 0,x     ; AutoInc mode.
+         clr 1,x     ; Hi addr of reg is 0
+         clr 2,x     ; Lo addr or reg is 0
+         ldb 3,x     ; Read reg 0
          bra Loop
 
          emod
