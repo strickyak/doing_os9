@@ -1,0 +1,6 @@
+License: All of the `*.go` files under the `gomar` directory
+are licensed under the GNU General Public License version 2.
+
+See COPYING for more details.
+
+See gomar.go for individual credits.

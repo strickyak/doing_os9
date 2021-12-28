@@ -1,3 +1,15 @@
+This project is under mixed licenses.
+
+Totally original code should be under the MIT license (below).
+
+Included projects may be under their own license.
+
+'gomar', the 6809 emulator in Golang, is based on C code sbc09, which
+was under GPL v2, (C) Copyright 1993,1994 L.C. Benschop.  So 'gomar'
+retains GPL v2 licese.  See gomar/COPYING.
+
+============================================================================
+
 The MIT License (MIT)
 
 Copyright (c) 2016 Strick Yak
