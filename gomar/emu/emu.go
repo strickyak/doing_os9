@@ -22,7 +22,7 @@ var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagStressTest = flag.String("stress", "", "If nonempty, string to repeat")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
-var FlagSwiFatalCoreDump = flag.Bool("swi_fatal_coredump", false, "coredump and stop on plain SWI");
+var FlagSwiFatalCoreDump = flag.Bool("swi_fatal_coredump", false, "coredump and stop on plain SWI")
 
 var FlagWatch = flag.String("watch", "", "Sequence of module:addr:reg:message,...")
 var FlagTriggerPc = flag.Uint64("trigger_pc", 0xC00D, "")
@@ -123,50 +123,50 @@ const CCRegEA EA = 0x1000000A
 const DPRegEA EA = 0x1000000B
 
 func FatalCoreDump() {
-    const NAME = "/tmp/coredump09"
-    fd, err := os.Create(NAME)
-    if err != nil {
-        log.Fatalf("cannot create %q: %v", NAME, err)
-    }
-    w := bufio.NewWriter(fd)
-    for i:=0; i < 0x10000; i++ {
-        w.WriteByte(EA(i).GetB())
-    }
-    for i := DRegEA; i <= PCRegEA; i++ {
-        word := EA(i).GetW()
-        w.WriteByte(byte(word>>8))
-        w.WriteByte(byte(word>>0))
-    }
-    w.WriteByte(CCRegEA.GetB())
-    w.WriteByte(DPRegEA.GetB())
-    w.Flush()
-    fd.Close()
+	const NAME = "/tmp/coredump09"
+	fd, err := os.Create(NAME)
+	if err != nil {
+		log.Fatalf("cannot create %q: %v", NAME, err)
+	}
+	w := bufio.NewWriter(fd)
+	for i := 0; i < 0x10000; i++ {
+		w.WriteByte(EA(i).GetB())
+	}
+	for i := DRegEA; i <= PCRegEA; i++ {
+		word := EA(i).GetW()
+		w.WriteByte(byte(word >> 8))
+		w.WriteByte(byte(word >> 0))
+	}
+	w.WriteByte(CCRegEA.GetB())
+	w.WriteByte(DPRegEA.GetB())
+	w.Flush()
+	fd.Close()
 
-    fmt.Printf("\nBegin Frame Chain\n")
-    fp := EA(URegEA.GetW())
-    p := EA(SRegEA.GetW())
-    fmt.Printf("S: %04x  U: %04x\n", p, fp)
-    gap := int(fp) - int(p)
-    for 0<=gap && gap<=64 {
-        fmt.Printf("\n@%04x: ", int(p))
-        if p < fp && ((fp-p)&1)==1 {
-          fmt.Printf("%02x, ", EA(p).GetB())
-          p += 1 
-        }
-        for p < fp {
-          fmt.Printf("%04x, ", EA(p).GetW())
-          p += 2
-        }
-        if (p != fp) {
-          fmt.Printf("\nMismatched: p %04x != fp %04x\n", p, fp)
-          break
-        }
-        fp = EA(fp.GetW())
-        gap = int(fp) - int(p)
-    }
-    fmt.Printf("\nEnd Frame Chain\n");
+	fmt.Printf("\nBegin Frame Chain\n")
+	fp := EA(URegEA.GetW())
+	p := EA(SRegEA.GetW())
+	fmt.Printf("S: %04x  U: %04x\n", p, fp)
+	gap := int(fp) - int(p)
+	for 0 <= gap && gap <= 64 {
+		fmt.Printf("\n@%04x: ", int(p))
+		if p < fp && ((fp-p)&1) == 1 {
+			fmt.Printf("%02x, ", EA(p).GetB())
+			p += 1
+		}
+		for p < fp {
+			fmt.Printf("%04x, ", EA(p).GetW())
+			p += 2
+		}
+		if p != fp {
+			fmt.Printf("\nMismatched: p %04x != fp %04x\n", p, fp)
+			break
+		}
+		fp = EA(fp.GetW())
+		gap = int(fp) - int(p)
+	}
+	fmt.Printf("\nEnd Frame Chain\n")
 
-    log.Fatalf("EMULATOR CORE DUMPED: %q", NAME)
+	log.Fatalf("EMULATOR CORE DUMPED: %q", NAME)
 }
 
 func TfrReg(b byte) EA {
@@ -1380,10 +1380,11 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 // 200 = 0x80 = CLEAR; 033=ESC;  201=F1, 202=F2, 203=BREAK
 // 204=up 205=dn 206=left 207=right
 const KB_NORMAL = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ\204\205\206\207 0123456789:;,-./\r\200\033\000\000\201\202\000"
-const KB_SHIFT = "`abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?___\000\000__\000"
+const KB_SHIFT = "`abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?___..__."
+const KB_CTRL = `.................................|.~...^[]..{_}\........`
 
 func keypress(probe byte, ch byte) byte {
-	shifted := false
+	shifted, controlled := false, false
 	sense := byte(0)
 	probe = ^probe
 	for j := uint(0); j < 8; j++ {
@@ -1392,17 +1393,24 @@ func keypress(probe byte, ch byte) byte {
 				if (byte(1<<j) & probe) != 0 {
 					sense |= 1 << i
 				}
-			}
-			if KB_SHIFT[i*8+j] == ch {
+			} else if KB_SHIFT[i*8+j] == ch && ch != '.' {
 				if (byte(1<<j) & probe) != 0 {
 					sense |= byte(1 << i)
 				}
 				shifted = true
+			} else if KB_CTRL[i*8+j] == ch && ch != '.' {
+				if (byte(1<<j) & probe) != 0 {
+					sense |= byte(1 << i)
+				}
+				controlled = true
 			}
 		}
 	}
 	if shifted && (probe&0x80) != 0 {
 		sense |= 0x40 // Shift key.
+	}
+	if controlled && (probe&0x10) != 0 {
+		sense |= 0x40 // Ctrl key.
 	}
 	log.Printf("keypress: probe %x char %x sense %x shifted %v", probe, ch, sense, shifted)
 	return ^sense
@@ -2388,9 +2396,9 @@ func swi() {
 	var handler Word
 	switch iflag {
 	case 0: /* SWI */
-        if *FlagSwiFatalCoreDump {
-            FatalCoreDump()
-        }
+		if *FlagSwiFatalCoreDump {
+			FatalCoreDump()
+		}
 		ccreg |= 0xd0
 		handler = W(0xfffa)
 	case 1: /* SWI2 */
