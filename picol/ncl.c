@@ -1764,48 +1764,6 @@ int picolCommandSource(int argc, char **argv, void *pd) {
   return e;
 }
 
-// For lame coco keyboards:  `((` -> `[`, `(((` -> `{`, `))` -> `]`, `)))` -> `}`, `@@` -> `\`.
-void ReduceBigraphs(char *s) {
-  char *z = s;                  // read from p, write to z.
-  for (char *p = s; *p; p++) {
-    if (p[0] == '(') {
-      if (p[1] == '(') {
-        if (p[2] == '(') {
-          *z++ = '{';
-          p++;
-        } else {
-          *z++ = '[';
-        }
-        p++;
-      } else {
-        *z++ = '(';
-      }
-    } else if (p[0] == ')') {
-      if (p[1] == ')') {
-        if (p[2] == ')') {
-          *z++ = '}';
-          p++;
-        } else {
-          *z++ = ']';
-        }
-        p++;
-      } else {
-        *z++ = ')';
-      }
-    } else if (p[0] == '@') {
-      if (p[1] == '@') {
-        *z++ = '\\';
-        p++;
-      } else {
-        *z++ = '@';
-      }
-    } else {
-      *z++ = *p;
-    }
-  }
-  *z = '\0';
-}
-
 void picolRegisterCoreCommands() {
   const char *mathOps[] = {
     "+", "-", "*", "/", "%", ">", ">=", "<", "<=", "==", "!=",
@@ -1965,7 +1923,9 @@ int main() {
         break;
       }
 #endif
+#if 0
       ReduceBigraphs(line);
+#endif
       e = picolEval(line, "__repl__");
       if (e) {
         puts(" ERROR: ");
