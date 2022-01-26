@@ -1,3 +1,4 @@
+//go:build coco1
 // +build coco1
 
 package emu
@@ -7,7 +8,6 @@ import (
 	"github.com/strickyak/doing_os9/gomar/sym"
 
 	"bytes"
-	"io/ioutil"
 	"log"
 )
 
@@ -18,12 +18,7 @@ var MmuTask byte // but not used in coco1.
 const TraceMem = false // TODO: restore this some day.
 
 func EmitHardware() {}
-func InitHardware() {
-	Coco1Contract()
-}
-func Coco1Contract() {
-	// TODO
-}
+func InitHardware() {}
 
 func ExplainMMU() string             { return "" }
 func DoExplainMmuBlock(i int) string { return "" }
@@ -60,11 +55,7 @@ func PeekB(addr Word) byte {
 // PutB is fundamental func to set byte.  Hack register access into here.
 func PutB(addr Word, x byte) {
 	old := mem[addr]
-	if Above8000IsRom && addr >= 0x8000 && addr < 0xFF00 {
-		log.Printf("suppressed write to ROM: %04x ... %02x", addr, x)
-	} else {
-		mem[addr] = x
-	}
+	mem[addr] = x
 
 	if TraceMem {
 		L("\t\t\t\tPutB %04x <- %02x (was %02x)", addr, x, old)
