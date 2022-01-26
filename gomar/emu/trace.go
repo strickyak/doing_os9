@@ -1,3 +1,4 @@
+//go:build trace
 // +build trace
 
 package emu
@@ -14,7 +15,7 @@ import (
 var been_there [0x10000]bool
 
 /* max. bytes of instruction code per trace line */
-const MaximumBytesPerOpcode = 4
+const kMaximumBytesPerOpcode = 4
 
 /* disassembled instruction len */
 var dis_length Word
@@ -29,6 +30,7 @@ func Dis_len_incr(n Word) {
 func Trace() {
 	var buf bytes.Buffer
 	wh := where(pcreg_prev)
+	// oldnew would be improved with Memory Block.
 	oldnew := CondI(been_there[pcreg_prev], 'o', 'N')
 	Z(&buf, "%s%c %04x:", wh, oldnew, pcreg_prev)
 	been_there[pcreg_prev] = true
@@ -42,11 +44,11 @@ func Trace() {
 			ilen = -ilen
 		}
 	}
-	for i := Word(0); i < MaximumBytesPerOpcode; i++ {
+	for i := Word(0); i < kMaximumBytesPerOpcode; i++ {
 		if int(i) < ilen {
-			Z(&buf, "%02x", B(pcreg_prev+i))
+			Z(&buf, "%02x", B(pcreg_prev+i)) // two hex chars
 		} else {
-			Z(&buf, "  ")
+			Z(&buf, "  ") // two spaces
 		}
 	}
 
@@ -55,19 +57,6 @@ func Trace() {
 	dis_length = 0
 
 	module, offset := MemoryModuleOf(pcreg_prev)
-
-	/* not working
-	// for page FE yak
-	if 0xFE00 <= pcreg_prev && pcreg_prev < 0xFF00 {
-		for _, m := range InitialModules {
-			if m.Name == "krn" {
-				module = m.Id()
-				offset = pcreg_prev - 0xF000
-				break
-			}
-		}
-	}
-	*/
 
 	if module != "" {
 		moduleLower := strings.ToLower(module)
@@ -116,6 +105,8 @@ func where(addr Word) string {
 			return "\"\" "
 		}
 	}
+
+	// if Level == 1 ...
 	// TODO -- did this ever work for Level 1?
 	var buf bytes.Buffer
 
