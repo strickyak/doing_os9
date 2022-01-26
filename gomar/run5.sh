@@ -9,6 +9,16 @@ go run -x -tags=coco3,level2,display,trace gomar.go \
   --disk eouBeta5/68EMU.dsk \
   --h0 eouBeta5/68SDC.a  \
   --borges ../borges/   \
+  --trigger_os9='(?i:fork.*file=.shell)' \
+  2>_
+
+exit $?
+
+go run -x -tags=coco3,level2,display,trace gomar.go \
+  -boot eouBeta5/BOOTFILEsbc09 \
+  --disk eouBeta5/68EMU.dsk \
+  --h0 eouBeta5/68SDC.a  \
+  --borges ../borges/   \
   --trigger_os9='(?i:fork.*file=.gshell)' \
   --watch '"gshell.40014a85ef"+0d22:d:get X coord,"gshell.40014a85ef"+0d1a:d:get Y coord,"gshell.40014a85ef"+0790:d:update screen,"gshell.40014a85ef"+0303:d:get key press,"gshell.40014a85ef"+382B:d:exit,"gshell.40014a85ef"+36C9:d:GFXWR,"gshell.40014a85ef"+36DD:d:GFXERR' \
   2>_
