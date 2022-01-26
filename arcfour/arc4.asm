@@ -4,6 +4,9 @@
 *        `y` points to the beginning of a 4-byte state.         
 * Returns the byte in `b`.
 
+* compare with arcfour_byte() at
+* https://stuff.mit.edu/afs/athena/contrib/crypto/src/ssh-1.2.27/arcfour.c
+
 VX equ 0
 VY equ 1
 VSX equ 2
