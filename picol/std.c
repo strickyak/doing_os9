@@ -8,6 +8,7 @@ char Down(char c) {
   return ('A' <= c && c <= 'Z') ? c + 32 : c;
 }
 
+// atoi() understands initial "0" for octal and "0x" for hex, and '-' before any of that.
 int atoi(const char *s) {
   int z = 0;
   byte neg = false;
@@ -19,7 +20,7 @@ int atoi(const char *s) {
     s++;
     if (*s == 'x') {
       // hex if starts 0x
-      while ('0' <= *s && *s <= '9' || 'A' <= Up(*s) && 'F' <= Up(*s)) {
+      while ('0' <= *s && *s <= '9' || 'A' <= Up(*s) && Up(*s) <= 'F') {
         if ('0' <= *s && *s <= '9') {
           z = z * 16 + (*s - '0');
         } else {
@@ -62,9 +63,9 @@ int strcasecmp(const char *a, const char *b) {
     b++;
   }
   // at least one is 0.
-  if ((byte) Up(*a) < (byte) Up(*b))
+  if (*a)
     return -1;
-  if ((byte) Up(*a) > (byte) Up(*b))
+  if (*b)
     return +1;
   return 0;
 }
