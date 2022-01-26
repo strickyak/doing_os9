@@ -1,3 +1,5 @@
+* WARNING: UNTESTED.
+
 * Input: `x` points 128 bytes into a 256-byte state.
 *        `y` points to the beginning of a 4-byte state.         
 * Returns the byte in `b`.
