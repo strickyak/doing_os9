@@ -1,0 +1,35 @@
+* Input: `x` points 128 bytes into a 256-byte state.
+*        `y` points to the beginning of a 4-byte state.         
+* Returns the byte in `b`.
+                      
+     0000 VX equ 0   ; `y` points here.
+     0001 VY equ 1
+     0002 VSX equ 2
+     0003 VSY equ 3
+
+* compare with arcfour_byte() at
+* https://stuff.mit.edu/afs/athena/contrib/crypto/src/ssh-1.2.27/arcfour.c
+            
+0000      arc4byte
+0000 6CA4   inc VX,y  ; x = x + 1
+0002 E6A4   ldb VX,y
+            
+0004 A685   lda b,x   ; sx = s[x]
+0006 A722   sta VSX,y
+            
+0008 AB21   adda VY,y ; y = sx + y
+000A A721   sta VY,y
+            
+000C A686   lda a,x   ; sy = s[y]
+000E A723   sta VSY,y
+            
+0010 E6A4   ldb VX,y  ; s[x] = sy
+0012 A785   sta b,x
+            
+0014 A622   lda VSX,y ; s[y] = sx
+0016 E621   ldb VY,y
+0018 A785   sta b,x
+            
+001A AB23   adda VSY,y ; return s[sx+sy]
+001C E685   ldb b,x    ; return byte is in b
+001E 39     rts
