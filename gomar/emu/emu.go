@@ -19,10 +19,9 @@ import (
 
 var FlagBootImageFilename = flag.String("boot", "boot.mem", "")
 var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
-var FlagStressTest = flag.String("stress", "", "If nonempty, string to repeat")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
-var FlagSwiFatalCoreDump = flag.Bool("swi_fatal_coredump", false, "coredump and stop on plain SWI");
+var FlagSwiFatalCoreDump = flag.Bool("swi_fatal_coredump", false, "coredump and stop on plain SWI")
 
 var FlagWatch = flag.String("watch", "", "Sequence of module:addr:reg:message,...")
 var FlagTriggerPc = flag.Uint64("trigger_pc", 0xC00D, "")
@@ -123,50 +122,50 @@ const CCRegEA EA = 0x1000000A
 const DPRegEA EA = 0x1000000B
 
 func FatalCoreDump() {
-    const NAME = "/tmp/coredump09"
-    fd, err := os.Create(NAME)
-    if err != nil {
-        log.Fatalf("cannot create %q: %v", NAME, err)
-    }
-    w := bufio.NewWriter(fd)
-    for i:=0; i < 0x10000; i++ {
-        w.WriteByte(EA(i).GetB())
-    }
-    for i := DRegEA; i <= PCRegEA; i++ {
-        word := EA(i).GetW()
-        w.WriteByte(byte(word>>8))
-        w.WriteByte(byte(word>>0))
-    }
-    w.WriteByte(CCRegEA.GetB())
-    w.WriteByte(DPRegEA.GetB())
-    w.Flush()
-    fd.Close()
+	const NAME = "/tmp/coredump09"
+	fd, err := os.Create(NAME)
+	if err != nil {
+		log.Fatalf("cannot create %q: %v", NAME, err)
+	}
+	w := bufio.NewWriter(fd)
+	for i := 0; i < 0x10000; i++ {
+		w.WriteByte(EA(i).GetB())
+	}
+	for i := DRegEA; i <= PCRegEA; i++ {
+		word := EA(i).GetW()
+		w.WriteByte(byte(word >> 8))
+		w.WriteByte(byte(word >> 0))
+	}
+	w.WriteByte(CCRegEA.GetB())
+	w.WriteByte(DPRegEA.GetB())
+	w.Flush()
+	fd.Close()
 
-    fmt.Printf("\nBegin Frame Chain\n")
-    fp := EA(URegEA.GetW())
-    p := EA(SRegEA.GetW())
-    fmt.Printf("S: %04x  U: %04x\n", p, fp)
-    gap := int(fp) - int(p)
-    for 0<=gap && gap<=64 {
-        fmt.Printf("\n@%04x: ", int(p))
-        if p < fp && ((fp-p)&1)==1 {
-          fmt.Printf("%02x, ", EA(p).GetB())
-          p += 1 
-        }
-        for p < fp {
-          fmt.Printf("%04x, ", EA(p).GetW())
-          p += 2
-        }
-        if (p != fp) {
-          fmt.Printf("\nMismatched: p %04x != fp %04x\n", p, fp)
-          break
-        }
-        fp = EA(fp.GetW())
-        gap = int(fp) - int(p)
-    }
-    fmt.Printf("\nEnd Frame Chain\n");
+	fmt.Printf("\nBegin Frame Chain\n")
+	fp := EA(URegEA.GetW())
+	p := EA(SRegEA.GetW())
+	fmt.Printf("S: %04x  U: %04x\n", p, fp)
+	gap := int(fp) - int(p)
+	for 0 <= gap && gap <= 64 {
+		fmt.Printf("\n@%04x: ", int(p))
+		if p < fp && ((fp-p)&1) == 1 {
+			fmt.Printf("%02x, ", EA(p).GetB())
+			p += 1
+		}
+		for p < fp {
+			fmt.Printf("%04x, ", EA(p).GetW())
+			p += 2
+		}
+		if p != fp {
+			fmt.Printf("\nMismatched: p %04x != fp %04x\n", p, fp)
+			break
+		}
+		fp = EA(fp.GetW())
+		gap = int(fp) - int(p)
+	}
+	fmt.Printf("\nEnd Frame Chain\n")
 
-    log.Fatalf("EMULATOR CORE DUMPED: %q", NAME)
+	log.Fatalf("EMULATOR CORE DUMPED: %q", NAME)
 }
 
 func TfrReg(b byte) EA {
@@ -182,7 +181,6 @@ var Disp *display.Display
 var fdump int
 var Steps uint64
 var DebugString string
-var Above8000IsRom bool
 
 var Os9Description = make(map[int]string) // Describes OS9 kernel call at this big stack addr.
 
@@ -1380,10 +1378,11 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 // 200 = 0x80 = CLEAR; 033=ESC;  201=F1, 202=F2, 203=BREAK
 // 204=up 205=dn 206=left 207=right
 const KB_NORMAL = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ\204\205\206\207 0123456789:;,-./\r\200\033\000\000\201\202\000"
-const KB_SHIFT = "`abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?___\000\000__\000"
+const KB_SHIFT = "`abcdefghijklmnopqrstuvwxyz____ 0!\"#$%&'()*+<=>?___..__."
+const KB_CTRL = `.................................|.~...^[]..{_}\........`
 
 func keypress(probe byte, ch byte) byte {
-	shifted := false
+	shifted, controlled := false, false
 	sense := byte(0)
 	probe = ^probe
 	for j := uint(0); j < 8; j++ {
@@ -1392,17 +1391,24 @@ func keypress(probe byte, ch byte) byte {
 				if (byte(1<<j) & probe) != 0 {
 					sense |= 1 << i
 				}
-			}
-			if KB_SHIFT[i*8+j] == ch {
+			} else if KB_SHIFT[i*8+j] == ch && ch != '.' {
 				if (byte(1<<j) & probe) != 0 {
 					sense |= byte(1 << i)
 				}
 				shifted = true
+			} else if KB_CTRL[i*8+j] == ch && ch != '.' {
+				if (byte(1<<j) & probe) != 0 {
+					sense |= byte(1 << i)
+				}
+				controlled = true
 			}
 		}
 	}
 	if shifted && (probe&0x80) != 0 {
 		sense |= 0x40 // Shift key.
+	}
+	if controlled && (probe&0x10) != 0 {
+		sense |= 0x40 // Ctrl key.
 	}
 	log.Printf("keypress: probe %x char %x sense %x shifted %v", probe, ch, sense, shifted)
 	return ^sense
@@ -1710,12 +1716,9 @@ func eaddr0() EA { // effective address for NEG..JMP //
 	switch (ireg & 0x70) >> 4 {
 	case 0:
 		return zeropage()
-	case 1:
-	case 2:
-	case 3: //canthappen//
+	case 1, 2, 3: //canthappen//
 		log.Panicf("UNKNOWN eaddr0: %02x\n", ireg)
 		return 0
-
 	case 4:
 		Dis_inst_cat("a", -2)
 		return ARegEA
@@ -2388,9 +2391,9 @@ func swi() {
 	var handler Word
 	switch iflag {
 	case 0: /* SWI */
-        if *FlagSwiFatalCoreDump {
-            FatalCoreDump()
-        }
+		if *FlagSwiFatalCoreDump {
+			FatalCoreDump()
+		}
 		ccreg |= 0xd0
 		handler = W(0xfffa)
 	case 1: /* SWI2 */
@@ -3010,25 +3013,6 @@ func init() {
 
 const MaxUint64 = 0xFFFFFFFFFFFFFFFF
 
-func LoadRom(filename string) {
-	bb, err := ioutil.ReadFile(filename)
-	if err != nil {
-		log.Fatalf("Cannot load ROM: %q: %v", filename, err)
-	}
-	var p uint = 0x8000
-	for {
-		for i := 0; i < len(bb); i++ {
-			if p < 0xFF00 || p >= 0xFFF0 {
-				PutB(Word(p), bb[i])
-			}
-			p++
-			if p > 0xFFFF {
-				return
-			}
-		}
-	}
-}
-
 func Main() {
 	CompileWatches()
 	SetVerbosityBits(*FlagInitialVerbosity)
@@ -3039,52 +3023,45 @@ func Main() {
 	CocodChan := make(chan *display.CocoDisplayParams, 50)
 	Disp = display.NewDisplay(mem[:], 80, 25, CocodChan, keystrokes)
 
-	if *FlagRom != "" {
-		LoadRom(*FlagRom)
-		pcreg = W(0xFFFE)
-		Above8000IsRom = true
-	} else {
-
-		{
-			// Open disk image.
-			fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
-			if err != nil {
-				log.Fatalf("Cannot open disk image: %q: %v", *FlagBootImageFilename, err)
-			}
-			disk_fd = fd
+	{
+		// Open disk image.
+		fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
+		if err != nil {
+			log.Fatalf("Cannot open disk image: %q: %v", *FlagBootImageFilename, err)
 		}
-
-		{
-			// Read disk_sector_0.
-			n, err := disk_fd.Read(disk_sector_0[:])
-			if err != nil {
-				log.Panicf("Bad disk sector read: err=%v", err)
-			}
-			if n != 256 {
-				log.Panicf("Short disk sector read: n=%d", n)
-			}
-
-			disk_dd_fmt = disk_sector_0[16]
-
-			tracks_per_sector := int(disk_sector_0[17])*256 + int(disk_sector_0[18])
-			if tracks_per_sector != 18 {
-				log.Panicf("Not 18 sectors per track: %d.", tracks_per_sector)
-			}
-		}
-
-		{
-			boot, err := ioutil.ReadFile(*FlagBootImageFilename)
-			if err != nil {
-				log.Fatalf("Cannot read boot image: %q: %v", *FlagDiskImageFilename, err)
-			}
-			L("boot mem size: %x", len(boot))
-			for i, b := range boot {
-				PokeB(Word(i+0x100), b)
-			}
-			DumpAllMemory()
-		}
-		pcreg = 0x100
+		disk_fd = fd
 	}
+
+	{
+		// Read disk_sector_0.
+		n, err := disk_fd.Read(disk_sector_0[:])
+		if err != nil {
+			log.Panicf("Bad disk sector read: err=%v", err)
+		}
+		if n != 256 {
+			log.Panicf("Short disk sector read: n=%d", n)
+		}
+
+		disk_dd_fmt = disk_sector_0[16]
+
+		tracks_per_sector := int(disk_sector_0[17])*256 + int(disk_sector_0[18])
+		if tracks_per_sector != 18 {
+			log.Panicf("Not 18 sectors per track: %d.", tracks_per_sector)
+		}
+	}
+
+	{
+		boot, err := ioutil.ReadFile(*FlagBootImageFilename)
+		if err != nil {
+			log.Fatalf("Cannot read boot image: %q: %v", *FlagDiskImageFilename, err)
+		}
+		L("boot mem size: %x", len(boot))
+		for i, b := range boot {
+			PokeB(Word(i+0x100), b)
+		}
+		DumpAllMemory()
+	}
+	pcreg = 0x100
 
 	sreg = 0
 	dpreg = 0
@@ -3111,11 +3088,7 @@ func Main() {
 		pcreg_prev = pcreg
 
 		if stepsUntilTimer == 0 {
-			log.Printf("# pre timer interrupt #")
-			DoDumpAllMemory()
-			log.Printf("# pre timer interrupt #")
-			DoDumpAllMemoryPhys()
-			log.Printf("# pre timer interrupt #")
+			DoMemoryDumps()
 			FireTimerInterrupt()
 			stepsUntilTimer = *FlagClock
 		} else {
@@ -3162,26 +3135,37 @@ func Main() {
 		}
 
 		if paranoid && !early {
-			if pcreg < 0x005E /* D.BtDbg */ {
-				log.Panicf("PC in page 0: 0x%x", pcreg)
-			}
-			if pcreg >= 0xFF00 {
-				log.Panicf("PC in page FF: 0x%x", pcreg)
-			}
-			if pcreg >= 0x0200 && pcreg < 0x04FF {
-				log.Panicf("PC in sys data: 0x%x", pcreg)
-			}
-			if Level == 1 {
-				if sreg < 256 {
-					log.Panicf("S in page 0: 0x%x", sreg)
-				}
-			}
-			if sreg >= 0xFF00 {
-				log.Panicf("S in page FF: 0x%x", sreg)
-			}
-			if sreg >= 0x0140 && sreg < 0x0400 {
-				log.Panicf("S in sys data: 0x%x", sreg)
-			}
+			ParanoidAsserts()
 		}
 	} /* next step */
+}
+
+func ParanoidAsserts() {
+	if pcreg < 0x005E /* D.BtDbg */ {
+		log.Panicf("PC in page 0: 0x%x", pcreg)
+	}
+	if pcreg >= 0xFF00 {
+		log.Panicf("PC in page FF: 0x%x", pcreg)
+	}
+	if pcreg >= 0x0200 && pcreg < 0x04FF {
+		log.Panicf("PC in sys data: 0x%x", pcreg)
+	}
+	if Level == 1 {
+		if sreg < 256 {
+			log.Panicf("S in page 0: 0x%x", sreg)
+		}
+	}
+	if sreg >= 0xFF00 {
+		log.Panicf("S in page FF: 0x%x", sreg)
+	}
+	if sreg >= 0x0140 && sreg < 0x0400 {
+		log.Panicf("S in sys data: 0x%x", sreg)
+	}
+}
+func DoMemoryDumps() {
+	log.Printf("# pre timer interrupt #")
+	DoDumpAllMemory()
+	log.Printf("# pre timer interrupt #")
+	DoDumpAllMemoryPhys()
+	log.Printf("# pre timer interrupt #")
 }
