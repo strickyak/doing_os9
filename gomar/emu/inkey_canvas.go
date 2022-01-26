@@ -1,4 +1,4 @@
-// +build canvas
+//go:build canvas
 
 package emu
 

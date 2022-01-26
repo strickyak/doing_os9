@@ -1,4 +1,4 @@
-// +build main
+//go:build main
 
 // but first: $ sudo apt-get install libsdl2-dev
 package main

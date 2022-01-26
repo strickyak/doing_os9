@@ -1,4 +1,4 @@
-// +build !trace
+//go:build !trace
 
 package emu
 

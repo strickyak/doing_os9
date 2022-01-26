@@ -1,4 +1,4 @@
-// +build level1
+//go:build level1
 
 package emu
 

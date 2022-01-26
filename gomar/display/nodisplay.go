@@ -1,4 +1,4 @@
-// +build !display
+//go:build !display
 
 package display
 

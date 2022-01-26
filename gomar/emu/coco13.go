@@ -1,4 +1,4 @@
-// +build coco1 coco3
+//go:build coco1 || coco3
 
 package emu
 
