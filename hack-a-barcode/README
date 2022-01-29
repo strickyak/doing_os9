@@ -1,0 +1,26 @@
+MarkO(lerholser) posted the image `marko-barcode-to-decode.jpg` and
+asked if software existed to decode it.
+
+In GIMP, I rotated it, scaled it 10x with cubic interpolation,
+and used threshold to make it black&white.  I saved that as
+`marko-barcode-to-decode-threshold.png`.
+
+Then I wrote `hack.go` to decode the image.  First I figure out
+(with some trial & error & measuring) starting points and strides
+in X and Y directions to pick points to decode.  That is output as
+`out.chosen_points.png`.
+
+I did my own exploration and figured out
+the dibit format.  Then I used info from a blog post
+https://www.insentricity.com/a.cl/265/encoding-software-in-barcodes-the-eight-bit-magazine-way
+to extract two bytes and parity bits from each line.  I'm guessing that
+the bytes are output like I did, but bits could be reversed or something.
+
+I don't recognize the output format in `out.bin`, so I have no idea what
+it is.  `out.hex` shows the same thing, in hex, and with the headers.
+The payload begins after the three 00's on the second line.  And `out.txt`
+shows my work.
+
+THERE IS CORRUPTION about a third of the way down, where there are
+strings of 00 bytes.  That's because my points don't line up correctly
+in that part of the image.  I have yet to fix that.
