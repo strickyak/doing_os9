@@ -1,5 +1,6 @@
 // *INDENT-OFF*
 
+#ifndef OMIT_stkcheck
 asm void stkcheck() {
 	asm {
 		pshs  x
@@ -30,6 +31,7 @@ stkcheckMSG	fcc   / *stack oom* /
 stkcheckNUL	fcb   0
 	}
 }
+#endif
 
 asm void pc_trace(int mark, char* ptr) {
 	asm {
@@ -88,12 +90,14 @@ PcTraceLoop	ldd #'U'
 	}
 }
 
+#ifndef OMIT_exit
 asm void exit(int status) {
 	asm {
 		ldd 2,s      ; status code in b.
 		os9 F_Exit
 	}
 }
+#endif
 
 asm int Os9Create(char* path, int mode, int attrs, int* fd) {
 	asm {
