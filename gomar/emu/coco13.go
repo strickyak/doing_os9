@@ -340,6 +340,21 @@ func PutIOByte(a Word, b byte) {
 
 		}
 
+	case 0xFF42:
+		L("Write to $FF42")
+	case 0xFF7F:
+		L("Write to $FF7F")
+	case 0xFFE1:
+		L("Write to $FFE1")
+	case 0xFFE2:
+		L("Write to $FFE2")
+	case 0xFFE3:
+		L("Write to $FFE3")
+	case 0xFFE8:
+		L("Write to $FFE8")
+	case 0xFF51:
+		L("Write to $FF51")
+
 		/* VDG */
 	case 0xFFC0:
 		L("VDG PutByte OK: %x <- %x\n", a, b)
