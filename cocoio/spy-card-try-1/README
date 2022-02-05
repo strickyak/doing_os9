@@ -1,0 +1,20 @@
+Fri Feb  4 21:31:54 PST 2022 (Augusta, Georgia, US)
+
+These are just little python scripts I tried today.
+Did not succeed.
+These are for the little red card with a W5100 chip, an ethernet connector,
+and a 10-pin header for SPI.
+
+RPi3b:
+    2,4 +5V
+    6,9 GND
+    19 MOSI
+    21 MISO
+    23 CLK
+    24 Spi 0 /chipSelect
+    26 Spi 1 /chipSelect
+
+I also tried pin 11 for a /reset signal, but I kept getting a warning
+if I used GPIO and SPI at the same time.  So i don't know if it did
+anything.   I need to try again with a breadboard in the middle,
+so I can also get my Oscilloscope on these pins.
