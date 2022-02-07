@@ -1,0 +1,22 @@
+"inetd.0781368b52"+016a N e16a:308cf4   {leax  $e161,pcr        }  a=00 b=01 x=e161:c102 y=1f00:0000 u=0000:87cd s=1eff:0d00,0000 cc=Efhinzvc dp=00 #4440239252
+"inetd.0781368b52"+016d N e16d:103f09   {swi2                   }  a=00 b=01 x=e161:c102 y=1f00:0000 u=0000:87cd s=1ef3:8000,0100 cc=Efhinzvc dp=00 #4440239253
+"inetd.0781368b52"+0170 N e170:6fc90082 {clr   $0082,u          }  a=00 b=01 x=e161:c102 y=1f00:0000 u=0000:87cd s=1eff:0d00,0000 cc=EfHinZvc dp=00 #4440239473
+"inetd.0781368b52"+0174 N e174:30c90083 {leax  $0083,u          }  a=00 b=01 x=0083:0000 y=1f00:0000 u=0000:87cd s=1eff:0d00,0000 cc=EfHinzvc dp=00 #4440239474
+"inetd.0781368b52"+0178 N e178:afc90183 {stx   $0183,u          }  a=00 b=01 x=0083:0000 y=1f00:0000 u=0000:87cd s=1eff:0d00,0000 cc=EfHinzvc dp=00 #4440239475
+"inetd.0781368b52"+017c N e17c:cc0100   {ldd   #$0100           }  a=01 b=00 x=0083:0000 y=1f00:0000 u=0000:87cd s=1eff:0d00,0000 cc=EfHinzvc dp=00 #4440239476
+"inetd.0781368b52"+017f N e17f:32e8e0   {leas  224,s            }  a=01 b=00 x=0083:0000 y=1f00:0000 u=0000:87cd s=1edf:0000,f484 cc=EfHinzvc dp=00 #4440239477
+"inetd.0781368b52"+0182 N e182:1f41     {tfr   s,x              }  a=01 b=00 x=1edf:0000 y=1f00:0000 u=0000:87cd s=1edf:0000,f484 cc=EfHinzvc dp=00 #4440239478
+"inetd.0781368b52"+0184 N e184:103f8d   {swi2                   }  a=01 b=00 x=1edf:0000 y=1f00:0000 u=0000:87cd s=1ed3:a001,0000 cc=EfHinzvc dp=00 #4440239479
+"inetd.0781368b52"+0187 N e187:2507     {bcs   $e190            }  a=01 b=00 x=1edf:0000 y=1f00:0000 u=0000:87cd s=1edf:0000,0000 cc=EfhinZvc dp=00 #4440240052
+"inetd.0781368b52"+0189 N e189:6f890007 {clr   $0007,x          }  a=01 b=00 x=1edf:0000 y=1f00:0000 u=0000:87cd s=1edf:0000,0000 cc=EfhinZvc dp=00 #4440240053
+"inetd.0781368b52"+018d N e18d:103f8e   {swi2                   }  a=01 b=00 x=1edf:0000 y=1f00:0000 u=0000:87cd s=1ed3:8401,0000 cc=EfhinZvc dp=00 #4440240054
+"inetd.0781368b52"+0190 N e190:32e820   {leas  $20,s            }  a=01 b=00 x=1edf:0000 y=1f00:0000 u=0000:87cd s=1eff:0d00,0000 cc=EfhinZvc dp=00 #4440240810
+"inetd.0781368b52"+0193 N e193:17fedf   {lbsr  $e075            }  a=01 b=00 x=1edf:0000 y=1f00:0000 u=0000:87cd s=1efd:e196,0d00 cc=EfhinZvc dp=00 #4440240811
+"inetd.0781368b52"+0075 N e075:3430     {pshs  y,x              }  a=01 b=00 x=1edf:0000 y=1f00:0000 u=0000:87cd s=1ef9:1edf,1f00 cc=EfhinZvc dp=00 #4440240812
+"inetd.0781368b52"+0077 N e077:8603     {lda   #$03             }  a=03 b=00 x=1edf:0000 y=1f00:0000 u=0000:87cd s=1ef9:1edf,1f00 cc=Efhinzvc dp=00 #4440240813
+"inetd.0781368b52"+0079 N e079:308c92   {leax  $e00e,pcr        }  a=03 b=00 x=e00e:2fce y=1f00:0000 u=0000:87cd s=1ef9:1edf,1f00 cc=Efhinzvc dp=00 #4440240814
+"inetd.0781368b52"+007c N e07c:103f84   {swi2                   }  a=03 b=00 x=e00e:2fce y=1f00:0000 u=0000:87cd s=1eed:8003,0000 cc=Efhinzvc dp=00 #4440240815
+"inetd.0781368b52"+007f N e07f:2504     {bcs   $e085            }  a=03 b=dd x=e00e:2fce y=1f00:0000 u=0000:87cd s=1ef9:1edf,1f00 cc=EfhinzvC dp=00 #4440253631
+"inetd.0781368b52"+0085 N e085:35b0     {puls  pc,y,x           }  a=03 b=dd x=1edf:0000 y=1f00:0000 u=0000:87cd s=1eff:0d00,0000 cc=EfhinzvC dp=00 #4440253632
+"inetd.0781368b52"+0196 N e196:102501   {lbcs  $e2fd            }  a=03 b=dd x=1edf:0000 y=1f00:0000 u=0000:87cd s=1eff:0d00,0000 cc=EfhinzvC dp=00 #4440253633
+"inetd.0781368b52"+02fd N e2fd:103f06   {swi2                   }  a=03 b=dd x=1edf:0000 y=1f00:0000 u=0000:87cd s=1ef3:8103,dd00 cc=EfhinzvC dp=00 #4440253634
