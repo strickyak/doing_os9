@@ -1,5 +1,3 @@
-//go:build main
-
 package main
 
 /* TODO
@@ -21,7 +19,7 @@ import (
 	"log"
 	"strings"
 
-	. "github.com/strickyak/doing_os9/gomar/cmocly"
+	. "github.com/strickyak/doing_os9/gomar/cmocly/lib"
 )
 
 var flag_linker_map = flag.String("linker_map", "", "filename of linker map")

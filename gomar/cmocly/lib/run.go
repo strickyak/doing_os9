@@ -1,7 +1,8 @@
-package cmocly
+package lib
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 )
+
+var PRE = flag.String("cmoc_pre", "", "prefix these flags to cmoc")
 
 type RunSpec struct {
 	AsmListingPath string
@@ -24,7 +27,14 @@ type RunSpec struct {
 }
 
 func (rs RunSpec) RunCompiler(filename string) {
-	cmd := exec.Command(rs.Cmoc, "--os9", "-S", filename)
+	args := []string{"--os9", "-S"}
+	for _, a := range strings.Split(*PRE, " ") {
+		if a != "" {
+			args = append(args, a)
+		}
+	}
+	args = append(args, filename)
+	cmd := exec.Command(rs.Cmoc, args...)
 	cmd.Stderr = os.Stderr
 	log.Printf("RUNNING: %v", cmd)
 	err := cmd.Run()

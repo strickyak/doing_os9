@@ -1,4 +1,4 @@
-package cmocly
+package lib
 
 import (
 	"bufio"
