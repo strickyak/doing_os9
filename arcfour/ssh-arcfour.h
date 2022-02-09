@@ -1,4 +1,5 @@
 /*
+https://stuff.mit.edu/afs/athena/contrib/crypto/src/ssh-1.2.27/arcfour.h
 
 ARCFOUR cipher (based on a cipher posted on the Usenet in Spring-95).
 This cipher is widely believed and has been tested to be equivalent
@@ -8,8 +9,11 @@ of RSA Data Security)
 */
 
 /*
- * $Id: arcfour.h,v 1.1.1.1 1996/02/18 21:38:11 ylo Exp $
- * $Log: arcfour.h,v $
+ * $Id: ssh-arcfour.h,v 1.1 2022/02/09 18:03:37 strick Exp $
+ * $Log: ssh-arcfour.h,v $
+ * Revision 1.1  2022/02/09 18:03:37  strick
+ * /dev/null
+ *
  * Revision 1.1.1.1  1996/02/18 21:38:11  ylo
  * 	Imported ssh-1.2.13.
  *

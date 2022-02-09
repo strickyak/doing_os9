@@ -1,4 +1,5 @@
 /*
+https://stuff.mit.edu/afs/athena/contrib/crypto/src/ssh-1.2.27/arcfour.c
 
 ARCFOUR cipher (based on a cipher posted on the Usenet in Spring-95).
 This cipher is widely believed and has been tested to be equivalent
@@ -8,8 +9,14 @@ of RSA Data Security)
 */
 
 /*
- * $Id: arcfour.c,v 1.1.1.1 1996/02/18 21:38:11 ylo Exp $
- * $Log: arcfour.c,v $
+ * $Id: ssh-arcfour.c,v 1.2 2022/02/09 21:09:13 strick Exp $
+ * $Log: ssh-arcfour.c,v $
+ * Revision 1.2  2022/02/09 21:09:13  strick
+ * /dev/null
+ *
+ * Revision 1.1  2022/02/09 18:03:37  strick
+ * /dev/null
+ *
  * Revision 1.1.1.1  1996/02/18 21:38:11  ylo
  * 	Imported ssh-1.2.13.
  *
@@ -19,8 +26,10 @@ of RSA Data Security)
  * $Endlog$
  */
 
-#include "includes.h"
-#include "arcfour.h"
+// #include "includes.h"
+#include <cmoc.h>
+#include <assert.h>
+#include "ssh-arcfour.h"
 
 void arcfour_init(ArcfourContext *ctx, const unsigned char *key, 
 		  unsigned int key_len)
@@ -52,7 +61,7 @@ void arcfour_init(ArcfourContext *ctx, const unsigned char *key,
     }
 }
 
-inline unsigned int arcfour_byte(ArcfourContext *ctx)
+unsigned int arcfour_byte(ArcfourContext *ctx)
 {
   unsigned int x;
   unsigned int y;
