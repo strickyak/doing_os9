@@ -35,9 +35,12 @@ func (rs RunSpec) RunCompiler(filename string) {
 	}
 	args = append(args, filename)
 	cmd := exec.Command(rs.Cmoc, args...)
+	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	log.Printf("RUNNING: %v", cmd)
+	log.Printf("")
 	err := cmd.Run()
+	log.Printf("")
 	if err != nil {
 		log.Fatalf("cmoc compiler failed: %v: %v", cmd, err)
 	}
@@ -114,10 +117,12 @@ func (rs RunSpec) RunAssembler(filename string) {
 		"--list="+filename+".o.list",
 		"-o", filename+".o",
 		filename+".s")
-	log.Printf("RUNNING: %v", cmd)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
+	log.Printf("RUNNING: %v", cmd)
+	log.Printf("")
 	err := cmd.Run()
+	log.Printf("")
 	if err != nil {
 		log.Fatalf("lwasm assembler failed: %v: %v", cmd, err)
 	}
@@ -127,7 +132,11 @@ func (rs RunSpec) RunLinker(ofiles []string, outbin string) {
 	cmdargs = append(cmdargs, ofiles...)
 	cmd := exec.Command(rs.Cmoc, cmdargs...)
 	log.Printf("RUNNING: %v", cmd)
+	log.Printf("")
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
 	err := cmd.Run()
+	log.Printf("")
 	if err != nil {
 		log.Fatalf("cmoc/lwlink linker failed: %v: %v", cmd, err)
 	}
