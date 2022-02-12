@@ -23,7 +23,7 @@ int main() {
     int i;
     for (i=0; i<1000; i++) {
         byte b = arc4_byte(state);    // OS9 ASM
-        byte c = arcfour_byte(&context);  // SSH C
+        byte c = (byte) arcfour_byte(&context);  // SSH C
         printf("%3d:  (%3d %3d) %3d  (%3d %3d) %3d\n", i, state[256], state[257], b, context.x, context.y, c);
 
         if (state[256] != context.x) { bad = -1; }
