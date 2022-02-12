@@ -1,3 +1,4 @@
+//go:build main
 // +build main
 
 // 6809 & OS/9 Simulator "GOMAR".
@@ -80,14 +81,23 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"time"
 )
 
 var FlagCpuProfile = flag.String("cpuprofile", "", "write cpu profile to file")
 var FlagMemProfile = flag.String("memprofile", "", "write cpu profile to file")
+var FlagTTL = flag.Duration("ttl", 300*1000*1000*1000*time.Nanosecond, "Max duration to live, or 0 for unlimited")
 
 func main() {
 	log.SetFlags(0)
 	flag.Parse()
+
+	if *FlagTTL != 0 {
+		go func() {
+			time.Sleep(*FlagTTL)
+			log.Fatal("gomar: TTL Expired.")
+		}()
+	}
 
 	if *FlagCpuProfile != "" {
 		f, err := os.Create(*FlagCpuProfile)
