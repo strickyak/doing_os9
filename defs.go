@@ -1,4 +1,4 @@
-package grok_os9_disk
+package doing_os9
 
 import "fmt"
 import "io"
