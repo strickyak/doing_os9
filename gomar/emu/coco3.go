@@ -225,7 +225,7 @@ func B(addr Word) byte {
 	mapped := MapAddr(addr, false)
 	if AddressInDeviceSpace(addr) {
 		z = GetIOByte(addr)
-		LogIO("GetIO (%06x) %04x -> %02x : %c %c", mapped, addr, z, H(z), T(z))
+		Ld("GetIO (%06x) %04x -> %02x : %c %c", mapped, addr, z, H(z), T(z))
 		mem[mapped] = z
 	} else {
 		z = mem[mapped]
@@ -254,11 +254,11 @@ func PutB(addr Word, x byte) {
 	old := mem[mapped]
 	mem[mapped] = x
 	if TraceMem {
-		LogIO("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
+		Ld("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
 	}
 	if AddressInDeviceSpace(addr) {
 		PutIOByte(addr, x)
-		LogIO("PutIO (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
+		Ld("PutIO (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
 	}
 }
 
@@ -328,14 +328,15 @@ func DoExplainMmuBlock(i int) {
 }
 
 func DoDumpPageZero() {
-	mmut := MmuTask
+	saved_mmut := MmuTask
 	MmuTask = 0
-	map00 := MmuMap[0][0]
+	saved_map00 := MmuMap[0][0]
 	MmuMap[0][0] = 0
 	defer func() {
-		MmuTask = mmut
-		MmuMap[0][0] = map00
+		MmuTask = saved_mmut
+		MmuMap[0][0] = saved_map00
 	}()
+	////////////////////////////
 
 	L("PageZero:\n")
 
@@ -403,14 +404,68 @@ func DoDumpPageZero() {
 	buf.Reset()
 }
 
+func PrettyDumpHex64(addr Word, size Word) {
+	saved_mmut := MmuTask
+	MmuTask = 0
+	saved_map00 := MmuMap[0][0]
+	MmuMap[0][0] = 0
+	defer func() {
+		MmuTask = saved_mmut
+		MmuMap[0][0] = saved_map00
+	}()
+	////////////
+
+	for p := Word(addr); p < addr+size; p += 64 {
+		k := Word(64)
+		for i := 0; i < 32; i++ {
+			w := PeekW(p + k - 2)
+			if w != 0 {
+				break
+			}
+			k -= 2
+		}
+		if k == 32 {
+			continue // don't print all zeros row.
+		}
+		var buf bytes.Buffer
+		Z(&buf, "%04x:", p)
+		for q := Word(0); q < k; q += 2 {
+			if q&7 == 0 {
+				Z(&buf, " ")
+			}
+			if q&15 == 0 {
+				Z(&buf, " ")
+			}
+			w := PeekW(p + q)
+			if w == 0 {
+				Z(&buf, "---- ")
+			} else {
+				Z(&buf, "%04x ", PeekW(p+q))
+			}
+		}
+		L("%s", buf.String())
+	}
+}
+
+func DoDumpBlockZero() {
+	PrettyDumpHex64(0, 0xFF00)
+}
+
 func DoDumpPathDesc(a Word) {
-	L("a=%04x", a)
+	PrettyDumpHex64(a, 0x40)
 	if 0 == B(a+sym.PD_PD) {
 		return
 	}
-	L("Path @%x: #=%x mode=%x count=%x dev=%x\n", a, B(a+sym.PD_PD), B(a+sym.PD_MOD), B(a+sym.PD_CNT), W(a+sym.PD_DEV))
-	L("   curr_process=%x caller_reg_stack=%x buffer=%x  dev_type=%x\n",
-		B(a+sym.PD_CPR), B(a+sym.PD_RGS), B(a+sym.PD_BUF), B(a+sym.PD_DTP))
+	pd_pd := B(a + sym.PD_PD)
+	if pd_pd > 32 {
+		// Doesn't seem likely > 32
+		L("???????? PathDesc %x @%x: mode=%x count=%x entry=%x\n", pd_pd, a, B(a+sym.PD_MOD), B(a+sym.PD_CNT), W(a+sym.PD_DEV))
+		return
+	}
+
+	L("PathDesc %x @%x: mode=%x count=%x entry=%x\n", pd_pd, a, B(a+sym.PD_MOD), B(a+sym.PD_CNT), W(a+sym.PD_DEV))
+	L("   curr_process=%x regs=%x buf=%x  dev_type=%x\n",
+		B(a+sym.PD_CPR), W(a+sym.PD_RGS), W(a+sym.PD_BUF), B(a+sym.PD_DTP))
 
 	// the Device Table Entry:
 	dev := W(a + sym.PD_DEV)
@@ -440,20 +495,23 @@ func DoDumpAllPathDescs() {
 	if true || Level == 1 {
 		p := W(sym.D_PthDBT)
 		if 0 == p {
+			L("DoDumpAllPathDescs: D_PthDPT is zero.")
 			return
 		}
+		assert(p&255 == 0)
+		PrettyDumpHex64(p, 64)
 
 		for i := Word(0); i < 32; i++ {
 			q := W(p + i*2)
 			if q != 0 {
-				L("PathDesc[%x]: %x", i, q)
+				// L("PathDesc[%x]: %x", i, q)
 
 				for j := Word(0); j < 4; j++ {
 					k := i*4 + j
-					L("........[%x]: %x", j, k)
+					// L("........[%x]: %x", j, k)
 					if k == 0 {
 						continue
-					} // There is no path desc 0 (it's the table).
+					} // There is no path desc 0 (it's the table of allocs).
 					DoDumpPathDesc(q + j*64)
 				}
 
@@ -462,14 +520,24 @@ func DoDumpAllPathDescs() {
 	}
 }
 
-func DoDumpProcDesc(a Word) {
+func DoDumpProcDesc(a Word, queue string, followQ bool) {
+	PrettyDumpHex64(a, 0x100)
+	if B(a+sym.P_PID) == 0 {
+		L("but PID=0")
+		return
+	}
+
 	tmp := MmuTask
 	MmuTask = 0
 	defer func() {
 		MmuTask = tmp
 	}()
 
-	L("a=%04x", a)
+	currency := ""
+	if W(sym.D_Proc) == a {
+		currency = " CURRENT "
+	}
+	// L("a=%04x", a)
 	switch Level {
 	case 1, 2:
 		{
@@ -492,29 +560,26 @@ func DoDumpProcDesc(a Word) {
 					}
 				}
 			}
-			L("Process @%x: id=%x pid=%x sid=%x cid=%x module=%s", a, B(a+sym.P_ID), B(a+sym.P_PID), B(a+sym.P_SID), B(a+sym.P_CID), mod_str)
-			/* some Level1
-			L("   sp=%x chap=%x Addr=%x PagCnt=%x User=%x Pri=%x Age=%x State=%x",
-				W(a+sym.P_SP), B(a+sym.P_CHAP), B(a+sym.P_ADDR), B(a+sym.P_PagCnt), W(a+sym.P_User), B(a+sym.P_Prior), B(a+sym.P_Age), B(a+sym.P_State))
-			*/
+			L("Process %x %s %s @%x: id=%x pid=%x sid=%x cid=%x module=%s", B(a+sym.P_PID), queue, currency, a, B(a+sym.P_ID), B(a+sym.P_PID), B(a+sym.P_SID), B(a+sym.P_CID), mod_str)
+
+			switch Level {
+			case 1:
+				L("   sp=%x chap=?x Addr=?x PagCnt=%x User=%x Pri=%x Age=%x State=%x",
+					W(a+sym.P_SP) /*B(a+sym.P_CHAP), B(a+sym.P_ADDR),*/, B(a+sym.P_PagCnt), W(a+sym.P_User), B(a+sym.P_Prior), B(a+sym.P_Age), B(a+sym.P_State))
+			case 2:
+				L("   sp=%x task=%x PagCnt=%x User=%x Pri=%x Age=%x State=%x",
+					W(a+sym.P_SP), B(a+sym.P_Task), B(a+sym.P_PagCnt), W(a+sym.P_User), B(a+sym.P_Prior), B(a+sym.P_Age), B(a+sym.P_State))
+			}
+
 			L("   Queue=%x IOQP=%x IOQN=%x Signal=%x SigVec=%x SigDat=%x",
 				W(a+sym.P_Queue), B(a+sym.P_IOQP), B(a+sym.P_IOQN), B(a+sym.P_Signal), B(a+sym.P_SigVec), B(a+sym.P_SigDat))
-			L("   DIO %x %x %x %x %x %x PATH %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x",
+			L("   DIO %x %x %x  %x %x %x  PATH %x %x %x %x  %x %x %x %x  %x %x %x %x  %x %x %x %x",
 				W(a+sym.P_DIO), W(a+sym.P_DIO+2), W(a+sym.P_DIO+4),
 				W(a+sym.P_DIO+6), W(a+sym.P_DIO+8), W(a+sym.P_DIO+10),
 				B(a+sym.P_Path+0), B(a+sym.P_Path+1), B(a+sym.P_Path+2), B(a+sym.P_Path+3),
 				B(a+sym.P_Path+4), B(a+sym.P_Path+5), B(a+sym.P_Path+6), B(a+sym.P_Path+7),
 				B(a+sym.P_Path+8), B(a+sym.P_Path+9), B(a+sym.P_Path+10), B(a+sym.P_Path+11),
 				B(a+sym.P_Path+12), B(a+sym.P_Path+13), B(a+sym.P_Path+14), B(a+sym.P_Path+15))
-			if W(a+sym.P_Queue) != 0 {
-				// If current proc, it has no queue.
-				// Other procs are in a queue.
-				if W(sym.D_Proc) != a {
-					log.Printf("BUG printing PROC: %x", a)
-					return
-					DoDumpProcDesc(W(a + sym.P_Queue))
-				}
-			}
 
 			if paranoid {
 				if B(a+sym.P_ID) > 10 {
@@ -533,26 +598,54 @@ func DoDumpProcDesc(a Word) {
 					panic("P_User")
 				}
 			}
+
+			if followQ && W(a+sym.P_Queue) != 0 && queue != "Current" {
+				DoDumpProcDesc(W(a+sym.P_Queue), queue, followQ)
+			}
+
 		}
 	}
 }
 
 func DoDumpProcesses() {
+	saved_mmut := MmuTask
+	MmuTask = 0
+	saved_map00 := MmuMap[0][0]
+	MmuMap[0][0] = 0
+	defer func() {
+		MmuTask = saved_mmut
+		MmuMap[0][0] = saved_map00
+	}()
+	///////////////////////////////////
+	p := W(sym.D_PrcDBT)
+	assert(p != 0)
+	assert(p&255 == 0)
+	PrettyDumpHex64(p, 64)
+
+	for i := 0; i < 64; i++ {
+		pg := B(p + Word(i))
+		if pg == 0 {
+			break
+		}
+		DoDumpProcDesc(Word(pg)<<8, F("TABLE_%d", i), false)
+	}
+
+	///////////////////////////////////
+
 	if W(sym.D_Proc) != 0 {
-		L("D_Proc: CURRENT:")
-		DoDumpProcDesc(W(sym.D_Proc))
+		DoDumpProcDesc(W(sym.D_Proc), "Current", false)
 	}
 	if W(sym.D_AProcQ) != 0 {
-		L("D_AProcQ: Active:")
-		DoDumpProcDesc(W(sym.D_AProcQ))
+		// L("D_AProcQ: Active:")
+		DoDumpProcDesc(W(sym.D_AProcQ), "ActiveQ", true)
 	}
 	if W(sym.D_WProcQ) != 0 {
-		L("D_WProcQ: Wait:")
-		DoDumpProcDesc(W(sym.D_WProcQ))
+		// L("D_WProcQ: Wait:")
+		DoDumpProcDesc(W(sym.D_WProcQ), "WaitQ", true)
 	}
 	if W(sym.D_SProcQ) != 0 {
-		L("D_SProcQ: Sleep")
-		DoDumpProcDesc(W(sym.D_SProcQ))
+		// L("D_SProcQ: Sleep")
+		DoDumpProcDesc(W(sym.D_SProcQ), "SleepQ", true)
 	}
 }
 
@@ -917,43 +1010,57 @@ func ModuleId(begin Word, m Mapping) string {
 	return fmt.Sprintf("%s.%04x%02x%02x%02x", modname, sz, crc1, crc2, crc3)
 }
 
+func WithKernelTask(fn func()) {
+	saved_mmut := MmuTask
+	MmuTask = 0
+	saved_map00 := MmuMap[0][0]
+	MmuMap[0][0] = 0
+	defer func() {
+		MmuTask = saved_mmut
+		MmuMap[0][0] = saved_map00
+	}()
+
+	fn()
+}
+
 func MemoryModules() {
-	if !V['v'] {
-		return
-	}
+	WithKernelTask(func() {
 
-	DumpAllMemory()
-	DumpPageZero()
-	DumpProcesses()
-	DumpAllPathDescs()
+		L("[all mem]")
+		DumpAllMemory()
+		L("[page zero]")
+		DumpPageZero()
+		L("[processes]")
+		DumpProcesses()
+		L("[all path descs]")
+		DumpAllPathDescs()
+		L("[block zero]")
+		DoDumpBlockZero()
+		L("\n#MemoryModules(")
 
-	if !V['o'] {
-		return
-	}
+		var buf bytes.Buffer
+		Z(&buf, "MOD name begin:end(len/blocklen) [addr:dat,blocklen,begin,links] dat\n")
 
-	L("\n#MemoryModules(")
-	var buf bytes.Buffer
-	Z(&buf, "MOD name begin:end(len/blocklen) [addr:dat,blocklen,begin,links] dat\n")
+		dirStart := SysMemW(sym.D_ModDir)
+		dirLimit := SysMemW(sym.D_ModEnd)
+		for i := dirStart; i < dirLimit; i += 8 {
+			datPtr := SysMemW(i + 0)
+			usedBytes := SysMemW(i + 2)
+			begin := SysMemW(i + 4)
+			links := SysMemW(i + 6)
+			if datPtr == 0 {
+				continue
+			}
 
-	dirStart := SysMemW(sym.D_ModDir)
-	dirLimit := SysMemW(sym.D_ModEnd)
-	for i := dirStart; i < dirLimit; i += 8 {
-		datPtr := SysMemW(i + 0)
-		usedBytes := SysMemW(i + 2)
-		begin := SysMemW(i + 4)
-		links := SysMemW(i + 6)
-		if datPtr == 0 {
-			continue
+			m := GetMapping(datPtr)
+			end := begin + PeekWWithMapping(begin+2, m)
+			name := begin + PeekWWithMapping(begin+4, m)
+
+			Z(&buf, "MOD %s %x:%x(%x/%x) [%x:%x,%x,%x,%x] %v\n", Os9StringWithMapping(name, m), begin, end, end-begin, usedBytes, i, datPtr, usedBytes, begin, links, m)
 		}
-
-		m := GetMapping(datPtr)
-		end := begin + PeekWWithMapping(begin+2, m)
-		name := begin + PeekWWithMapping(begin+4, m)
-
-		Z(&buf, "MOD %s %x:%x(%x/%x) [%x:%x,%x,%x,%x] %v\n", Os9StringWithMapping(name, m), begin, end, end-begin, usedBytes, i, datPtr, usedBytes, begin, links, m)
-	}
-	L("%s", buf.String())
-	L("#MemoryModules)")
+		L("%s", buf.String())
+		L("#MemoryModules)")
+	})
 }
 
 func HandleBtBug() {

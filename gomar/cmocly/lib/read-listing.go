@@ -19,6 +19,7 @@ type AsmListingRecord struct {
 }
 
 func ReadAsmListing(filename string) map[string][]*AsmListingRecord {
+	log.Printf("ENTER ReadAsmListing %q", filename)
 	fd, err := os.Open(filename)
 	if err != nil {
 		log.Fatalf("ReadLinkerMap: Cannot open %q: %v", filename, err)
@@ -103,6 +104,14 @@ func ReadAsmListing(filename string) map[string][]*AsmListingRecord {
 	}
 	if err = sc.Err(); err != nil {
 		log.Fatalf("ReadLinkerMap: while reading %q: %v", filename, err)
+	}
+	for _k, _v := range z {
+		log.Printf("SECTION %q LEN %d", _k, len(_v))
+		if _k == "code" {
+			for _i, _e := range _v {
+				log.Printf("[%05d] %04x #%d[%q]. %q", _i, _e.Location, len(_e.Bytes), _e.Bytes, _e.Instruction)
+			}
+		}
 	}
 	return z
 }

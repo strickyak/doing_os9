@@ -128,7 +128,7 @@ func (rs RunSpec) RunAssembler(filename string) {
 	}
 }
 func (rs RunSpec) RunLinker(ofiles []string, outbin string) {
-	cmdargs := []string{"--os9", "-i", "--lwlink=" + rs.LwLink}
+	cmdargs := []string{"--os9", "-i", "--lwlink=" + rs.LwLink, "-o", outbin}
 	cmdargs = append(cmdargs, ofiles...)
 	cmd := exec.Command(rs.Cmoc, cmdargs...)
 	log.Printf("RUNNING: %v", cmd)
@@ -226,6 +226,14 @@ func OutputFinalListing(
 	alists map[string]map[string][]*AsmListingRecord,
 	mod []byte,
 	w io.Writer) {
+
+	for _k, _v := range alists {
+		log.Printf("ALIST: %q ...", _k)
+		for _s, _e := range _v {
+			log.Printf("...... SECTION %q # %d", _s, len(_e))
+		}
+	}
+
 	for _, rec := range lmap {
 		if rec.Section == "" {
 			// It's a Symbol, not a Section.
@@ -235,12 +243,17 @@ func OutputFinalListing(
 			// BSS have no instructions.
 			continue
 		}
+		if false && rec.Section != "code" {
+			// REALLY WE WANT TO SEE code.
+			continue
+		}
 		start := rec.Start
 		n := rec.Length
 		if n == 0 {
 			continue
 		}
-		f := Basename(rec.Filename)
+		/////###### f := Basename(rec.Filename)
+		f := rec.Filename[:len(rec.Filename)-2] // Trim off ".o"
 		alist, ok := alists[f]
 		if !ok {
 			log.Printf("Missing alist file: %q -> %q", rec.Filename, f)
@@ -253,10 +266,12 @@ func OutputFinalListing(
 		}
 		fmt.Fprintf(w, "\n")
 		for _, line := range seclist {
-			if line.Location >= n {
-				log.Printf("Line location too big (>= %d): %#v", n, line)
-				continue
-			}
+			/*
+				if line.Location >= n {
+					log.Printf("Line location too big (>= %d): %#v", n, line)
+					continue
+				}
+			*/
 
 			hex := line.Bytes
 			/*
@@ -296,10 +311,14 @@ func GetOs9ModuleName(mod []byte) string {
 }
 
 func Basename(s string) string {
-	// base name (directory removed)
-	base := filepath.Base(s)
-	// only what is before the first '.'
-	return strings.Split(base, ".")[0]
+	return s[:len(s)-2] // Trim off ".o"
+
+	/*
+		// base name (directory removed)
+		base := filepath.Base(s)
+		// only what is before the first '.'
+		return strings.Split(base, ".")[0]
+	*/
 }
 
 func UseBasenames(

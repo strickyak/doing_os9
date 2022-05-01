@@ -169,9 +169,9 @@ func DumpPageZero()     { DoDumpPageZero() }
 func DumpProcesses()    { DoDumpProcesses() }
 func DumpAllPathDescs() { DoDumpAllPathDescs() }
 
-func LogIO(f string, args ...interface{}) {
-	L(f, args...)
-}
+//func LogIO(f string, args ...interface{}) {
+//	L(f, args...)
+//}
 
 // Call this before each instruction until it returns false.
 func EarlyAction() bool {

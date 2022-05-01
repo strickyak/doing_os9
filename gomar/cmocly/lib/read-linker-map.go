@@ -32,6 +32,7 @@ func BasenamesOfLinkerMap(lmap []*LinkerMapRecord) []string {
 }
 
 func ReadLinkerMap(filename string) []*LinkerMapRecord {
+	log.Printf("ENTER ReadLinkerMap %q", filename)
 	fd, err := os.Open(filename)
 	if err != nil {
 		log.Fatalf("ReadLinkerMap: Cannot open %q: %v", filename, err)

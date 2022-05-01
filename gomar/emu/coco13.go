@@ -56,9 +56,9 @@ func GetIOByte(a Word) byte {
 			// Strobing keyboard.
 			if kbd_ch != 0 {
 				z = keypress(kbd_probe, kbd_ch)
-				L("KEYBOARD: %02x %q -> %02x\n", kbd_probe, string(rune(kbd_ch)), z)
+				Ld("KEYBOARD: %02x %q -> %02x\n", kbd_probe, string(rune(kbd_ch)), z)
 			} else {
-				L("KEYBOARD: %02x      -> %02x\n", kbd_probe, z)
+				Ld("KEYBOARD: %02x      -> %02x\n", kbd_probe, z)
 			}
 		}
 
@@ -74,7 +74,7 @@ func GetIOByte(a Word) byte {
 		} else {
 			z |= 0x80
 		}
-		L("PIA: Get IO byte $%04x -> $%02x\n", a, z)
+		Ld("PIA: Get IO byte $%04x -> $%02x\n", a, z)
 		return z
 	case 0xFF01:
 		return 0
@@ -85,7 +85,7 @@ func GetIOByte(a Word) byte {
 
 	/* PIA 1 */
 	case 0xFF22:
-		L("TODO: Get Io byte 0x%04x\n", a)
+		Ld("TODO: Get Io byte 0x%04x\n", a)
 		return 0
 
 	case 0xFF48: /* STATREG */
@@ -95,13 +95,13 @@ func GetIOByte(a Word) byte {
 		z = 0
 		if disk_i < 256 {
 			z = disk_stuff[disk_i]
-			L("fnord %x -> %x\n", disk_i, z)
+			Ld("fnord %x -> %x\n", disk_i, z)
 		} else {
 			z = 0
 		}
 		disk_i++
 		if disk_i == 257 {
-			L("Read SET NMI_PENDING\n")
+			Ld("Read SET NMI_PENDING\n")
 			irqs_pending |= NMI_PENDING
 			z = 0
 			disk_i = 0
@@ -109,21 +109,21 @@ func GetIOByte(a Word) byte {
 		return z
 
 	case 0xFF92: /* GIME IRQ */
-		log.Printf("GIME -- Read FF92 (IRQ)")
+		Ld("GIME -- Read FF92 (IRQ)")
 		switch Level {
 		case 2:
 			return 0x08
 		}
 		return 0
 	case 0xFF93: /* GIME FIRQ */
-		log.Printf("GIME -- Read FF93 (FIRQ) NOT IMP")
+		Ld("GIME -- Read FF93 (FIRQ) NOT IMP")
 		return 0
 
 	case 0xFF83: /* emudsk */
 		return EmudskGetIOByte(a)
 
 	default:
-		L("UNKNOWN GetIOByte: 0x%04x\n", a)
+		Ld("UNKNOWN GetIOByte: 0x%04x\n", a)
 		return 0
 	}
 	panic("notreached")
@@ -165,7 +165,7 @@ func ExplainBits(b byte, meanings []string) string {
 
 func PutIOByte(a Word, b byte) {
 	PokeB(a, b)
-	log.Printf("#PutIOByte: $%04x <- $%02x", a, b)
+	Ld("#PutIOByte: $%04x <- $%02x", a, b)
 
 	if 0xFF90 <= a && a < 0xFFC0 {
 		PutGimeIOByte(a, b)
@@ -182,7 +182,7 @@ func PutIOByte(a Word, b byte) {
 
 	case 0xFF02:
 		kbd_probe = b
-		L("PIA0: Put IO byte $%04x <- $%02x\n", a, b)
+		Ld("PIA0: Put IO byte $%04x <- $%02x\n", a, b)
 		return
 
 	case 0xFF00,
@@ -191,18 +191,18 @@ func PutIOByte(a Word, b byte) {
 		if a == 0xFF03 && b == 0x80 { // Enabling the Frame Sync IRQ? ???
 			*FlagTraceAfter = 1 // Enable trace TODO ddt
 		}
-		L("PIA0: Put IO byte $%04x <- $%02x\n", a, b)
+		Ld("PIA0: Put IO byte $%04x <- $%02x\n", a, b)
 		return
 
 	case 0xFF20,
 		0xFF21,
 		0xFF23:
-		L("PIA1: Put IO byte $%04x <- $%02x\n", a, b)
+		Ld("PIA1: Put IO byte $%04x <- $%02x\n", a, b)
 		return
 
 	case 0xFF22:
-		L("VDG: %s", ExplainBits(b, FF22Bits))
-		L("PIA1: Put IO byte $%04x <- $%02x\n", a, b)
+		Ld("VDG: %s", ExplainBits(b, FF22Bits))
+		Ld("PIA1: Put IO byte $%04x <- $%02x\n", a, b)
 		return
 
 	case 0xFF40: /* CONTROL */
@@ -211,7 +211,7 @@ func PutIOByte(a Word, b byte) {
 			disk_side = CondB(b&0x40 != 0, 1, 0)
 			disk_drive = CondB((b&1 != 0), 1, CondB((b&2 != 0), 2, CondB((b&4 != 0), 3, 0)))
 
-			L("CONTROL: disk_command %x (control %x side %x drive %x)\n", disk_command, disk_control, disk_side, disk_drive)
+			Ld("CONTROL: disk_command %x (control %x side %x drive %x)\n", disk_command, disk_control, disk_side, disk_drive)
 			if b == 0 {
 				// log.Panicf("panic: disk_command 0")
 				break
@@ -244,7 +244,7 @@ func PutIOByte(a Word, b byte) {
 
 					assert(n == 256)
 					disk_i = 0
-					L("READ fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8)
+					Ld("READ fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8)
 				}
 			case 0xA0:
 				{
@@ -263,7 +263,7 @@ func PutIOByte(a Word, b byte) {
 					}
 
 					disk_i = 0
-					L("WRITE fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8)
+					Ld("WRITE fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8)
 				}
 			}
 			disk_command = 0
@@ -276,7 +276,7 @@ func PutIOByte(a Word, b byte) {
 				{
 					disk_track = disk_data
 					disk_status = 0
-					L("Seek : %d\n", disk_data)
+					Ld("Seek : %d\n", disk_data)
 				}
 			case 0x80:
 				{ // Read Sector //
@@ -291,17 +291,17 @@ func PutIOByte(a Word, b byte) {
 					disk_sector = 0
 					disk_i = 0
 					disk_stuff = zero_disk_stuff
-					L("Reset Disk\n")
+					Ld("Reset Disk\n")
 				}
 			}
 		}
 	case 0xFF49: /* TRACK */
 		disk_track = b
-		L("Track : %d\n", b)
+		Ld("Track : %d\n", b)
 
 	case 0xFF4A: /* SECTOR */
 		disk_sector = b
-		L("Sector-1 : %d\n", b-1)
+		Ld("Sector-1 : %d\n", b-1)
 
 	case 0xFF4B:
 		{ /* DATA */
@@ -311,7 +311,7 @@ func PutIOByte(a Word, b byte) {
 			} // else
 			if true {
 				if disk_i < 256 {
-					L("fnord %x %x <- %x\n", prev_disk_command, disk_i, b)
+					Ld("fnord %x %x <- %x\n", prev_disk_command, disk_i, b)
 					disk_stuff[disk_i] = b
 					///++disk_i;
 				}
@@ -322,7 +322,7 @@ func PutIOByte(a Word, b byte) {
 				}
 				// TODO -- fix writing.
 				if disk_i >= 256 {
-					L("Write SET NMI_PENDING\n")
+					Ld("Write SET NMI_PENDING\n")
 					irqs_pending |= NMI_PENDING
 					disk_i = 0
 
@@ -334,151 +334,151 @@ func PutIOByte(a Word, b byte) {
 					if n != 256 {
 						log.Panicf("Error in disk_fd.Write: Short n=%d", n)
 					}
-					L("DID_WRITE fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8)
+					Ld("DID_WRITE fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8)
 				}
 			}
 
 		}
 
 	case 0xFF42:
-		L("Write to $FF42")
+		Ld("Write to $FF42")
 	case 0xFF7F:
-		L("Write to $FF7F")
+		Ld("Write to $FF7F")
 	case 0xFFE1:
-		L("Write to $FFE1")
+		Ld("Write to $FFE1")
 	case 0xFFE2:
-		L("Write to $FFE2")
+		Ld("Write to $FFE2")
 	case 0xFFE3:
-		L("Write to $FFE3")
+		Ld("Write to $FFE3")
 	case 0xFFE8:
-		L("Write to $FFE8")
+		Ld("Write to $FFE8")
 	case 0xFF51:
-		L("Write to $FF51")
+		Ld("Write to $FF51")
 
 		/* VDG */
 	case 0xFFC0:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgVx &^= 1
-		L("VDG VdgVx <- $%x", VdgVx)
+		Ld("VDG VdgVx <- $%x", VdgVx)
 	case 0xFFC1:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgVx |= 1
-		L("VDG VdgVx <- $%x", VdgVx)
+		Ld("VDG VdgVx <- $%x", VdgVx)
 	case 0xFFC2:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgVx &^= 2
-		L("VDG VdgVx <- $%x", VdgVx)
+		Ld("VDG VdgVx <- $%x", VdgVx)
 	case 0xFFC3:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgVx |= 2
-		L("VDG VdgVx <- $%x", VdgVx)
+		Ld("VDG VdgVx <- $%x", VdgVx)
 	case 0xFFC4:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgVx &^= 4
-		L("VDG VdgVx <- $%x", VdgVx)
+		Ld("VDG VdgVx <- $%x", VdgVx)
 	case 0xFFC5:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgVx |= 4
-		L("VDG VdgVx <- $%x", VdgVx)
+		Ld("VDG VdgVx <- $%x", VdgVx)
 
 	case 0xFFC6:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx &^= 1
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFC7:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx |= 1
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFC8:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx &^= 2
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFC9:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx |= 2
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFCA:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx &^= 4
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFCB:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx |= 4
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFCC:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx &^= 8
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFCD:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx |= 8
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFCE:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx &^= 16
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFCF:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx |= 16
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFD0:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx &^= 32
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFD1:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx |= 32
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFD2:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx &^= 64
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 	case 0xFFD3:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgFx |= 64
-		L("VDG VdgFx <- $%x", VdgFx)
+		Ld("VDG VdgFx <- $%x", VdgFx)
 
 	case 0xFFD4:
 		VdgSamPage = 0
-		L("VDG VdgSamPage <- $%x", VdgSamPage)
+		Ld("VDG VdgSamPage <- $%x", VdgSamPage)
 	case 0xFFD5:
 		VdgSamPage = 1
-		L("VDG VdgSamPage <- $%x", VdgSamPage)
+		Ld("VDG VdgSamPage <- $%x", VdgSamPage)
 
 	case 0xFFD6:
 		VdgRx &^= 1
-		L("VDG VdgRx <- $%x", VdgRx)
+		Ld("VDG VdgRx <- $%x", VdgRx)
 	case 0xFFD7:
 		VdgRx |= 1
-		L("VDG VdgRx <- $%x", VdgRx)
+		Ld("VDG VdgRx <- $%x", VdgRx)
 	case 0xFFD8:
 		VdgRx &^= 2
-		L("VDG VdgRx <- $%x", VdgRx)
+		Ld("VDG VdgRx <- $%x", VdgRx)
 	case 0xFFD9:
 		VdgRx |= 2
-		L("VDG VdgRx <- $%x", VdgRx)
+		Ld("VDG VdgRx <- $%x", VdgRx)
 
 	case 0xFFDA:
 		VdgMx &^= 1
-		L("VDG VdgMx <- $%x", VdgMx)
+		Ld("VDG VdgMx <- $%x", VdgMx)
 	case 0xFFDB:
 		VdgMx |= 1
-		L("VDG VdgMx <- $%x", VdgMx)
+		Ld("VDG VdgMx <- $%x", VdgMx)
 	case 0xFFDC:
 		VdgMx &^= 2
-		L("VDG VdgMx <- $%x", VdgMx)
+		Ld("VDG VdgMx <- $%x", VdgMx)
 	case 0xFFDD:
 		VdgMx |= 2
-		L("VDG VdgMx <- $%x", VdgMx)
+		Ld("VDG VdgMx <- $%x", VdgMx)
 
 	case 0xFFDE:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgRomMode = 1
-		L("VDG VdgRomMode <- $%x", VdgRomMode)
+		Ld("VDG VdgRomMode <- $%x", VdgRomMode)
 	case 0xFFDF:
-		L("VDG PutByte OK: %x <- %x\n", a, b)
+		Ld("VDG PutByte OK: %x <- %x\n", a, b)
 		VdgRomMode = 0
-		L("VDG VdgRomMode <- $%x", VdgRomMode)
+		Ld("VDG VdgRomMode <- $%x", VdgRomMode)
 
 	case 0xFF80,
 		0xFF81,
@@ -519,7 +519,7 @@ func DumpHexLine(label string, bb []byte) {
 }
 
 func DoDumpVdgBits() {
-	L("VDG/SAM BITS: F=%x M=%x R=%x V=%x RomMode=%x SamPage=%x",
+	Ld("VDG/SAM BITS: F=%x M=%x R=%x V=%x RomMode=%x SamPage=%x",
 		VdgFx, VdgMx, VdgRx, VdgVx, VdgRomMode, VdgSamPage)
 }
 
@@ -529,10 +529,10 @@ func DoDumpAllMemory() {
 	}
 	DoDumpVdgBits()
 	DumpGimeStatus()
-	L("ExplainMMU: %s", ExplainMMU())
+	Ld("ExplainMMU: %s", ExplainMMU())
 	var i, j int
 	var buf bytes.Buffer
-	L("\n#DumpAllMemory(\n")
+	Ld("\n#DumpAllMemory(\n")
 	for i = 0; i < 0x10000; i += 32 {
 		if (i & 0x1FFF) == 0 {
 			// For coco3
@@ -569,9 +569,9 @@ func DoDumpAllMemory() {
 			}
 			buf.WriteRune(r)
 		}
-		L("%s\n", buf.String())
+		Ld("%s\n", buf.String())
 	}
-	L("#DumpAllMemory)\n")
+	Ld("#DumpAllMemory)\n")
 }
 
 func ScanRamForOs9Modules() []*ModuleFound {

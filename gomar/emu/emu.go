@@ -984,35 +984,45 @@ func Os9StringPhys(addr int) string {
 	return buf.String()
 }
 
-func PrintableStringThruCrOrMax(a Word, max Word) string {
+func PrintableStringThruEOS(a Word, max Word) string {
 	var buf bytes.Buffer
-	for i := Word(0); i < yreg && i < max; i++ {
+	for i := Word(0); i < max; i++ {
 		ch := PeekB(a + i)
 		if 32 <= ch && ch < 127 {
 			buf.WriteByte(ch)
 		} else if ch == '\n' || ch == '\r' {
-			buf.WriteByte('\n')
+			buf.WriteByte(ch)
+		} else if ch == 0 {
+			break
 		} else {
 			Z(&buf, "{%d}", ch)
 		}
-		if ch == '\r' {
+		if ch == '\n' || ch == '\r' {
 			break
 		}
 	}
 	return buf.String()
 }
 
-func EscapeStringThruCrOrMax(a Word, max Word) string {
+func PrintableMemory(a Word, max Word) string {
 	var buf bytes.Buffer
+	scratch := false
+	if max > 100 {
+		max = 100
+	}
 	for i := Word(0); i < yreg && i < max; i++ {
 		ch := PeekB(a + i)
 		if 32 <= ch && ch < 127 {
 			buf.WriteByte(ch)
+			scratch = false
+		} else if ch == '\n' || ch == '\r' {
+			buf.WriteByte(ch)
+			scratch = false
 		} else {
-			Z(&buf, "{%d}", ch)
-		}
-		if ch == '\r' {
-			break
+			if !scratch {
+				buf.WriteByte('~')
+			}
+			scratch = true
 		}
 	}
 	return buf.String()
@@ -1149,7 +1159,7 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 
 	case 0x2C:
 		s = "F$AProc  : Enter Active Process Queue"
-		p = F("proc=%x\n", xreg)
+		p = F("proc=%x", xreg)
 
 	case 0x2D:
 		s = "F$NProc  : Start Next Process"
@@ -1262,12 +1272,25 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 	case 0x8A:
 		s = "I$Write  : Write Data"
 		if true || !hyp {
+			begin, length := xreg, yreg
+
+			WithMmuTask(1, func() {
+				p = PrintableMemory(xreg, yreg)
+			})
+
 			path_num := GetAReg()
 			proc := PeekW(sym.D_Proc)
-			path := PeekB(proc + P_Path + Word(path_num))
-			pathDBT := PeekW(sym.D_PthDBT)
-			q := PeekW(pathDBT + (Word(path) >> 2))
-			p = F("path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
+
+			var pathDBT, q Word
+			var pid, path byte
+			if proc != 0 {
+				pid = PeekB(proc + sym.P_ID)
+				path = PeekB(proc + P_Path + Word(path_num))
+				pathDBT = PeekW(sym.D_PthDBT)
+				q = PeekW(pathDBT + (Word(path) >> 2))
+			}
+
+			p = F("ZYX path_num=%x proc=%x path=%x dbt=%x q=%x @%x#%x %q", path_num, proc, path, pathDBT, q, begin, length, p)
 			if q != 0 {
 				pd := q + 64*(Word(path)&3)
 				dev := PeekW(pd + sym.PD_DEV)
@@ -1283,6 +1306,7 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 					fmt.Printf("(%d)<[%s]>", sz, string(mem[addy:addy+sz])) // Bug: if crosses mem block.
 				}
 			}
+			fmt.Printf("proc=%x id=%x XYZ n=%x p=%x {{{%s}}}\n", proc, pid, yreg, xreg, p)
 		}
 
 	case 0x8B:
@@ -1290,9 +1314,9 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 
 	case 0x8C:
 		s = "I$WritLn : Write Line of ASCII Data"
-		// p = F("%q ", EscapeStringThruCrOrMax(xreg, yreg))
+		{
+			// p = F("%q ", EscapeStringThruCrOrMax(xreg, yreg))
 
-		if false {
 			//			if true || !hyp {
 			//				path_num := GetAReg()
 			//				proc := PeekW(sym.D_Proc)
@@ -1308,21 +1332,34 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 			//					name := ModuleName(PeekW(dev + sym.V_DESC))
 			//					p += F("desc=%x=%s ", desc, name)
 			//					if name == "Term" {
-			//						//fmt.Printf("%s", PrintableStringThruCrOrMax(xreg, yreg))
+			//						//fmt.Printf("%s", PrintableStringThruEOS(xreg, yreg))
 			//						p += F(" Term: %q", PrintableStringThruCrOrMax(xreg, yreg))
 			//					}
 			//				}
 			//			}
-		} else {
+
+			var path_num byte
+			var proc Word
+			var path byte
+			WithMmuTask(0, func() {
+				path_num = GetAReg()
+				proc = PeekW(sym.D_Proc)
+				path = PeekB(proc + P_Path + Word(path_num))
+			})
 			WithMmuTask(1, func() {
-				s := PrintableStringThruCrOrMax(xreg, yreg)
-				fmt.Printf("%s", s)
-				for _, ch := range []byte(s) {
+				str := PrintableStringThruEOS(xreg, yreg)
+
+				//< fmt.Printf("%s", s)
+				fmt.Printf("[%d/%d/%d/%q]\n", path_num, proc, path, str)
+				p = fmt.Sprintf("[%d/%d/%d/%q]", proc, path_num, path, str)
+
+				for _, ch := range []byte(str) {
 					if Disp != nil {
 						Disp.PutChar(ch)
 					}
 				}
 			})
+
 		}
 
 	case 0x8D:
@@ -1341,10 +1378,10 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 		s = "I$DeletX : Delete from current exec dir"
 
 	}
-	if s == "" {
+	if true || s == "" {
 		s, _ = sym.SysCallNames[b]
 	}
-	return F("OS9$%02x {%s} {%s} #%d", b, s, p, Steps), returns
+	return F("OS9$%02x <%s> {%s} #%d", b, s, p, Steps), returns
 }
 
 // 200 = 0x80 = CLEAR; 033=ESC;  201=F1, 202=F2, 203=BREAK
@@ -2370,7 +2407,15 @@ func swi() {
 		handler = W(0xfffa)
 	case 1: /* SWI2 */
 		describe, returns := DecodeOs9Opcode(B(pcreg))
-		L("OS9KERNEL%d: %s", MmuTask, describe)
+		proc := W0(sym.D_Proc)
+		pmodul := W0(proc + sym.P_PModul)
+		for k := 0; k < 16; k++ {
+			L("[%x] %x %c\n", k, B0(pmodul+Word(k)), (0x40 | 0x7F&B0(pmodul+Word(k))))
+		}
+		for k := 0; k < 16; k++ {
+			L("[%x] %x %c\n", k, B1(pmodul+Word(k)), (0x40 | 0x7F&B1(pmodul+Word(k))))
+		}
+		L("{proc=%x#%x,pmodul=%x} OS9KERNEL%d: %s", proc, B0(proc+sym.P_ID), pmodul, MmuTask, describe)
 		L("\tregs: %s", Regs())
 		L("\t%s", ExplainMMU())
 
@@ -3140,4 +3185,40 @@ func DoMemoryDumps() {
 	log.Printf("# pre timer interrupt #")
 	DoDumpAllMemoryPhys()
 	log.Printf("# pre timer interrupt #")
+}
+
+func B0(addr Word) byte {
+	var b byte
+	WithMmuTask(0, func() {
+		b = B(addr)
+	})
+	log.Printf("==== kern byte @%x -> %x", addr, b)
+	return b
+}
+
+func W0(addr Word) Word {
+	var w Word
+	WithMmuTask(0, func() {
+		w = W(addr)
+	})
+	log.Printf("==== kern word @%x -> %x", addr, w)
+	return w
+}
+
+func B1(addr Word) byte {
+	var b byte
+	WithMmuTask(1, func() {
+		b = B(addr)
+	})
+	log.Printf("==== kern byte @%x -> %x", addr, b)
+	return b
+}
+
+func W1(addr Word) Word {
+	var w Word
+	WithMmuTask(1, func() {
+		w = W(addr)
+	})
+	log.Printf("==== kern word @%x -> %x", addr, w)
+	return w
 }

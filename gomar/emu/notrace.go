@@ -19,6 +19,6 @@ func DumpPageZero()     {}
 func DumpProcesses()    {}
 func DumpAllPathDescs() {}
 
-func LogIO(f string, args ...interface{}) {}
+//func LogIO(f string, args ...interface{}) {}
 
 func EarlyAction() bool { return false }
