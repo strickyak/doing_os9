@@ -1290,7 +1290,8 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 				q = PeekW(pathDBT + (Word(path) >> 2))
 			}
 
-			p = F("ZYX path_num=%x proc=%x path=%x dbt=%x q=%x @%x#%x %q", path_num, proc, path, pathDBT, q, begin, length, p)
+			//< p = F("ZYX path_num=%x proc=%x path=%x dbt=%x q=%x @%x#%x %q", path_num, proc, path, pathDBT, q, begin, length, p)
+			p = F("%q", p)
 			if q != 0 {
 				pd := q + 64*(Word(path)&3)
 				dev := PeekW(pd + sym.PD_DEV)
@@ -1306,7 +1307,9 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 					fmt.Printf("(%d)<[%s]>", sz, string(mem[addy:addy+sz])) // Bug: if crosses mem block.
 				}
 			}
-			fmt.Printf("proc=%x id=%x XYZ n=%x p=%x {{{%s}}}\n", proc, pid, yreg, xreg, p)
+			//< fmt.Printf("proc=%x id=%x XYZ n=%x p=%x {{{%s}}}\n", proc, pid, yreg, xreg, p)
+			fmt.Printf("%s\n", p)
+			_, _, _ = begin, length, pid
 		}
 
 	case 0x8B:

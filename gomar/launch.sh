@@ -23,7 +23,7 @@ go run -x --tags=coco3,level2,trace \
   gomar.go \
   --borges ../borges/ \
   --trigger_os9='(?i:fork.*file=.zz)' \
-  -ttl 30s \
+  -ttl 60s \
   -boot drive/boot2coco3 \
   -disk drive/disk2 \
   2>_
