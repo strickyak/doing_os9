@@ -991,7 +991,7 @@ func PrintableStringThruEOS(a Word, max Word) string {
 		if 32 <= ch && ch < 127 {
 			buf.WriteByte(ch)
 		} else if ch == '\n' || ch == '\r' {
-			buf.WriteByte(ch)
+			buf.WriteByte('\n')
 		} else if ch == 0 {
 			break
 		} else {
@@ -1006,23 +1006,26 @@ func PrintableStringThruEOS(a Word, max Word) string {
 
 func PrintableMemory(a Word, max Word) string {
 	var buf bytes.Buffer
-	scratch := false
-	if max > 100 {
-		max = 100
-	}
+	//scratch := false
+	//if max > 2000 {
+	//max = 2000
+	//}
 	for i := Word(0); i < yreg && i < max; i++ {
 		ch := PeekB(a + i)
 		if 32 <= ch && ch < 127 {
 			buf.WriteByte(ch)
-			scratch = false
+			//scratch = false
 		} else if ch == '\n' || ch == '\r' {
-			buf.WriteByte(ch)
-			scratch = false
+			buf.WriteByte('\n')
+			//scratch = false
 		} else {
-			if !scratch {
-				buf.WriteByte('~')
-			}
-			scratch = true
+			fmt.Fprintf(&buf, "<%d>", ch)
+			//if !scratch {
+			//buf.WriteByte('<') // <~>
+			//buf.WriteByte('~') // <~>
+			//buf.WriteByte('>') // <~>
+			//}
+			//scratch = true
 		}
 	}
 	return buf.String()
@@ -1291,24 +1294,26 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 			}
 
 			//< p = F("ZYX path_num=%x proc=%x path=%x dbt=%x q=%x @%x#%x %q", path_num, proc, path, pathDBT, q, begin, length, p)
-			p = F("%q", p)
-			if q != 0 {
-				pd := q + 64*(Word(path)&3)
-				dev := PeekW(pd + sym.PD_DEV)
-				p += F("pd=%x dev=%x ", pd, dev)
-				desc := PeekW(dev + sym.V_DESC)
-				name := ModuleName(PeekW(dev + sym.V_DESC))
-				p += F("desc=%x=%s ", desc, name)
-				if name == "Term" {
-					addy := MapAddr(xreg, true)
-					sz := int(yreg)
-					//fmt.Printf("%s", string(mem[addy:addy+int(uint(yreg))]))
-					p += F(" Term: %q", string(mem[addy:addy+sz]))
-					fmt.Printf("(%d)<[%s]>", sz, string(mem[addy:addy+sz])) // Bug: if crosses mem block.
+			//< p = F("%q", p)
+			if false {
+				if q != 0 {
+					pd := q + 64*(Word(path)&3)
+					dev := PeekW(pd + sym.PD_DEV)
+					p += F("pd=%x dev=%x ", pd, dev)
+					desc := PeekW(dev + sym.V_DESC)
+					name := ModuleName(PeekW(dev + sym.V_DESC))
+					p += F("desc=%x=%s ", desc, name)
+					if name == "Term" {
+						addy := MapAddr(xreg, true)
+						sz := int(yreg)
+						//fmt.Printf("%s", string(mem[addy:addy+int(uint(yreg))]))
+						p += F(" Term: %q", string(mem[addy:addy+sz]))
+						fmt.Printf("(%d)<[%s]>", sz, string(mem[addy:addy+sz])) // Bug: if crosses mem block.
+					}
 				}
 			}
 			//< fmt.Printf("proc=%x id=%x XYZ n=%x p=%x {{{%s}}}\n", proc, pid, yreg, xreg, p)
-			fmt.Printf("%s\n", p)
+			fmt.Printf("<%s>", p)
 			_, _, _ = begin, length, pid
 		}
 
@@ -1351,9 +1356,8 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 			})
 			WithMmuTask(1, func() {
 				str := PrintableStringThruEOS(xreg, yreg)
+				fmt.Printf("%s", str)
 
-				//< fmt.Printf("%s", s)
-				fmt.Printf("[%d/%d/%d/%q]\n", path_num, proc, path, str)
 				p = fmt.Sprintf("[%d/%d/%d/%q]", proc, path_num, path, str)
 
 				for _, ch := range []byte(str) {
@@ -2391,6 +2395,8 @@ func swi() {
 	Dis_inst(swi_name[iflag], "", 5)
 	Dis_len(3 /* Often an extra byte after the SWI opcode */)
 
+	ccregOrig, sregOrig := ccreg, sreg
+
 	ccreg |= 0x80
 	PushWord(pcreg)
 	PushWord(ureg)
@@ -2403,8 +2409,18 @@ func swi() {
 	var handler Word
 	switch iflag {
 	case 0: /* SWI */
+		L("SWI")
 		if *FlagSwiFatalCoreDump {
 			FatalCoreDump()
+			ccreg, sreg = ccregOrig, sregOrig
+			return
+		} else {
+			op := PeekB(pcreg)
+			pcreg++
+			L("HyperOp %d.", op)
+			HyperOp(op)
+			ccreg, sreg = ccregOrig, sregOrig
+			return
 		}
 		ccreg |= 0xd0
 		handler = W(0xfffa)
@@ -2412,12 +2428,14 @@ func swi() {
 		describe, returns := DecodeOs9Opcode(B(pcreg))
 		proc := W0(sym.D_Proc)
 		pmodul := W0(proc + sym.P_PModul)
-		for k := 0; k < 16; k++ {
-			L("[%x] %x %c\n", k, B0(pmodul+Word(k)), (0x40 | 0x7F&B0(pmodul+Word(k))))
-		}
-		for k := 0; k < 16; k++ {
-			L("[%x] %x %c\n", k, B1(pmodul+Word(k)), (0x40 | 0x7F&B1(pmodul+Word(k))))
-		}
+		/*
+			for k := 0; k < 16; k++ {
+				L("[%x] %x %c\n", k, B0(pmodul+Word(k)), (0x40 | 0x7F&B0(pmodul+Word(k))))
+			}
+			for k := 0; k < 16; k++ {
+				L("[%x] %x %c\n", k, B1(pmodul+Word(k)), (0x40 | 0x7F&B1(pmodul+Word(k))))
+			}
+		*/
 		L("{proc=%x#%x,pmodul=%x} OS9KERNEL%d: %s", proc, B0(proc+sym.P_ID), pmodul, MmuTask, describe)
 		L("\tregs: %s", Regs())
 		L("\t%s", ExplainMMU())
