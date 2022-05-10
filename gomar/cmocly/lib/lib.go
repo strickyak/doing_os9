@@ -14,7 +14,7 @@ func parseDec(s string) int {
 }
 
 func parseHex(s string) int {
-	z, err := strconv.ParseInt(s, 16 /*hexadecimal*/, 16 /*bit*/)
+	z, err := strconv.ParseUint(s, 16 /*hexadecimal*/, 16 /*bit*/)
 	if err != nil {
 		log.Fatalf("bad hex string %q: %v", s, err)
 	}
