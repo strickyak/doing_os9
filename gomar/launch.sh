@@ -1,5 +1,7 @@
 set -eux
 
+FLAGS=$1 ; shift
+
 test -f "$1" && test -s "$1" || {
   echo "No such file: $1" >&2
   exit 13
@@ -32,15 +34,17 @@ os9 attr -per 'drive/disk2,CMDS/zz'
 
 os9 copy -r -l "$INPUT" "drive/disk2,input"
 
+BC=
 for x
 do
+  case $x in
+    *.bc ) BC=$(basename "$x") ;;
+  esac
   os9 copy -r "$x" "drive/disk2,$(basename $x)"
 done
 
 (
-  # echo 'dir -x'
-  echo 'dir -e'
-  echo 'zz <input #128'
+  echo "zz $BC <input"
 ) | os9 copy -r -l /dev/stdin 'drive/disk2,startup'
 
 TRACE=${TRACE:-}
@@ -54,6 +58,7 @@ go run -x --tags=coco3,level2 \
   -ttl "$TTL" \
   -boot drive/boot2coco3 \
   -disk drive/disk2 \
+  $FLAGS \
   2>"$ERR"
 else
 go run -x --tags=coco3,level2,trace \
@@ -63,5 +68,6 @@ go run -x --tags=coco3,level2,trace \
   -ttl "$TTL" \
   -boot drive/boot2coco3 \
   -disk drive/disk2 \
+  $FLAGS \
   2>"$ERR"
 fi
