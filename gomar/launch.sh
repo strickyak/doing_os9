@@ -44,6 +44,11 @@ do
 done
 
 (
+  echo "echo ====== startup"
+  echo "list startup"
+  echo "echo ====== input"
+  echo "list input"
+  echo "echo ======"
   echo "zz $BC <input"
 ) | os9 copy -r -l /dev/stdin 'drive/disk2,startup'
 
