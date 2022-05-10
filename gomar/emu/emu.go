@@ -14,9 +14,13 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 )
 
+var FlagLinkerMapFilename = flag.String("map", "", "")
+var FlagLinkerMapOffset = flag.Int("map_offset", 0, "")
 var FlagBootImageFilename = flag.String("boot", "boot.mem", "")
 var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
@@ -93,8 +97,56 @@ const BRegEA EA = 0x10000009
 const CCRegEA EA = 0x1000000A
 const DPRegEA EA = 0x1000000B
 
+var SymbolLine = regexp.MustCompile(`^Symbol: _(.*) = ([0-9A-F]+)`)
+
+type LinkerRec struct {
+	Sym  string
+	Addr int
+}
+
+type LinkerMapType []*LinkerRec
+
+func (m LinkerMapType) Len() int           { return len(m) }
+func (m LinkerMapType) Swap(a, b int)      { m[a], m[b] = m[b], m[a] }
+func (m LinkerMapType) Less(a, b int) bool { return m[a].Addr < m[b].Addr }
+
+var LinkerMap LinkerMapType
+
+func ReadLinkerMap() {
+	if *FlagLinkerMapFilename == "" {
+		return
+	}
+	fd, err := os.Open(*FlagLinkerMapFilename)
+	if err != nil {
+		log.Fatalf("cannot open %q: %v", *FlagLinkerMapFilename, err)
+	}
+	defer fd.Close()
+	sc := bufio.NewScanner(fd)
+	for sc.Scan() {
+		s := sc.Text()
+		m := SymbolLine.FindStringSubmatch(s)
+		if m != nil {
+			sym := m[1]
+			hex := m[2]
+			addr, err := strconv.ParseUint(hex, 16, 16)
+			if err != nil {
+				log.Fatalf("cannot ParseUint hex: %q: %v", hex, err)
+			}
+			rec := &LinkerRec{
+				Sym:  sym,
+				Addr: int(addr),
+			}
+			LinkerMap = append(LinkerMap, rec)
+		}
+	}
+	sort.Sort(LinkerMap)
+}
+
 func FatalCoreDump() {
 	const NAME = "/tmp/coredump09"
+
+	ReadLinkerMap()
+
 	fd, err := os.Create(NAME)
 	if err != nil {
 		log.Fatalf("cannot create %q: %v", NAME, err)
@@ -112,26 +164,37 @@ func FatalCoreDump() {
 	w.WriteByte(DPRegEA.GetB())
 	w.Flush()
 	fd.Close()
+	fmt.Printf(" ... Wrote %q ... Begin Frame Chain\n", NAME)
 
-	fmt.Printf("\nBegin Frame Chain\n")
 	fp := EA(URegEA.GetW())
 	p := EA(SRegEA.GetW())
 	fmt.Printf("S: %04x  U: %04x\n", p, fp)
 	gap := int(fp) - int(p)
+	firstGap := true
 	for 0 <= gap && gap <= 64 {
 		fmt.Printf("\n@%04x: ", int(p))
-		if p < fp && ((fp-p)&1) == 1 {
-			fmt.Printf("%02x, ", EA(p).GetB())
+		for p < fp {
+			fmt.Printf("%02x ", EA(p).GetB())
 			p += 1
 		}
-		for p < fp {
-			fmt.Printf("%04x, ", EA(p).GetW())
-			p += 2
+
+		if false && firstGap {
+			firstGap = false
+		} else if LinkerMap != nil {
+			fp2 := EA(fp + 2)
+			pc := fp2.GetW()
+
+			found := sort.Search(len(LinkerMap), func(i int) bool {
+				return (*FlagLinkerMapOffset+LinkerMap[i].Addr > int(pc))
+			})
+			prev := LinkerMap[found-1]
+			fmt.Printf("\n ............ pc=%x is %x + %q=%x",
+				pc,
+				*FlagLinkerMapOffset+prev.Addr-int(pc),
+				prev.Sym,
+				*FlagLinkerMapOffset+prev.Addr)
 		}
-		if p != fp {
-			fmt.Printf("\nMismatched: p %04x != fp %04x\n", p, fp)
-			break
-		}
+
 		fp = EA(fp.GetW())
 		gap = int(fp) - int(p)
 	}
