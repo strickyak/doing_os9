@@ -20,12 +20,10 @@ import (
 )
 
 var FlagLinkerMapFilename = flag.String("map", "", "")
-var FlagLinkerMapOffset = flag.Int("map_offset", 0, "")
 var FlagBootImageFilename = flag.String("boot", "boot.mem", "")
 var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
-var FlagSwiFatalCoreDump = flag.Bool("swi_fatal_coredump", false, "coredump and stop on plain SWI")
 
 var FlagWatch = flag.String("watch", "", "Sequence of module:addr:reg:message,...")
 var FlagTriggerPc = flag.Uint64("trigger_pc", 0xC00D, "")
@@ -153,7 +151,8 @@ func FatalCoreDump() {
 	}
 	w := bufio.NewWriter(fd)
 	for i := 0; i < 0x10000; i++ {
-		w.WriteByte(EA(i).GetB())
+		w.WriteByte(B(Word(i)))
+		// w.WriteByte(EA(i).GetB())
 	}
 	for i := DRegEA; i <= PCRegEA; i++ {
 		word := EA(i).GetW()
@@ -167,12 +166,13 @@ func FatalCoreDump() {
 	fmt.Printf(" ... Wrote %q ... Begin Frame Chain\n", NAME)
 
 	fp := EA(URegEA.GetW())
+	codeOffset := (int(fp)/0x2000)*0x2000 + 0x2000
 	p := EA(SRegEA.GetW())
-	fmt.Printf("S: %04x  U: %04x\n", p, fp)
+	fmt.Printf("S: $%04x  U: $%04x\n", p, fp)
 	gap := int(fp) - int(p)
 	firstGap := true
 	for 0 <= gap && gap <= 64 {
-		fmt.Printf("\n@%04x: ", int(p))
+		fmt.Printf("\n@$%04x: ", int(p))
 		for p < fp {
 			fmt.Printf("%02x ", EA(p).GetB())
 			p += 1
@@ -185,14 +185,18 @@ func FatalCoreDump() {
 			pc := fp2.GetW()
 
 			found := sort.Search(len(LinkerMap), func(i int) bool {
-				return (*FlagLinkerMapOffset+LinkerMap[i].Addr > int(pc))
+				return (codeOffset+LinkerMap[i].Addr > int(pc))
 			})
-			prev := LinkerMap[found-1]
-			fmt.Printf("\n ............ pc=%x is %x + %q=%x",
-				pc,
-				*FlagLinkerMapOffset+prev.Addr-int(pc),
-				prev.Sym,
-				*FlagLinkerMapOffset+prev.Addr)
+			if found > 0 {
+				prev := LinkerMap[found-1]
+				fmt.Printf("\n ............ pc=$%x is $%x + %q=$%x",
+					pc,
+					int(pc)-codeOffset+prev.Addr,
+					prev.Sym,
+					codeOffset+prev.Addr)
+			} else {
+				fmt.Printf("\n ............ pc=$%x is too low", pc)
+			}
 		}
 
 		fp = EA(fp.GetW())
@@ -2473,20 +2477,19 @@ func swi() {
 	switch iflag {
 	case 0: /* SWI */
 		L("SWI")
-		if *FlagSwiFatalCoreDump {
-			FatalCoreDump()
-			ccreg, sreg = ccregOrig, sregOrig
-			return
-		} else {
+		if true {
+			// Intercept HyperOp on SWI
 			op := PeekB(pcreg)
 			pcreg++
 			L("HyperOp %d.", op)
 			HyperOp(op)
 			ccreg, sreg = ccregOrig, sregOrig
-			return
+		} else {
+			// Normal SWI.
+			ccreg |= 0xd0
+			handler = W(0xfffa)
 		}
-		ccreg |= 0xd0
-		handler = W(0xfffa)
+		return
 	case 1: /* SWI2 */
 		describe, returns := DecodeOs9Opcode(B(pcreg))
 		proc := W0(sym.D_Proc)

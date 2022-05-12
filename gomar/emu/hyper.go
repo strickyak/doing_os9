@@ -12,6 +12,8 @@ func HyperOp(hop byte) {
 		FatalCoreDump()
 	case 101:
 		PrintK()
+	case 102:
+		fmt.Printf(" MMU[%s]\n", ExplainMMU())
 	default:
 		log.Printf("Unknown HyperOp $%x = $d.", hop, hop)
 	}
