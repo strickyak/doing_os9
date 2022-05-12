@@ -1,6 +1,10 @@
 set -eux
 
-FLAGS=$1 ; shift
+# Initial flags (as one long word) passed to gomar.
+FLAGS=
+case "$1" in
+  -* ) FLAGS=$1 ; shift ;;
+esac
 
 test -f "$1" && test -s "$1" || {
   echo "No such file: $1" >&2
@@ -29,8 +33,9 @@ do
   os9 del "drive/disk2,CMDS/$junk"
 done
 
-os9 copy -r "$COMMAND" 'drive/disk2,CMDS/zz'
-os9 attr -per 'drive/disk2,CMDS/zz'
+C2=$(basename "$COMMAND" | tr _ -)
+os9 copy -r "$COMMAND" "drive/disk2,CMDS/$C2"
+os9 attr -per "drive/disk2,CMDS/$C2"
 
 os9 copy -r -l "$INPUT" "drive/disk2,input"
 
@@ -40,16 +45,16 @@ do
   case $x in
     *.bc ) BC=$(basename "$x") ;;
   esac
-  os9 copy -r "$x" "drive/disk2,$(basename $x)"
+  os9 copy -r "$x" "drive/disk2,$(basename $x | tr _ - )"
 done
-
+B2=$(echo $BC | tr _ -)
 (
   echo "echo ====== startup"
   echo "list startup"
   echo "echo ====== input"
   echo "list input"
   echo "echo ======"
-  echo "zz $BC <input"
+  echo "$C2 $B2 <input"
 ) | os9 copy -r -l /dev/stdin 'drive/disk2,startup'
 
 TRACE=${TRACE:-}
