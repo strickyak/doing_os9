@@ -1,0 +1,111 @@
+The NitrOS-9 boot process involves 2 binary lumps. The first is named (in the makefile
+target) KERNELFILE_xxx and the second is named BOOTFILE_yyy - where xxx and yyy
+identify variants targeting different hardware configurations. In this description they will be called KERNELFILE and BOOTFILE respectively.
+
+In each case, the lump is created by concatenating multiple NitrOS-9 binary modules. This
+works because each module is relocatable code and because there is a header on
+each module which allows the modules to be treated as a linked list that is
+searchable by module name.
+
+KERNELFILE is written to track 34 of the boot disk and is the first
+part of NitrOS-9 to be loaded and executed. BOOTFILE is stored with the name ''OS9Boot'' in
+the filesystem of the boot disk just like any other file. However, the LSN (the Logical Sector Number)
+at which the BOOTFILE starts on the disk is coded into the LSN0, which is a data structure stored at the first block on the disk.
+
+Coding the start address into the LSN0 makes the process of reading BOOTFILE from disk into memory simpler -- the driver that performs
+this task does not need to include code that understands the file-system. However, it does impose a couple of restrictions:
+
+* (At least on some systems) BOOTFILE must use contiguous blocks on the disk -- it must not be fragmented.
+* In order to use a modified BOOTFILE on a disk, the LSN0 must be re-written. If you forget to re-write the LSN0 data you can end up in the confusing situation where the actual BOOTFILE being used is not the one that you expect. Keep in mind that BOOT (the driver module which loads the BOOTFILE) finds the file through the LSN0 pointer and does not care about which name it has in the file system.
+
+When creating disk images on a non-NitrOS-9 host system, the Toolshed os9 tool's "gen" command is used to set up LSN0 as part of the build
+process. For example, from level1/mc09/makefile:
+
+<pre>
+        $(OS9FORMAT_DS80) -q $@ -n"NitrOS-9/$(CPU) Level $(LEVEL)"
+        $(OS9GEN) $@ -b=$(BOOTFILE_COVDG_SD80) -t=$(KERNELFILE_COCOSDC)
+</pre>
+
+* The -t argument specifies the KERNELFILE; the file to be written to track 34 (the "boot track")
+* The -b argument specifies the BOOTFILE; the file whose start LSN must be written into LSN0.
+
+In order to start the boot process, some command must be issued on the system to load and execute track 34.
+
+On a CoCo this is typically done from the Disk Extended Color BASIC (DECB) 'OK' prompt. Typing 'DOS' at the prompt loads track 34 from the disk into memory at $2600 and jumps to address $2602. At this point, control has passed to NitrOS-9.
+
+Track 34 consists of 18 sectors of 256 bytes each; a total of 4,608 ($1200) bytes. The first 2 bytes of KERNELFILE are 'O' and 'S'; executable code starts at offset 2 (the 3rd byte) and is a BRA to the entry point of the REL module.
+
+See: [[More about the NitrOS-9 Kernel file]], [[More about the NitrOS-9 Boot file]].
+
+The boot process proceeds like this:
+<ol>
+<li>REL copies the boot track ($2600 to $3800) to address $ED00, and jumps to another routine inside of REL at the new address</li>
+<li>REL then jumps to module KRN (OS9P1), which sets up system variables, the system memory map, system call tables, IRQ and SWI setup, and calls module BOOT.</li>
+<li>BOOT reads sector $000000 off of a disk, and finds out where the OS9Boot file is.</li>
+<li>BOOT requests system memory for the size of OS9Boot, seeks to where OS9Boot is, and loads it directly into RAM.</li>
+<li>BOOT then returns to KRN (OS9P1), after setting up pointers in low memory to the OS9Boot file.</li>
+<li>KRN (OS9P1) links to module KRNP2 (OS9P2), and jumps into its execution entry point.</li>
+<li>KRNP2 (OS9P2) sets up more system calls, links to the CLOCK module, and calls it.</li>
+<li>CLOCK sets up some more system calls, starts multitasking, and returns to KRNP2.</li>
+<li>KRNP2 attempts to locate and link a module named KRNP3 See: [[More about KRNP3]].</li>
+<li>KRNP3 need not exist. If it does exist, it should initialise then return control to KRNP2.</li>
+<li>KRNP2 inspects the Init module to find the name of the default program -- usually SYSGO.</li>
+<li>KRNP2 does a F$Chain of SYSGO (CC3GO). This prints a start up banner, and runs your 'startup' file through a shell.</li>
+</ol>
+
+== An annotated boot ==
+
+When a NitrOS-9 Level 2 system boots, code at D.BtBug can be configured to provide debug information. Code in rel.asm loads D.BtBug either with a RTS ($39) or with a JMP ($7E) -- the jump destination is code fragment BtDebug. By default, it is set to JMP, and provides progress messages through the boot. Here is an example, with decoder. 
+
+<pre>
+NITROS9 BOOTKREL Boot Krn tb0...........................................................................................bKrnP2 IOMan Init RBF mc09sd DD D0 D1 D2 D3 SCF mc6850 Term T0 T1 PipeMan Piper Pipe Clock Clock2 Shell Date DeIniz Echo Iniz Link Load Save Unlink i2xoCNitrOS-9/6809 Level 2 V3.3.0
+Multicomp09
+(C) 2014 The NitrOS-9 Project
+**   DEVELOPMENT BUILD   **
+** NOT FOR DISTRIBUTION! **
+Fri May 19 20:55:49 2017
+http://www.nitros9.org
+
+* Welcome to NitrOS-9 Level 2 on the Multicomp09 *
+
+       yyyy/mm/dd hh:mm:ss
+Time ?  
+May 19, 2017  20:57:55
+
+Shell+ v2.2a 17/05/19 20:58:11
+
+{Term|02}/DD:
+</pre>
+
+Decoder:
+
+* NITROS9 BOOT - This is the BootMsg text from rel.asm. It indicates that the Kernel file has been loaded and started successfully.
+* K - This is from krn.asm. It indicates that REL branched to and started the Kernel successfully.
+* REL Boot Krn - This is the list of modules found in the Kernel file. Your mileage may vary.
+* t - in the kernel F$Boot call; tried to boot.
+* b - found the Boot module successfully; calling Boot.
+* 0 - loaded LSN0 successfully (LSN0 contains, amongst other things, the location of the Boot file).
+* . - one period each time a sector of the Boot file is loaded from disk
+* b - Boot returned successfully.
+* KrnP2 IOMan Init RBF mc09sd DD D0 D1 D2 D3 SCF mc6850 Term T0 T1 PipeMan Piper Pipe Clock Clock2 Shell Date DeIniz Echo Iniz Link Load Save Unlink - This is the list of modules found in the Boot file. Your mileage may vary.
+* i - found the Init module.
+* 2 - This is from krnp2.asm. It indicates that KrnP2 started successfully.
+* x - Tried to change-directory to the default directory.
+* o - Tried opening an output window.
+* (if KRNP3 exists, this is where it will be initialised)
+* C - Tried to go to SysGo (previously, SysGo was called CC3GO which explains why this is a C and not an S).
+* NitrOS-9/6809 Level 2 V3.3.0 - This is the OSStr text from the Init module. It is referenced as OSName (defined in os9.d) and printed by SysGo using an I$Write system call.
+* Multicomp09 - This is the InstStr text from the Init module. It is referenced as InstallName (defined in os9.d) and printed by SysGo using an I$Write system call.
+* (C) 2014 The NitrOS-9 Project .. nitros9.org - This is the Banner text from the SysGo module.
+* * Welcome to NitrOS-9 Level 2 on the Multicomp09 * - The /DD/startup script is being executed. This message is produced by an 'echo' command in that script.
+* yyyy/mm/dd hh:mm:ss .. Time ? - This message is produced by a 'setime </1' command in the startup file.
+* May 19, 2017  20:57:55 - This message is produced by a 'date -t' command in the startup file. If you simply pressed <Return> in response to the 'Time ?' prompt, the default system time is the time at which the boot disk was build.
+* Shell+ v2.2a 17/05/19 20:58:11 - A startup message printed by the shell.
+* {Term|02}/DD: - the shell prompt. Boot is complete.
+
+== References ==
+
+* Post by Chris Hawks: http://five.pairlist.net/pipermail/coco/2012-September/115836.html
+* http://five.pairlist.net/pipermail/coco/2012-September/115879.html
+* Examination of source code
+

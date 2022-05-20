@@ -1,0 +1,82 @@
+(* Posted by the author.  Archived at http://five.pairlist.net/pipermail/coco/2013-September/115836.html *)
+
+NitrOS-9 Level 2 Booting and (trouble)Shooting.
+
+by Chris Hawks.  12 May 2006
+
+	One of our local Coco-nuts was having a problem with NitrOS-9 on
+his Coco3. It had recently stopped booting NitrOS-9 from HDB-DOS in
+his SuperIDE. We got together at the monthly Glenside Color Computer Club
+meeting to see if we could resolve the problem. He brought his system
+and I brought a sub-set of my system to the meeting. We were the 
+'presentation' for that meeting. I booted my system from HDB-DOS and
+my SuperIDE adapter with his compactflash card in a compactflash to
+IDE adapter as the slave drive. After my systems booted, I looked at
+the root directory of his compactflash card. It looked OK to me, but,
+he did have some odd files there. I shut down my system and swapped the
+compactflash cards.  (His as mastr and mine as slave. The boot process
+started and loaded track 34 and the OS9boot and then just stopped. From
+the debugging clues posted to the screen during the boot process, I was
+able to determine the the boot process was unable to find the 'sysgo'
+module. I re-booted with my compactflash as master and his as slave,
+and copied 'sysgo' from my root directory to his. We swapped the
+compactflash cards once again and his compact flash was able to boot!
+
+	I was asked to write-up our adventure as a article for the GCCC
+newsletter (Coco 1 2 3). I had not been able to find any information on
+debugging the boot process in NitrOS-9 (except from the source code) so
+here it is.
+
+STEP 1
+	The modules 'rel', 'boot', and 'krn' are loaded into memory from
+track 34 by the 'dos' command. 'Rel' ensures that it is located in the
+correct part of memory, sets up some of the hardware, clears the screen,
+and installs the debugging 'print' routine. It prints 'NITROS9 BOOT' in
+the center of the screen and jumps to the execution address of the
+module 'krn'.
+
+STEP 2
+	The module 'krn' uses the debug 'print' routine to put a 'K' on the
+startup screen. It validates the modules in memory ('rel', boot, and
+'krn') which prints their names on the startup screen and makes a system
+call (F$Boot) which puts a 't' on the startup screen and links the module
+'boot'. It puts a 'b' on the startup screen and calls 'boot'. 'Boot' reads
+LSN0 to find OS9boot and puts a '0' on the startup screen. 'Boot' then
+loads OS9boot and puts a '.' on the startup screen for each sector read.
+'$F$Boot' validates all modules in OS9boot which prints their names to the
+screen, and puts a second 'b' on the startup screen. Next 'krn' links to
+the 'init' module and puts 'i' on the startup screen. Following this it
+links to and executes 'krnp2' the second part of the kernel.
+
+STEP 3
+	'Krnp2' puts a '2' on the startup screen, and puts an 'x' on the
+startup screen. Then 'krnp2' tries to 'chd' to the system device named in
+'init' (usually '/dd'). Next 'krnp2' puts a 'o' on the startup screen and
+tries to open the output console named in 'init' (usually '/term'). 'Krnp2'
+checks for 'krnp3' and runs it if available. Then 'krnp2' puts a 'C' on
+the startup screen and tries to run the startup module named in init
+usually 'sysgo'.
+
+STEP 4
+	'Sysgo' opens the output console, prints the NitrOS-9 startup banner
+and sets the data and exec directories. 'Sysgo' will execute 'startup' and
+'autoexec' if available (unless you hold the 'shift' key) and finally
+starts a 'shell' on the console.
+
+	If something goes wrong during the boot, the module will call the
+'crash' routine which will put a '*' and single character on the startup
+screen.  The '*' indicates that an error occured and the character's ascii
+value plus 128 is the error number. For instance '*X' would indicate a
+'Path Name Not Found' error. 'X' is ascii 88, and 88 + 128 = 216, the
+error code for 'Path Name Not Found'. This is the error we saw when sysgo
+was missing from the root directory of the disk.
+
+	So, the start up messages look something like this:
+Krel boot krn tb0...................................................
+......... bkrnp2 dd d0 rbf rb1773 term w w1 w2 w3 w4 scf cowin clock 
+clock2 init i2xoC
+
+	Of course, YMMV (Your Modules May Vary)
+
+	This should give you some insight into what goes on during a NitrOS-9
+boot, and berhaps some debugging assistance when something goes wrong.
