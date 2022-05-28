@@ -17,12 +17,14 @@ import (
 type ModuleMap map[string][]byte
 
 func LoadDir(dirname string) ModuleMap {
+	log.Printf("dirname = %q", dirname)
 	filenames, err := filepath.Glob(filepath.Join(dirname, *Glob))
 	if err != nil {
 		log.Panicf("Cannot read directory %q: %v", dirname, err)
 	}
 	modules := make(ModuleMap)
 	for _, filename := range filenames {
+		log.Printf("filename = %q", filename)
 		modules[filename] = LoadFile(filename)
 	}
 	return modules
