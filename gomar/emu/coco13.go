@@ -91,7 +91,7 @@ func GetIOByte(a Word) byte {
 	case 0xFF48: /* STATREG */
 		return 0 /* low bit 0 means Ready, other bits are errors or not ready */
 
-	case 0xFF4B: /* Read Data */
+	case 0xFF4A /*cocosdc boot*/, 0xFF4B /*floppy*/ : /* Read Data */
 		z = 0
 		if disk_i < 256 {
 			z = disk_stuff[disk_i]
@@ -130,10 +130,12 @@ func GetIOByte(a Word) byte {
 }
 
 func LogicalSector(sector, side, track byte) int64 {
+	log.Printf("LogiclSector (fmt=%d.) sector=%d. side=%d. track=%d.", disk_dd_fmt, sector, side, track)
 	switch disk_dd_fmt {
 	case 2:
 		if side != 0 {
-			panic(side)
+			// ddt
+			return int64(disk_sector) - 0 + int64(disk_track)*18
 		}
 		return int64(disk_sector) - 1 + int64(disk_track)*18
 	case 3:
@@ -217,7 +219,20 @@ func PutIOByte(a Word, b byte) {
 				break
 			}
 
+			log.Printf("...... Disk Command ($%x) Fnord", disk_command)
 			switch disk_command {
+			default:
+				{
+					log.Printf("Unknown Disk Command ($%x) Fnord", disk_command)
+				}
+			case 0x43:
+				{
+					log.Printf("Start Command Mode ($43) Fnord")
+				}
+			case 0xD0:
+				{
+					log.Printf("Stop any disk command in progress Fnord")
+				}
 			case 0x80:
 				{
 					prev_disk_command = disk_command
@@ -230,9 +245,10 @@ func PutIOByte(a Word, b byte) {
 					}
 
 					disk_stuff = zero_disk_stuff
+					log.Printf("disk sector seek: offset=%d. -- disk_sector=%d. disk_side=%d. disk_track=%d.", disk_offset, disk_sector, disk_side, disk_track)
 					_, err := disk_fd.Seek(disk_offset, 0)
 					if err != nil {
-						log.Panicf("Bad disk sector seek: err=%v", err)
+						log.Panicf("Bad disk sector seek: offset=%d. err=%v disk_sector=%d. disk_side=%d. disk_track=%d.", disk_offset, err, disk_sector, disk_side, disk_track)
 					}
 					n, err := disk_fd.Read(disk_stuff[:])
 					if err != nil {

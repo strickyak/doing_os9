@@ -20,7 +20,8 @@ import (
 )
 
 var FlagLinkerMapFilename = flag.String("map", "", "")
-var FlagBootImageFilename = flag.String("boot", "boot.mem", "")
+var FlagBootImageFilename = flag.String("boot", "", "")
+var FlagKernelFilename = flag.String("kernel", "", "")
 var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
@@ -1064,7 +1065,7 @@ func PrintableStringThruEOS(a Word, max Word) string {
 		} else {
 			Z(&buf, "{%d}", ch)
 		}
-		if ch == '\n' || ch == '\r' {
+		if ch == '\r' {
 			break
 		}
 	}
@@ -1423,9 +1424,10 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 			})
 			WithMmuTask(1, func() {
 				str := PrintableStringThruEOS(xreg, yreg)
-				fmt.Printf("%s", str)
+				// fmt.Printf("%s", str)
 
-				p = fmt.Sprintf("[%d/%d/%d/%q]", proc, path_num, path, str)
+				// p = fmt.Sprintf("[%d/%d/%d/%q]", proc, path_num, path, str)
+				fmt.Printf("%s", str)
 
 				for _, ch := range []byte(str) {
 					if Disp != nil {
@@ -3154,7 +3156,7 @@ func Main() {
 		}
 	}
 
-	{
+	if *FlagBootImageFilename != "" {
 		boot, err := ioutil.ReadFile(*FlagBootImageFilename)
 		if err != nil {
 			log.Fatalf("Cannot read boot image: %q: %v", *FlagDiskImageFilename, err)
@@ -3163,9 +3165,31 @@ func Main() {
 		for i, b := range boot {
 			PokeB(Word(i+0x100), b)
 		}
+		pcreg = 0x100
 		DumpAllMemory()
+	} else if *FlagKernelFilename != "" {
+		kernel, err := ioutil.ReadFile(*FlagKernelFilename)
+		if err != nil {
+			log.Fatalf("Cannot read kernel image: %q: %v", *FlagKernelFilename, err)
+		}
+		if kernel[0] != 'O' || kernel[1] != 'S' {
+			log.Fatalf("--kernel does not begin with OS")
+		}
+		L("kernel mem size: %x", len(kernel))
+		for i, b := range kernel {
+			PokeB(Word(i+0x2600), b)
+		}
+		PutW(0xFFF2, 0xFEEE) // SWI3
+		PutW(0xFFF4, 0xFEF1) // SWI2
+		PutW(0xFFFA, 0xFEFA) // SWI
+		PutW(0xFFFC, 0xFEFD) // NMI
+		PutW(0xFFF8, 0xFEF7) // IRQ
+		PutW(0xFFF6, 0xFEF4) // FIRQ
+		pcreg = 0x2602
+		DumpAllMemory()
+	} else {
+		log.Fatalf("Need either -boot or -kernel")
 	}
-	pcreg = 0x100
 
 	sreg = 0
 	dpreg = 0

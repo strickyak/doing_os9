@@ -52,10 +52,6 @@ func Trace() {
 		}
 	}
 
-	Z(&buf, " {%-5s %-17s}  ", dinst.String(), dops.String())
-	log.Printf("%s%s", buf.String(), Regs())
-	dis_length = 0
-
 	module, offset := MemoryModuleOf(pcreg_prev)
 
 	if module != "" {
@@ -63,8 +59,15 @@ func Trace() {
 		text := listings.Lookup(moduleLower, uint(offset), func() {
 			*FlagTraceAfter = 1
 		})
-		log.Printf("          {{ %s }}", text)
+		if text != "" {
+			log.Printf("          {{ %s }}", text)
+		}
 	}
+
+	Z(&buf, " {%-5s %-17s}  ", dinst.String(), dops.String())
+	log.Printf("%s%s", buf.String(), Regs())
+	log.Printf("")
+	dis_length = 0
 
 	if pcreg < pcreg_prev || pcreg > pcreg_prev+4 {
 		log.Printf("")
