@@ -259,7 +259,7 @@ ManSetStat
          lbra ReturnOk
 
 
-         use _guts.a
+         use _generated_from_fusec_.a
 
          emod  
 eom      equ   *

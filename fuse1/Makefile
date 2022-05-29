@@ -1,4 +1,4 @@
-all: _guts.a fuseman.os9 fuser.os9 fuse.os9 _run
+all: _generated_from_fusec_.a fuseman.os9 fuser.os9 fuse.os9 _run
 
 XDEFDIR=/home/strick/go/src/github.com/strickyak/doing_os9/gomar/eouBeta610/udisk/sourcecode/asm/nitros9/
 DEFDIR=/dd/asm/nitros9/
@@ -10,12 +10,13 @@ T=../gomar/drive/disk2
 	lwasm-orig --6809 -f os9 -l'$@.list' -I'$(DEFDIR)' -I'.' -o '$@' '$<'
 
 clean:
-	rm -f *.list *.lst *.os9  *.map *.link _guts.a
+	rm -f *.list *.lst *.os9  *.map *.link _generated_from_fusec_.*
 
 
-_guts.a :
-	cmoc -i -S imp.c
-	sed -n '/SECTION.code/, /ENDSECTION/ p' < imp.s | egrep -v 'SECTION|EXPORT' > _guts.a
+_generated_from_fusec_.a :
+	cmoc -i -S fusec.c
+	sed -n '/SECTION.code/, /ENDSECTION/ p' < fusec.s | egrep -v 'SECTION|EXPORT' > _generated_from_fusec_.a
+	sed -n '/SECTION.[cr]od[ea]/, /ENDSECTION/ p' < fusec.s | egrep -v 'SECTION|EXPORT' > _generated_from_fusec_.a
 
 _run:
 	cp *.os9 /tmp/
@@ -23,7 +24,7 @@ _run:
 	~/go/bin/borges -outdir '../borges/' -glob '*.os9' .
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && export NITROS9DIR=/home/strick/go/src/github.com/n6il/nitros9 ; ( make clean ; make && make NOS9_6809_L2_v030300_coco3_80d.dsk  )
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && cp -v NOS9_6809_L2_v030300_coco3_80d.dsk ~/sy/doing_os9/gomar/drive/disk2
-	os9 copy -r -l /dev/null ~/sy/doing_os9/gomar/drive/disk2,/startup
+	echo 'list /fuse/foo' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	cd ~/sy/doing_os9/gomar &&  sh run2disk2.sh
 
 
