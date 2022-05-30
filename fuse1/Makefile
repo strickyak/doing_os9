@@ -18,6 +18,10 @@ _generated_from_fusec_.a :
 	sed -n '/SECTION.code/, /ENDSECTION/ p' < fusec.s | egrep -v 'SECTION|EXPORT' > _generated_from_fusec_.a
 	sed -n '/SECTION.[cr]od[ea]/, /ENDSECTION/ p' < fusec.s | egrep -v 'SECTION|EXPORT' > _generated_from_fusec_.a
 
+
+_generated_by_scrape_.a : fuse.os9
+	awk -f scrape.awk fuse.os9.list > _generated_by_scrape_.a
+
 _run:
 	cp *.os9 /tmp/
 	cd ../gomar/borges/ ; go install borges.go

@@ -29,18 +29,18 @@ start    equ   *
 
 * Dispatch Relays
 Init     bra FuserInit
-				 nop
+         nop
 Read     daa
-				 clrb
+         clrb
          rts
 Write    daa
-				 clrb
+         clrb
          rts
 GetStat  daa
-				 clrb
+         clrb
          rts
 SetStat  daa
-				 clrb
+         clrb
          rts
 Term     bra FuserTerm
 
@@ -52,41 +52,42 @@ V.AllFirst  EQU 10
 FuserInit  DAA   ; Init for Fuser
         PSHS B,Y,U
         TFR y,d
-				SWI
-				FCB 105    ; Show Ram Description
+        SWI
+        FCB 105    ; Show Ram Description
         TFR u,d
-				SWI
-				FCB 105    ; Show Ram Device Vars
+        SWI
+        FCB 105    ; Show Ram Device Vars
         TFR u,d
-				SWI
-				FCB 103    ; Hyper PutHex U
-				LDD #'z
-				SWI
-				FCB 104    ; Hyper PutChar
+        SWI
+        FCB 103    ; Hyper PutHex U
+        LDD #'z
+        SWI
+        FCB 104    ; Hyper PutChar
         PULS B,Y,U
 
-				LDX #0  ; nullptr: no base table yet.
-				PSHS U
-				SWI2
-				FCB F$All64   ; allocate base table and first page.
-				PULS U
-				bcc InitOK
+* Allocate the ram base page.
+        LDX #0  ; nullptr: no base table yet.
+        PSHS U
+        SWI2
+        FCB F$All64   ; allocate base table and first page.
+        PULS U
+        bcc InitOK
 
         PSHS B
         CLRA
-				SWI
-				FCB 103    ; Hyper PutHex error number
-				LDD #'#
-				SWI
-				FCB 104    ; Hyper PutChar '#'
+        SWI
+        FCB 103    ; Hyper PutHex error number
+        LDD #'#
+        SWI
+        FCB 104    ; Hyper PutChar '#'
         PULS B
 
-				COMA       ; set Carry bit meaning error
-				RTS        ; return with errno in B.
+        COMA       ; set Carry bit meaning error
+        RTS        ; return with errno in B.
 
 InitOK
-				STX V.AllBase,U   ; base for future All64
-				STY V.AllFirst,U  ; first alloc -- wasted for now.
+        STX V.AllBase,U   ; base for future All64
+        STY V.AllFirst,U  ; first alloc -- wasted for now.
          clrb
          rts
 
@@ -94,23 +95,23 @@ InitOK
 FuserTerm  DAA
         PSHS B,Y,U
         TFR y,d
-				SWI
-				FCB 105    ; Show Ram Description
+        SWI
+        FCB 105    ; Show Ram Description
         TFR u,d
-				SWI
-				FCB 105    ; Show Ram Device Vars
+        SWI
+        FCB 105    ; Show Ram Device Vars
         TFR u,d
-				SWI
-				FCB 103    ; Hyper PutHex U
-				LDD #'Z
-				SWI
-				FCB 104    ; Hyper PutChar
+        SWI
+        FCB 103    ; Hyper PutHex U
+        LDD #'Z
+        SWI
+        FCB 104    ; Hyper PutChar
         PULS B,Y,U
 
-				SWI
-				FCB 100    ; Fatal Core Dump, just to stop the emulator.
+        SWI
+        FCB 100    ; Fatal Core Dump, just to stop the emulator.
 
-				 clrb
+         clrb
          rts
 
          emod
