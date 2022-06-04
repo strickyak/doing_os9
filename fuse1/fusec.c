@@ -11,15 +11,12 @@ typedef unsigned int word;
 #define FALSE 0
 #define NULL ((void*)0)
 
-enum DaemonState {
-  D_IDLE,
-  D_GIVEN_WORK,
-  D_WAIT_STATUS,
-};
-
-enum ClientState {
-  C_IDLE,
-  C_WAIT_FOR_STATUS,
+enum FuseState {
+  D_IDLE = 1,
+  D_WAIT_FOR_WORK = 2,  // called ReadLn
+  D_GIVEN_WORK = 3,     // ReadLn returned a Clop.
+  C_IDLE = 16,   // no client stuff pending.
+  C_REQUESTED = 17,  // client made an IO call (a Clop).
 };
 
 struct Daemon {
@@ -93,12 +90,15 @@ struct PathDesc {
   byte pd_current_process_id;    // PD.CPR = 5
   struct Regs *pd_callers_regs;  // PD.RGS = 6
   void* pd_buffer_unused;          // PD.BUF = 8
+
   // offset 10 = PD.FST
   byte pd_fuse_state;
   // offset 11
-  byte pd_index; // into V.AllBase
-  // offset 12
-  char pd_usable[32-12];
+  word pd_parent_fd;  // zero for daemon,  daemon for client.
+  // offset 13
+#define NextOffsetInPathDesc 13
+
+  char pd_usable[32-NextOffsetInPathDesc];
   // offset 32 required for Get/Set Stat.
   byte pd_device_type;           // PD.DTP = 32
   char pd_options[31];           // more SetStat/GetStat region.
@@ -673,7 +673,7 @@ error CreateOrOpenC(struct PathDesc* pathdesc, struct Regs* regs) {
   for (; i<32; i++) {
     char *begin = 0, *end = 0;
     char* current = (char*) regs->rx;
-    err = Os9PrsNam(current, &begin, &end);
+    error err = Os9PrsNam(current, &begin, &end);
 
     ShowChar(13);
     ShowChar('@');
@@ -768,11 +768,12 @@ error GetStatC(struct PathDesc* pathdesc, struct Regs* regs) {
   switch (regs->rb) {
     case 1: { // SS.READY
       // On devices that support it, the B register
-      // will return the numbrer of characters
+      // will return the number of characters
       // that are ready to be read.
       // -- Inside Os9 Level II p 5-3-4
       regs->rb = 255;  // always be ready.
     }
+    break;
     case 6: { // SS.EOF
         regs->rx = 0;  // MSW of file size: unknown.
         regs->ru = 0;  // LSW of file size: unknown.
@@ -780,6 +781,7 @@ error GetStatC(struct PathDesc* pathdesc, struct Regs* regs) {
           return E_EOF;
         }
     }
+    break;
     default: {
       return 17;
     }
