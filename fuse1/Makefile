@@ -28,7 +28,16 @@ _run:
 	~/go/bin/borges -outdir '../borges/' -glob '*.os9' .
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && export NITROS9DIR=/home/strick/go/src/github.com/n6il/nitros9 ; ( make clean ; make && make NOS9_6809_L2_v030300_coco3_80d.dsk  )
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && cp -v NOS9_6809_L2_v030300_coco3_80d.dsk ~/sy/doing_os9/gomar/drive/disk2
-	echo 'list /fuse/foo' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
+	:
+	echo 'list /fuse/daemon/foo' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
+	# echo 'ncl < run.tcl' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
+	:
+	os9 attr -per $T,CMDS/z
+	os9 copy -r ../picol/ncl.bin $T,CMDS/ncl
+	os9 attr -per $T,CMDS/ncl
+	os9 copy -r -l ../picol/nclrc.tcl $T,SYS/nclrc.tcl
+	os9 copy -r -l run.tcl $T,run.tcl
+	:
 	cd ~/sy/doing_os9/gomar &&  sh run2disk2.sh
 
 
@@ -36,7 +45,6 @@ disk2: all
 	rm -f $T
 	cp -f ../gomar/drive/NOS9_6809_L2_v030300_coco3_80d.dsk $T
 	cat fuseman.os9 fuser.os9 fuse.os9 | os9 copy -r /dev/stdin $T,CMDS/z
-	os9 attr -per $T,CMDS/z
 	rm -rf $R
 	mkdir $R
 	os9 copy $T,os9boot /dev/stdout | go run ../find_modules/find_modules.go -ripdir '$R'

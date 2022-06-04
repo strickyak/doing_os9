@@ -1,3 +1,4 @@
+typedef unsigned char bool;
 typedef unsigned char byte;
 typedef unsigned char error;
 typedef unsigned int word;
@@ -5,25 +6,46 @@ typedef unsigned int word;
 #include "os9.h"
 #include "os9errno.h"
 
-struct SubDaemon {
-  // First 5 bytes are same for Client and Daemon.
-  byte d_id;    // zero if inactive record.
-  byte d_zero;  // zero for device, nonzero for Client Path.
-  byte d_daemon_id;
-  byte d_pathdesc;
+#define OKAY 0
+#define TRUE 1
+#define FALSE 0
+#define NULL ((void*)0)
 
-  byte d_num_clients;
-  byte d_x;
-
-  char d_pathname[32];
+enum DaemonState {
+  D_IDLE,
+  D_GIVEN_WORK,
+  D_WAIT_STATUS,
 };
 
-struct SubClient {
-  // First 5 bytes are same for Client and Daemon.
+enum ClientState {
+  C_IDLE,
+  C_WAIT_FOR_STATUS,
+};
+
+struct Daemon {
+  // First 32 bytes are the "id" byte and the name.
+  byte d_id;    // zero if inactive record.
+  char d_daemon_name[31];
+  // Next 4 bytes are same for Client and Daemon.
+  // Offset 32:
+  byte d_zero;  // zero for Daemon, daemon's id for Client.
+  struct PathDesc* d_pathdesc;
+  word d_process_id;
+
+  byte d_num_clients;
+  byte d_current_client;
+  enum DaemonState d_state;
+};
+
+struct Client {
+  // First 32 bytes are the "id" byte and the name.
   byte c_id;     // zero if inactive record.
-  byte c_parent; // zero for device, nonzero for Client Path.
-  byte c_client_id;
-  byte c_pathdesc;
+  char c_client_name[31];
+  // Next 4 bytes are same for Client and Daemon.
+  // Offset 32:
+  byte c_parent; // zero for Daemon, daemon's id for Client.
+  struct PathDesc* c_pathdesc;
+  word c_process_id;
 
   byte c_state;
   byte c_client_op;
@@ -35,8 +57,7 @@ struct SubClient {
 
   word c_result_count;
   byte c_result_status;
-
-  char c_pathname[32];
+  enum ClientState c_state;
 };
 
 struct DeviceTableEntry {
@@ -56,9 +77,10 @@ struct DeviceVars {
   byte v_lprc;  // Last Active Process Id (not used?)
   byte v_busy;  // Active process ID (0 == not busy)
   byte v_wake;  // Process ID to wake after command completed
-  byte v_7;     // Skip spare byte at 7 -- aligns following words better.
+  byte v_6;     // Skip spare byte at 6
+  byte v_7;     // Skip spare byte at 7
   // Beginning of fileman / driver's vars.
-  word fuse_alloc_base;   // base for alloc 64.
+  word fuse_alloc64_base;   // base for alloc 64.
   word fuse_alloc_first;  // wasted first page (for now).
 };
 
@@ -66,14 +88,17 @@ struct PathDesc {
   byte pd_path_num;              // PD.PD = 0
   byte pd_mode;                  // PD.MOD = 1
   byte pd_open_count;            // PD.CNT = 2
-  void* pd_device_table_entry;   // PD.DEV = 3
+  struct DeviceTableEntry*
+        pd_device_table_entry;   // PD.DEV = 3
   byte pd_current_process_id;    // PD.CPR = 5
   struct Regs *pd_callers_regs;  // PD.RGS = 6
   void* pd_buffer_addr;          // PD.BUF = 8
   // offset 10 = PD.FST
   byte pd_fuse_state;
   // offset 11
-  char pd_usable[32-11];                
+  byte pd_index; // into V.AllBase
+  // offset 12
+  char pd_usable[32-12];
   // offset 32 required for Get/Set Stat.
   byte pd_device_type;           // PD.DTP = 32
   char pd_options[31];           // more SetStat/GetStat region.
@@ -85,7 +110,14 @@ struct Regs {
   word rx, ry, ru, rpc;
 };
 
-////////////////////////////////////////////////
+/////////////////  Hypervisor Debugging Support
+
+asm HyperCoreDump() {
+  asm {
+    SWI
+    FCB 100  ; hyperCoreDump
+  }
+}
 
 void ShowChar(char ch) {
   asm {
@@ -118,20 +150,86 @@ void ShowStr(const char* s) {
   }
 }
 
+#define assert(C) { if (!(C)) { ShowStr(" *ASSERT* "); ShowHex(__LINE__); ShowStr(" *FAILED* " #C); HyperCoreDump(); } }
+
 ////////////////////////////////////////////////
 
-asm Disable() {
+byte ToUpper(byte b) {
+  b = b&127; // remove high bit
+  if ('a'<= b && b<='z') return b-32;
+  return b;
+}
+
+asm IrqDisable() {
   asm {
     orcc #IntMasks
     rts
   }
 }
 
-asm Enable() {
+asm IrqEnable() {
   asm {
     andcc #^IntMasks
     rts
   }
+}
+
+byte Os9CurrentProcessId() {
+  byte id = 0;
+  asm {
+    LDX D.Proc
+    LDA P$ID,X
+    STA id
+  }
+  return id;
+}
+
+byte Os9CurrentProcessTask() {
+  byte task = 0;
+  asm {
+    LDX D.Proc
+    LDA P$Task,X
+    STA task
+  }
+  return task;
+}
+
+error Os9LoadByteFromTask(byte task, word addr, byte* out) {
+  error err;
+  asm {
+    LDB task
+    LDX addr
+    PSHS Y,U
+    SWI2
+    FCB F$LDABX
+    PULS Y,U
+    STA [out]
+    BCS LoadByteBad
+
+    clrb
+LoadByteBad
+    stb err
+  }
+  return err;
+}
+
+error Os9StoreByteToTask(byte task, word addr, byte in) {
+  error err;
+  asm {
+    LDA in
+    LDB task
+    LDX addr
+    PSHS Y,U
+    SWI2
+    FCB F$STABX
+    PULS Y,U
+    BCS StoreByteBad
+
+    clrb
+StoreByteBad
+    stb err
+  }
+  return err;
 }
 
 error Os9Move(word count, word src, byte srcMap, word dest, byte destMap) {
@@ -175,6 +273,7 @@ error Os9Send(byte to_pid, byte signal) {
 SendBad
     stb err
   }
+  return err;
 }
 
 error Os9Sleep(word num_ticks) {
@@ -191,6 +290,7 @@ error Os9Sleep(word num_ticks) {
 SleepBad
     stb err
   }
+  return err;
 }
 
 error Os9All64(word base_page, byte* index_out, word* addr_out) {
@@ -206,7 +306,7 @@ error Os9All64(word base_page, byte* index_out, word* addr_out) {
     PULS Y,U       ; restore frame
     BCS All64Bad
 
-    STX [addr_out]
+    STX [addr_out]   ; was in Y
     STA [index_out]
     CLRB
 All64Bad
@@ -360,12 +460,341 @@ void ShowPathDesc(struct PathDesc* pd) {
   ShowStr("fuse_state"); ShowHex(pd->pd_fuse_state); ShowChar(13);
   ShowStr("device_type"); ShowHex(pd->pd_device_type); ShowChar(13);
   ShowChar(13);
-  ShowRam((word)pd->pd_device_table_entry); ShowChar(13);
+  // ShowRam((word)pd->pd_device_table_entry); ShowChar(13);
   ShowDeviceTableEntry((struct DeviceTableEntry*)(pd->pd_device_table_entry));
   ShowChar(13);
 }
 
+error CopyParsedName(word begin, word end, char* dest, word max_len) {
+  // max_len counts null termination.
+  assert (end-begin < max_len-1);
+  byte task = Os9CurrentProcessTask();
+  byte i = 0;
+  for (word p = begin; p < end; p++) {
+    byte ch = 0;
+    error err = Os9LoadByteFromTask(task, p, &ch);
+    if (err) return err;
+    *dest++ = ToUpper(ch);
+  }
+  *dest = 0; // terminate
+  return OKAY;
+}
+
+void ShowParsedName(word current, word begin, word end) {
+  byte task = Os9CurrentProcessTask();
+  ShowChar('{'); ShowChar('{'); ShowChar('{');
+  ShowHex(end-current);
+  ShowHex(end-begin);
+  byte ch = 0;
+  for (word p = current; p <= end; p++ ) {
+    error err = Os9LoadByteFromTask(task, p, &ch);
+    assert(!err);
+    if (p == begin) ShowChar('~');
+    if (p == end) ShowChar('~');
+    ShowChar(ch);
+  }
+  ShowChar('}'); ShowChar('}'); ShowChar('}');
+}
+
+// Ignoring case is assumed, when Parsed Name is used.
+// The string from begin to end is in the current
+// process's task, and may contain high bits.
+// The other string s is an upper-case 0-terminated
+// C string, in normal memory, with no high bits.
+bool ParsedNameEquals(word begin, word end, const char*s) {
+  byte pid = Os9CurrentProcessId();
+  byte task = Os9CurrentProcessTask();
+  ShowStr(s);
+  //ShowRam(begin);
+  //ShowRam(s);
+  word p = begin;
+  for (; *s && p < end; p++, s++) {
+    byte ch = 0;
+    error err = Os9LoadByteFromTask(task, p, &ch);
+    assert(!err);
+    ShowHex(p); ShowHex(s);
+    ShowChar(ch); ShowChar(*s);
+
+    if (ToUpper(ch) != *s) {
+      ShowChar('F');
+      return FALSE;  // does not match.
+    }
+  }
+
+  // If both termination conditions are true,
+  // strings are equal.
+  ShowChar('R');
+  ShowHex( ((*s)==0) );
+  ShowHex( (p==end) );
+      ShowChar('R');
+  ShowHex( (p==end) && ((*s)==0) );
+  ShowChar(13);
+  ShowChar(13);
+  return (p==end) && ((*s)==0);
+}
+
 ////////////////////////////////////////////////
+
+word BaseForAlloc64(struct PathDesc* pathdesc) {
+  assert(pathdesc);
+    struct DeviceTableEntry* dte =
+      (struct DeviceTableEntry*)(pathdesc->pd_device_table_entry);
+  assert(dte);
+    struct DeviceVars *vars = dte->dt_device_vars;
+  assert(vars);
+    word base = vars->fuse_alloc64_base;
+  assert(base);
+  return base;
+}
+
+struct Daemon* MakeDaemon(word base, word begin, word end) {
+  struct Daemon *d = NULL;
+  byte index = 0;
+  error err = Os9All64(base, &index, (word*)&d);
+  assert(!err);
+  assert(d->d_id == index);
+  err = CopyParsedName(begin, end, d->d_daemon_name, 30);
+  assert(!err);
+  return d;
+}
+
+struct Client* MakeClient(word base, word begin, word end) {
+  struct Client *c = NULL;
+  byte index = 0;
+  error err = Os9All64(base, &index, (word*)&c);
+  assert(!err);
+  assert(c->c_id == index);
+  err = CopyParsedName(begin, end, c->c_client_name, 30);
+  assert(!err);
+  return c;
+}
+
+struct Daemon* FindDaemon(word base, word begin, word end) {
+  for (byte i = 0; i < 64; i++) {
+    byte page = ((byte*)base)[i];
+    if (!page) continue;
+    word addr = (word)page << 8;
+    for (byte j = 0; j<4; j++) {
+      if (i!=0 || j!=0) {
+        struct Daemon* d = (struct Daemon*)addr;
+        if (d->d_id!=0 && d->d_zero==0 && ParsedNameEquals(begin, end, d->d_daemon_name)) {
+          assert(d->d_id == 4*i+j);
+          return d;
+        }
+      }
+      addr += 64;
+    }
+  }
+  return NULL;
+}
+
+void* FindDaemonOrClientByPathDesc(word base, struct PathDesc* pathdesc) {
+  for (byte i = 0; i < 64; i++) {
+    byte page = ((byte*)base)[i];
+    if (!page) continue;
+    word addr = (word)page << 8;
+    for (byte j = 0; j<4; j++) {
+      if (i!=0 || j!=0) {
+        // Either Daemon or Client will do.
+        struct Daemon* d = (struct Daemon*)addr;
+        if (d->d_id!=0 && d->d_pathdesc == pathdesc) {
+          assert(d->d_id == 4*i+j);
+          return d;
+        }
+      }
+      addr += 64;
+    }
+  }
+  return NULL;
+}
+
+error DaemonOpen(
+    struct PathDesc* pathdesc,
+    struct Regs* regs,
+    word begin2,
+    word end2) {
+  word base = BaseForAlloc64(pathdesc);
+  struct Daemon *d = FindDaemon(base, begin2, end2);
+  ShowStr(" DAEMON=");
+  ShowHex(d);
+  d = MakeDaemon(base, begin2, end2);
+  assert(d);
+  d->d_zero = 0;
+  d->d_pathdesc = pathdesc;
+  d->d_process_id = Os9CurrentProcessId();
+  d->d_num_clients = 0;
+  d->d_current_client = 0;
+  d->d_state = D_IDLE;
+
+  return OKAY;
+}
+
+error ClientOpen(
+    struct PathDesc* pathdesc,
+    struct Regs* regs,
+    char* begin1,
+    char* end1,
+    char* begin2,
+    char* end2) {
+  word base = BaseForAlloc64(pathdesc);
+
+  struct Daemon *parent = FindDaemon(base, begin1, end2);
+  ShowStr(" PARENT=");
+  ShowHex(parent);
+
+  if (!parent) return E_NES;  // non-existing segment.
+
+  struct Client* c = MakeClient(base, begin2, end2);
+  assert(c);
+  c->c_parent = parent->d_id;
+  c->c_pathdesc = pathdesc;
+  c->c_process_id = Os9CurrentProcessId();
+  parent->d_num_clients = 0;
+  c->c_state = C_IDLE;
+
+  return OKAY;
+}
+
+////////////////////////////////////////////////
+
+error CreateOrOpenC(struct PathDesc* pathdesc, struct Regs* regs) {
+#if 1
+  ShowChar('P'); ShowHex(pathdesc);
+  ShowRam((word)pathdesc);
+  ShowRam(32+(word)pathdesc);
+  ShowRegs(regs);
+  ShowPathDesc(pathdesc);
+#endif
+
+  byte onePage = 1;
+  error err = Os9AllRAM(onePage, &pathdesc->pd_buffer_addr);
+  if (err) return err;
+  pathdesc->pd_fuse_state = 'A';
+
+  char *begin1=0, *end1=0, *begin2=0, *end2=0;
+  byte i = 0;
+  for (; i<32; i++) {
+    char *begin = 0, *end = 0;
+    char* current = (char*) regs->rx;
+    err = Os9PrsNam(current, &begin, &end);
+
+    ShowChar(13);
+    ShowChar('@');
+    ShowHex(err);
+    ShowParsedName(current, begin, end);
+    ShowChar(13);
+
+    regs->rx = end;
+    if (err) break;
+    switch (i) {
+      case 0:
+        break; // ignore "FUSE".
+      case 1:
+        begin1 = begin;
+        end1 = end;
+        break;
+      case 2:
+        // TODO:  more than one name.
+        begin2 = begin;
+        end2 = end;
+        break;
+    }
+  }
+  ShowStr("\r i= ");
+  ShowHex(i);
+  ShowChar(13);
+  if (i==3 && ParsedNameEquals(begin1, end1, "DAEMON")) {
+    return DaemonOpen(pathdesc, regs, begin2, end2);
+  } else if (i > 1) {
+    return ClientOpen(pathdesc, regs, begin1, end1, begin2, end2);
+  } else {
+    assert(0);
+    return E_BNAM;
+  }
+}
+
+error CloseC(struct PathDesc* pathdesc, struct Regs* regs) {
+  return 0;
+}
+
+error ClientReadLn(
+              struct PathDesc* pathdesc, struct Regs* regs,
+              struct Client* cp) {
+  return 23;
+}
+
+error DaemonReadLn(
+              struct PathDesc* pathdesc, struct Regs* regs,
+              struct Daemon* dp) {
+#if 1
+  if (pathdesc->pd_fuse_state >= 'G') {
+    ShowChar('E');
+    regs->ry = 0;  // count
+    return E_EOF;
+  } else {
+    // ShowChar('R');
+    // ShowHex(pathdesc->pd_fuse_state);
+    pathdesc->pd_fuse_state ++;
+    regs->ry = 2;  // count
+    byte task = Os9CurrentProcessTask();
+    Os9StoreByteToTask(task, regs->rx, pathdesc->pd_fuse_state);
+    Os9StoreByteToTask(task, regs->rx + 1, 13/*CR*/);
+  }
+#endif
+  return OKAY;
+}
+
+error ReadLnC(struct PathDesc* pathdesc, struct Regs* regs) {
+  word base = BaseForAlloc64(pathdesc);
+  void* p = FindDaemonOrClientByPathDesc(base, pathdesc);
+  if (((struct Client*)p)->c_parent) {
+    return ClientReadLn(pathdesc, regs, (struct Client*)p);
+  } else {
+    return DaemonReadLn(pathdesc, regs, (struct Daemon*)p);
+  }
+}
+
+error WritLnC(struct PathDesc* pathdesc, struct Regs* regs) {
+  return 20;
+}
+
+error ReadC(struct PathDesc* pathdesc, struct Regs* regs) {
+  // Read same as ReadLn.
+  return ReadLnC(pathdesc, regs);
+}
+
+error WriteC(struct PathDesc* pathdesc, struct Regs* regs) {
+  return 19;
+}
+
+error GetStatC(struct PathDesc* pathdesc, struct Regs* regs) {
+  switch (regs->rb) {
+    case 1: { // SS.READY
+      // On devices that support it, the B register
+      // will return the numbrer of characters
+      // that are ready to be read.
+      // -- Inside Os9 Level II p 5-3-4
+      regs->rb = 255;  // always be ready.
+    }
+    case 6: { // SS.EOF
+        regs->rx = 0;  // MSW of file size: unknown.
+        regs->ru = 0;  // LSW of file size: unknown.
+        if (pathdesc->pd_fuse_state >= 'G') {
+          return E_EOF;
+        }
+    }
+    default: {
+      return 17;
+    }
+  }
+  return 0;
+}
+
+error SetStatC(struct PathDesc* pathdesc, struct Regs* regs) {
+  return 18;
+}
+
+/////////////// Assembly-to-C Relays
 
 asm CreateOrOpenA() {
   asm {
@@ -376,6 +805,8 @@ asm CreateOrOpenA() {
     LDX #0
     LDY #0   ; unneccesary cleanliness
     BSR _CreateOrOpenC  ; Call C function to do the work.
+
+    // Shared by all `asm ...A()` functions:
 FinishUp
     CLRA     ; clear the carry bit.
     TSTB     ; we want to set carry if B nonzero.
@@ -385,32 +816,6 @@ SkipComA
     PULS PC,U,Y
   }
 }
-
-error CreateOrOpenC(struct PathDesc* pathdesc, struct Regs* regs) {
-  error err;
-  ShowChar('P'); ShowHex(pathdesc);
-  ShowRam((word)pathdesc);
-  ShowRam(32+(word)pathdesc);
-  ShowRegs(regs);
-  ShowPathDesc(pathdesc);
-
-  // ------------ no this is per path, not once per device -----------------
-  // ------------ this should bd All64 out of the AllRAM -------------------
-  err = Os9AllRAM(/*nPages=*/1, &pathdesc->pd_buffer_addr);
-  ShowChar('A'); ShowHex(pathdesc->pd_buffer_addr); ShowHex(err); 
-  if (err) return err;
-  pathdesc->pd_fuse_state = 20;
-
-  do {
-    char *eow = 0, *next_name = 0;
-    err = Os9PrsNam((char*)regs->rx, &eow, &next_name);
-    regs->rx = next_name;
-  } while (err==0);
-
-  ShowChar('Z');
-  return 0;
-}
-
 asm CloseA() {
   asm {
     PSHS Y,U ; First push Y=pathdesc, then U=regs
@@ -422,10 +827,6 @@ asm CloseA() {
     LBRA FinishUp
   }
 }
-error CloseC(struct PathDesc* pathdesc, struct Regs* regs) {
-  return 0;
-}
-
 asm ReadLnA() {
   asm {
     PSHS Y,U ; First push Y=pathdesc, then U=regs
@@ -437,20 +838,6 @@ asm ReadLnA() {
     LBRA FinishUp
   }
 }
-error ReadLnC(struct PathDesc* pathdesc, struct Regs* regs) {
-  if (pathdesc->pd_fuse_state >= 30) {
-    ShowChar('E');
-    regs->ry = 0;  // count
-    return E_EOF;
-  } else {
-    ShowChar('R');
-    ShowHex(pathdesc->pd_fuse_state);
-    pathdesc->pd_fuse_state ++;
-    regs->ry = 1;  // count
-  }
-  return 0;
-}
-
 asm WritLnA() {
   asm {
     PSHS Y,U ; First push Y=pathdesc, then U=regs
@@ -462,10 +849,6 @@ asm WritLnA() {
     LBRA FinishUp
   }
 }
-error WritLnC(struct PathDesc* pathdesc, struct Regs* regs) {
-  return 31;
-}
-
 asm ReadA() {
   asm {
     PSHS Y,U ; First push Y=pathdesc, then U=regs
@@ -477,11 +860,6 @@ asm ReadA() {
     LBRA FinishUp
   }
 }
-error ReadC(struct PathDesc* pathdesc, struct Regs* regs) {
-  regs->ry = 0;  // count
-  return E_EOF;
-}
-
 asm WriteA() {
   asm {
     PSHS Y,U ; First push Y=pathdesc, then U=regs
@@ -493,10 +871,6 @@ asm WriteA() {
     LBRA FinishUp
   }
 }
-error WriteC(struct PathDesc* pathdesc, struct Regs* regs) {
-  return 32;
-}
-
 asm GetStatA() {
   asm {
     PSHS Y,U ; First push Y=pathdesc, then U=regs
@@ -508,22 +882,6 @@ asm GetStatA() {
     LBRA FinishUp
   }
 }
-error GetStatC(struct PathDesc* pathdesc, struct Regs* regs) {
-  switch (regs->rb) {
-    case 1: { // SS.READY
-      regs->rb = 0;
-      return E_EOF;
-    }
-    case 6: { // SS.EOF
-      regs->rb = 1;
-      return 0;
-    }
-    default: {
-      return 255;
-    }
-  }
-}
-
 asm SetStatA() {
   asm {
     PSHS Y,U ; First push Y=pathdesc, then U=regs
@@ -535,46 +893,3 @@ asm SetStatA() {
     LBRA FinishUp
   }
 }
-error SetStatC(struct PathDesc* pathdesc, struct Regs* regs) {
-  return 255;
-}
-
-asm xxxA() {
-  asm {
-    PSHS Y,U ; First push Y=pathdesc, then U=regs
-    LDU #0   ; begin C frames
-    LDD #0
-    LDX #0
-    LDY #0   ; unneccesary cleanliness
-    BSR _xxxC  ; Call C function to do the work.
-    LBRA FinishUp
-  }
-}
-error xxxC(struct PathDesc* pathdesc, struct Regs* regs) {
-  return 3;
-}
-
-
-/*
-#include <cmoc.h>
-int main() {
-  struct Regs* r = (struct Regs*) 1000;
-  printf("%d %d %d %d\n", &r->rcc, &r->ra, &r->rb, &r->rdp);
-  printf("%d %d %d %d\n", &r->rx, &r->ry, &r->ru, &r->rpc);
-
-  struct PathDesc * p = (struct PathDesc*)1000;
-  printf("0 %d 1 %d 2 %d 3 %d 5 %d 6 %d 8 %d 10 %d 32 %d",
-    &p-> pd_path_num,
-    &p-> pd_mode,
-    &p-> pd_open_count,
-    &p-> pd_device_table_entry,
-    &p-> pd_current_process_id,
-    &p-> pd_callers_regs,
-    &p-> pd_buffer_addr,
-    &p-> pd_storage,
-    &p-> pd_device_type 
-  );
-                                      //
-  return 0;
-}
-*/

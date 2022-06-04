@@ -88,6 +88,37 @@ FuserInit  DAA   ; Init for Fuser
 InitOK
         STX V.AllBase,U   ; base for future All64
         STY V.AllFirst,U  ; first alloc -- wasted for now.
+
+				ldd #13
+				SWI
+				FCB 104
+
+				ldd #'U
+				SWI
+				FCB 104
+				TFR U,D
+				SWI
+				FCB 103
+
+
+
+				ldd #'X
+				SWI
+				FCB 104
+				TFR X,D
+				SWI
+				FCB 103
+
+				ldd #'Y
+				SWI
+				FCB 104
+				TFR Y,D
+				SWI
+				FCB 103
+
+				ldd #'Z
+				SWI
+				FCB 104
          clrb
          rts
 
@@ -108,8 +139,8 @@ FuserTerm  DAA
         FCB 104    ; Hyper PutChar
         PULS B,Y,U
 
-        SWI
-        FCB 100    ; Fatal Core Dump, just to stop the emulator.
+*       SWI
+*       FCB 100    ; Fatal Core Dump, just to stop the emulator.
 
          clrb
          rts
