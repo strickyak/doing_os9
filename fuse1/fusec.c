@@ -92,7 +92,7 @@ struct PathDesc {
         pd_device_table_entry;   // PD.DEV = 3
   byte pd_current_process_id;    // PD.CPR = 5
   struct Regs *pd_callers_regs;  // PD.RGS = 6
-  void* pd_buffer_addr;          // PD.BUF = 8
+  void* pd_buffer_unused;          // PD.BUF = 8
   // offset 10 = PD.FST
   byte pd_fuse_state;
   // offset 11
@@ -456,7 +456,7 @@ void ShowPathDesc(struct PathDesc* pd) {
   ShowStr("device_table_entry"); ShowHex(pd->pd_device_table_entry); ShowChar(13);
   ShowStr("current_process_id"); ShowHex(pd->pd_current_process_id); ShowChar(13);
   ShowStr("callers_regs"); ShowHex(pd->pd_callers_regs); ShowChar(13);
-  ShowStr("buffer_addr"); ShowHex(pd->pd_buffer_addr); ShowChar(13);
+  ShowStr("buffer_addr"); ShowHex(pd->pd_buffer_unused); ShowChar(13);
   ShowStr("fuse_state"); ShowHex(pd->pd_fuse_state); ShowChar(13);
   ShowStr("device_type"); ShowHex(pd->pd_device_type); ShowChar(13);
   ShowChar(13);
@@ -666,9 +666,6 @@ error CreateOrOpenC(struct PathDesc* pathdesc, struct Regs* regs) {
   ShowPathDesc(pathdesc);
 #endif
 
-  byte onePage = 1;
-  error err = Os9AllRAM(onePage, &pathdesc->pd_buffer_addr);
-  if (err) return err;
   pathdesc->pd_fuse_state = 'A';
 
   char *begin1=0, *end1=0, *begin2=0, *end2=0;
