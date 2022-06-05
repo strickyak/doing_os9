@@ -132,6 +132,23 @@ func GetMappingTask0(addr Word) Mapping {
 		0x3F & PeekW(addr+14),
 	}
 }
+func TaskNumberToMapping(task byte) Mapping {
+	dope := PeekW(0x00A1) // D.TskIPt
+	dat := PeekW(dope + 2*Word(task))
+	var m Mapping
+	for i := Word(0); i < 8; i++ {
+		m[i] = PeekW(dat + 2*i)
+	}
+	return m
+}
+func PeekBWithTask(addr Word, task byte) byte {
+	m := TaskNumberToMapping(task)
+	return PeekBWithMapping(addr, m)
+}
+func PeekWWithTask(addr Word, task byte) Word {
+	m := TaskNumberToMapping(task)
+	return PeekWWithMapping(addr, m)
+}
 func PeekBWithMapping(addr Word, m Mapping) byte {
 	logBlock := (addr >> 13) & 7
 	physBlock := m[logBlock]

@@ -6,6 +6,14 @@ import (
 	"log"
 )
 
+func Nice(ch byte) byte {
+	ch = ch & 127
+	if ' ' <= ch && ch <= '~' {
+		return ch
+	}
+	return '.'
+}
+
 func HyperOp(hop byte) {
 	switch hop {
 	case 100: // Fatal
@@ -37,6 +45,25 @@ func HyperOp(hop byte) {
 		fmt.Printf(" [[%x]]{{", dreg)
 		for i := Word(0); i < 32; i += 2 {
 			fmt.Printf("%04x ", PeekW(dreg+i))
+			if (i&7) == 6 && i < 30 {
+				fmt.Printf(" ")
+			}
+		}
+		for i := Word(0); i < 32; i += 1 {
+			fmt.Printf("%c", Nice(PeekB(dreg+i)))
+			if (i & 7) == 7 {
+				fmt.Printf(" ")
+			}
+		}
+		fmt.Printf("}}` ")
+
+	case 106: // Show Task RAM 32
+		task := GetBReg()
+		addr := xreg
+		fmt.Printf(" [[%x t%x]]{{", addr, task)
+
+		for i := Word(0); i < 32; i += 2 {
+			fmt.Printf("%04x ", PeekWWithTask(addr+i, task))
 			if (i&7) == 6 && i < 30 {
 				fmt.Printf(" ")
 			}

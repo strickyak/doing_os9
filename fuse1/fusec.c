@@ -14,10 +14,17 @@ typedef unsigned int word;
 enum FuseState {
   D_IDLE = 1,
   D_WAIT_FOR_WORK = 2,  // called ReadLn
-  D_GIVEN_WORK = 3,     // ReadLn returned a Clop.
-  C_POISON = 16,  // daemon death poisons its clients.
-  C_IDLE = 17,   // no client stuff pending.
-  C_REQUESTED = 18,  // client made an IO call (a Clop).
+  D_GOT_WORK = 3,     // ReadLn returned a Clop.
+  C_POISON = 11,  // daemon death poisons its clients.
+  C_IDLE = 12,   // no client stuff pending.
+  C_REQUESTED = 13,  // client made an IO call (a Clop).
+};
+
+enum ClientOp {
+  OP_CREATE = 'c',
+  OP_OPEN = 'o',
+  OP_CLOSE = 'C',
+  OP_READLN = 'R',
 };
 
 struct DeviceTableEntry {
@@ -43,12 +50,21 @@ struct DeviceVars {
   word fuse_alloc_first;  // wasted first page (for now).
 };
 
+struct Regs {
+  byte rcc, ra, rb, rdp;
+  word rx, ry, ru, rpc;
+};
+#define REGS_D(regs) (*(word*)(&(regs)->ra))
+
 struct Fuse { // embeds in PathDesc
-  byte fuse_state;
+  byte state;
   byte char_hack;
   struct PathDesc* parent_fd;  // NULL for daemon,  daemon for client.
   byte num_child;  // how many open clients a daemon has.
+  byte current_task;
   struct PathDesc* current_client;
+  byte cl_op;
+  struct Regs cl_regs;
 };
 
 struct PathDesc {
@@ -68,11 +84,6 @@ struct PathDesc {
   // offset 32 required for Get/Set Stat.
   byte device_type;           // PD.DTP = 32
   char name[31];  // Can hold 30 chars plus a null.
-};
-
-struct Regs {
-  byte rcc, ra, rb, rdp;
-  word rx, ry, ru, rpc;
 };
 
 /////////////////  Hypervisor Debugging Support
@@ -106,6 +117,15 @@ void ShowRam(word addr) {
     ldd addr
       swi
       fcb 105
+  }
+}
+
+void ShowTaskRam(byte task, word addr) {
+  asm {
+    ldb task
+    ldx addr
+      swi
+      fcb 106
   }
 }
 
@@ -150,7 +170,7 @@ asm IrqEnable() {
 byte* Os9PathDescBaseTable() {
   byte* base;
   asm {
-    LDD #D.PthDBT 
+    LDD <D.PthDBT
     STD base
   }
   return base;
@@ -159,7 +179,7 @@ byte* Os9PathDescBaseTable() {
 byte Os9CurrentProcessId() {
   byte id = 0;
   asm {
-    LDX D.Proc
+    LDX <D.Proc
     LDA P$ID,X
     STA id
   }
@@ -273,6 +293,26 @@ SleepBad
     stb err
   }
   return err;
+}
+
+void Os9Pause() {
+  Os9Sleep(0);  // until signalled.
+}
+
+void memcpy(char* dest, const char* src, word len) {
+  asm {
+    pshs d,x,y,u
+  }
+  for (byte i=0; i<(byte)len; i++) {
+    dest[i] = src[i];
+  }
+  asm {
+    puls d,x,y,u
+  }
+  return;
+  asm {
+memcpy bra _memcpy
+  }
 }
 
 #if 0
@@ -446,7 +486,8 @@ void ShowPathDesc(struct PathDesc* pd) {
   ShowStr("device_table_entry"); ShowHex(pd->device_table_entry); ShowChar(13);
   ShowStr("current_process_id"); ShowHex(pd->current_process_id); ShowChar(13);
   ShowStr("regs"); ShowHex(pd->regs); ShowChar(13);
-  ShowStr("fuse_state"); ShowHex(pd->fuse.fuse_state); ShowChar(13);
+  ShowStr("unused_buffer"); ShowHex(pd->unused_buffer); ShowChar(13);
+  ShowStr("state"); ShowHex(pd->fuse.state); ShowChar(13);
   ShowStr("char_hack"); ShowHex(pd->fuse.char_hack); ShowChar(13);
   ShowStr("device_type"); ShowHex(pd->device_type); ShowChar(13);
   ShowChar(13);
@@ -569,17 +610,33 @@ struct Client* MakeClient(word base, word begin, word end) {
 // (3) is a daemon path (the parent_fd is null),
 // (4) has the name indicated by begin/end.
 struct PathDesc* FindDaemon(struct DeviceTableEntry* dte, word begin, word end) {
+  ShowStr("\rFindDaemon: ");
+  ShowHex(end-begin);
+  ShowTaskRam(Os9CurrentProcessTask(), begin);
+  ShowStr(" ... table=");
   byte* table = Os9PathDescBaseTable();
-  for (byte i = 0; i < 64; i++) {
+  ShowRam(table);
+  ShowStr(" ...\r");
+  for (byte i = 0; i < 7; i++) {  // how big can it get?
     byte page = table[i];
     if (!page) continue;
     word addr = (word)page << 8;
     for (byte j = 0; j<4; j++) {
       if (i!=0 || j!=0) {
         struct PathDesc* pd = (struct PathDesc*)addr;
-        if (pd->path_num && pd->device_table_entry == dte && !pd->fuse.parent_fd && ParsedNameEquals(begin, end, pd->name)) {
-          assert(pd->path_num == 4*i+j);
-          return pd;
+        ShowStr("\rfd#"); ShowHex(4*i + j); ShowHex(pd);
+          ShowRam((word)pd);
+          ShowRam((word)pd+32);
+        if (pd->path_num && pd->device_table_entry == dte) {
+          ShowStr("--dte--");
+
+          if (!pd->fuse.parent_fd && ParsedNameEquals(begin, end, pd->name)) {
+            ShowStr("---YES---"); ShowHex(pd->path_num); ShowHex(pd);
+            assert(pd->path_num == 4*i+j);
+            return pd;
+          } else {
+            ShowStr("---no---\n");
+          }
         }
       }
       addr += 64;
@@ -610,6 +667,70 @@ void* FindDaemonOrClientByPathDesc(word base, struct PathDesc* pathdesc) {
 }
 #endif
 
+////////////////////////////////////////////////
+
+byte Hex(byte x) {
+  assert(x<16);
+  if (x<10) return '0'+x;
+  return 'A'+x-10;
+}
+byte HiNyb(byte x) { return x>>4; }
+byte LoNyb(byte x) { return 15 & x; }
+byte HiByt(word x) { return (byte)(x>>8); }
+byte LoByt(word x) { return (byte)x; }
+
+void CopyClientOpToDaemon(struct PathDesc* cli,
+                          struct PathDesc* dae) {
+  word ptr = dae->regs->rx;
+  word remain = dae->regs->ry;
+
+#define ADD(CHAR)  \
+  if (remain > 0) { --remain; \
+    error e = Os9StoreByteToTask(  \
+               dae->fuse.current_task, ptr++, (CHAR));  \
+      assert(!e); }
+
+#define ADD_BYTE(B) { byte b = (B); ADD(Hex(HiNyb(b))); ADD(Hex(LoNyb(b))); ADD(' '); }
+#define ADD_WORD(W) { word w = (W); ADD_BYTE(HiByt(w)); ADD_BYTE(LoByt(w)); ADD(' '); }
+
+  ADD(cli->fuse.cl_op);
+  ADD(' ');
+
+  switch (cli->fuse.cl_op) {
+    case OP_OPEN:
+      {
+      ADD_BYTE(cli->regs->ra);  // access mode
+
+      word s = cli->regs->rx;  // pathname string.
+      byte ch = 0;
+      do {
+        error e = Os9LoadByteFromTask(cli->fuse.current_task, s, &ch);
+        assert(!e);
+        if (!ch) break;
+        ADD(ToUpper(ch));
+
+      } while (ch>32 && ch<128);
+  }
+        break;
+    case OP_CLOSE:
+      break;
+    case OP_READLN:
+      break;
+        ADD_WORD(cli->regs->ry);  // max bytes to read.
+    default:
+      ShowHex(cli->fuse.cl_op);
+      assert(0);
+  }
+  ADD(13);  // Terminating CR.
+
+  word bytes_used = dae->regs->ry - remain;
+  dae->regs->ry = bytes_used;
+
+  Os9Send(dae->current_process_id, 1); // wakeup
+}
+
+//////////////////////////////////////
+
 error DaemonOpen(
     struct PathDesc* pd,
     word begin2,
@@ -619,7 +740,7 @@ error DaemonOpen(
   if (already) return E_SHARE;
 
   assert(pd);
-  pd->fuse.fuse_state = D_IDLE;
+  pd->fuse.state = D_IDLE;
   pd->fuse.char_hack = 'A';
   pd->fuse.parent_fd = NULL;
   pd->fuse.num_child = 0;
@@ -635,35 +756,41 @@ error ClientOpen(
     char* begin2,
     char* end2) {
   // Client (child) must already have Daemon (parent).
-  struct PathDesc *parent = FindDaemon(pd->device_table_entry, begin2, end2);
+  struct PathDesc *parent = FindDaemon(pd->device_table_entry, begin1, end1);
   if (!parent) return E_NES;  // non-existing segment.
 
-  ++ parent->fuse.num_child;
-  pd->fuse.fuse_state = C_IDLE;
+  pd->fuse.state = C_IDLE;
   pd->fuse.char_hack = 'A';
   pd->fuse.parent_fd = parent;
   pd->fuse.num_child = 0;
   pd->fuse.current_client = NULL;
 
+  ++ parent->fuse.num_child;
+  parent->fuse.current_client = pd;
+  parent->fuse.current_task = Os9CurrentProcessTask();
+  parent->fuse.cl_op = OP_OPEN;
+  parent->fuse.cl_regs = *pd->regs;
+
+  CopyClientOpToDaemon(pd, parent);
   return OKAY;
 }
 
 ////////////////////////////////////////////////
 
 error CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
-  pd->regs = regs;
-  pd->current_process_id = Os9CurrentProcessId();
 #if 1
+  ShowStr("\rsizeof Fuse: "); ShowHex(sizeof(struct Fuse));
   ShowStr("\rCreateOrOpen: ");
   ShowChar('P'); ShowHex(pd);
-  // ShowRam((word)pd);
-  // ShowRam(32+(word)pd);
+  ShowRam((word)pd);
+  ShowRam(32+(word)pd);
+  ShowHex(regs);
   ShowRegs(regs);
   ShowPathDesc(pd);
 #endif
-
-  pd->fuse.char_hack = 'A';
-  pd->fuse.fuse_state = 0;
+  // pd->regs = regs;
+  // pd->current_process_id = Os9CurrentProcessId();
+  pd->fuse.current_task = Os9CurrentProcessTask();
 
   char *begin1=NULL, *end1=NULL, *begin2=NULL, *end2=NULL;
   byte i = 0;
@@ -711,8 +838,9 @@ error CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
 }
 
 error CloseC(struct PathDesc* pd, struct Regs* regs) {
-  pd->regs = regs;
-  pd->current_process_id = Os9CurrentProcessId();
+  // pd->regs = regs;
+  // pd->current_process_id = Os9CurrentProcessId();
+  pd->fuse.current_task = Os9CurrentProcessTask();
 
   if (pd->fuse.parent_fd) {
     -- pd->fuse.parent_fd->fuse.num_child;
@@ -749,38 +877,80 @@ error DaemonReadLn(
 }
 
 error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
-  pd->regs = regs;
-  pd->current_process_id = Os9CurrentProcessId();
- 
+  // pd->regs = regs;
+  // pd->current_process_id = Os9CurrentProcessId();
+  pd->fuse.current_task = Os9CurrentProcessTask();
+
+  switch (pd->fuse.state) {
+    case D_IDLE:
+      // We expect ReadLn when daemon is idle,
+      // so daemon can learn the next Clop.
+      if (pd->fuse.current_client) {
+        // Client got here first.
+      } else {
+        // Daemon got here first.  Sleep until client.
+        while (!pd->fuse.current_client) {
+          pd->fuse.state = D_WAIT_FOR_WORK;
+          Os9Pause();
+        }
+        pd->fuse.state = D_GOT_WORK;
+        return OKAY;
+      }
+    break;
+    case D_WAIT_FOR_WORK:
+      return 23;
+    break;
+    case D_GOT_WORK:
+      return 24;
+    break;
+    case C_POISON:
+      return 25;
+    break;
+    case C_IDLE:
+      return 26;
+    break;
+    case C_REQUESTED:
+      return 27;
+    break;
+    default:
+      return 28;
+  }
+
+#if 0
   if (pd->fuse.parent_fd) {
     return ClientReadLn(pd, regs);
   } else {
     return DaemonReadLn(pd, regs);
   }
+#endif
 }
 
 error WritLnC(struct PathDesc* pd, struct Regs* regs) {
-  pd->regs = regs;
-  pd->current_process_id = Os9CurrentProcessId();
+  // pd->regs = regs;
+  // pd->current_process_id = Os9CurrentProcessId();
+  pd->fuse.current_task = Os9CurrentProcessTask();
   return 20;
 }
 
 error ReadC(struct PathDesc* pd, struct Regs* regs) {
-  pd->regs = regs;
-  pd->current_process_id = Os9CurrentProcessId();
+  // pd->regs = regs;
+  // pd->current_process_id = Os9CurrentProcessId();
+  pd->fuse.current_task = Os9CurrentProcessTask();
   // Read same as ReadLn.
   return ReadLnC(pd, regs);
 }
 
 error WriteC(struct PathDesc* pd, struct Regs* regs) {
-  pd->regs = regs;
-  pd->current_process_id = Os9CurrentProcessId();
+  // pd->regs = regs;
+  // pd->current_process_id = Os9CurrentProcessId();
+  pd->fuse.current_task = Os9CurrentProcessTask();
   return 19;
 }
 
 error GetStatC(struct PathDesc* pd, struct Regs* regs) {
-  pd->regs = regs;
-  pd->current_process_id = Os9CurrentProcessId();
+  // pd->regs = regs;
+  // pd->current_process_id = Os9CurrentProcessId();
+  pd->fuse.current_task = Os9CurrentProcessTask();
   switch (regs->rb) {
     case 1: { // SS.READY
       // On devices that support it, the B register
@@ -806,8 +976,9 @@ error GetStatC(struct PathDesc* pd, struct Regs* regs) {
 }
 
 error SetStatC(struct PathDesc* pd, struct Regs* regs) {
-  pd->regs = regs;
-  pd->current_process_id = Os9CurrentProcessId();
+  // pd->regs = regs;
+  // pd->current_process_id = Os9CurrentProcessId();
+  pd->fuse.current_task = Os9CurrentProcessTask();
   return 18;
 }
 
