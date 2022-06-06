@@ -50,94 +50,138 @@ V.AllFirst  EQU 10
 
 * Driver Init: U=DeviceVars Y=DeviceDescription
 FuserInit  DAA   ; Init for Fuser
-        PSHS B,Y,U
-        TFR y,d
-        SWI
-        FCB 105    ; Show Ram Description
-        TFR u,d
-        SWI
-        FCB 105    ; Show Ram Device Vars
-        TFR u,d
-        SWI
-        FCB 103    ; Hyper PutHex U
-        LDD #'z
+        LDD #'A
         SWI
         FCB 104    ; Hyper PutChar
-        PULS B,Y,U
-
-* Allocate the ram base page.
-        LDX #0  ; nullptr: no base table yet.
-        PSHS U
-        SWI2
-        FCB F$All64   ; allocate base table and first page.
-        PULS U
-        bcc InitOK
-
-        PSHS B
-        CLRA
+        LDD #'A
         SWI
-        FCB 103    ; Hyper PutHex error number
-        LDD #'#
+        FCB 104    ; Hyper PutChar
+        LDD #'A
         SWI
-        FCB 104    ; Hyper PutChar '#'
-        PULS B
-
-        COMA       ; set Carry bit meaning error
-        RTS        ; return with errno in B.
-
-InitOK
-        STX V.AllBase,U   ; base for future All64
-        STY V.AllFirst,U  ; first alloc -- wasted for now.
-
-				ldd #13
-				SWI
-				FCB 104
-
-				ldd #'U
-				SWI
-				FCB 104
-				TFR U,D
-				SWI
-				FCB 103
+        FCB 104    ; Hyper PutChar
+        LDD #'A
+        SWI
+        FCB 104    ; Hyper PutChar
+        clrb
+        rts
 
 
-
-				ldd #'X
-				SWI
-				FCB 104
-				TFR X,D
-				SWI
-				FCB 103
-
-				ldd #'Y
-				SWI
-				FCB 104
-				TFR Y,D
-				SWI
-				FCB 103
-
-				ldd #'Z
-				SWI
-				FCB 104
-         clrb
-         rts
+*        PSHS B,Y,U
+*        TFR y,d
+*        SWI
+*        FCB 105    ; Show Ram Description
+*        TFR u,d
+*        SWI
+*        FCB 105    ; Show Ram Device Vars
+*        TFR u,d
+*        SWI
+*        FCB 103    ; Hyper PutHex U
+*        LDD #'z
+*        SWI
+*        FCB 104    ; Hyper PutChar
+*        PULS B,Y,U
+*
+** Allocate the ram base page.
+*        LDX #0  ; nullptr: no base table yet.
+*        PSHS U
+*        SWI2
+*        FCB F$All64   ; allocate base table and first page.
+*        PULS U
+*        bcc InitOK
+*
+*        PSHS B
+*        CLRA
+*        SWI
+*        FCB 103    ; Hyper PutHex error number
+*        LDD #'#
+*        SWI
+*        FCB 104    ; Hyper PutChar '#'
+*        PULS B
+*
+*        COMA       ; set Carry bit meaning error
+*        RTS        ; return with errno in B.
+*
+*InitOK
+*        STX V.AllBase,U   ; base for future All64
+*        STY V.AllFirst,U  ; first alloc -- wasted for now.
+*
+*				ldd #13
+*				SWI
+*				FCB 104
+*
+*				ldd #'U
+*				SWI
+*				FCB 104
+*				TFR U,D
+*				SWI
+*				FCB 103
+*
+*
+*
+*				ldd #'X
+*				SWI
+*				FCB 104
+*				TFR X,D
+*				SWI
+*				FCB 103
+*
+*				ldd #'Y
+*				SWI
+*				FCB 104
+*				TFR Y,D
+*				SWI
+*				FCB 103
+*
+*				ldd #'Z
+*				SWI
+*				FCB 104
+*         clrb
+*         rts
 
 
 FuserTerm  DAA
-        PSHS B,Y,U
-        TFR y,d
-        SWI
-        FCB 105    ; Show Ram Description
-        TFR u,d
-        SWI
-        FCB 105    ; Show Ram Device Vars
-        TFR u,d
-        SWI
-        FCB 103    ; Hyper PutHex U
+        PSHS A,B,Y,U
+
+*       PSHS A,B
+*       LDD #'Z
+*       SWI
+*       FCB 104    ; Hyper PutChar
+*       LDD #'Z
+*       SWI
+*       FCB 104    ; Hyper PutChar
+*       LDD #'Z
+*       SWI
+*       FCB 104    ; Hyper PutChar
+*       LDD #'Z
+*       SWI
+*       FCB 104    ; Hyper PutChar
+*       PULS A,B
+
+
+*       TFR y,d
+*       SWI
+*       FCB 105    ; Show Ram Description
+*       TFR u,d
+*       SWI
+*       FCB 105    ; Show Ram Device Vars
+*       TFR u,d
+*       SWI
+*       FCB 103    ; Hyper PutHex U
+
         LDD #'Z
         SWI
         FCB 104    ; Hyper PutChar
-        PULS B,Y,U
+        LDD #'Z
+        SWI
+        FCB 104    ; Hyper PutChar
+        LDD #'Z
+        SWI
+        FCB 104    ; Hyper PutChar
+        LDD #'Z
+        SWI
+        FCB 104    ; Hyper PutChar
+
+        PULS A,B,Y,U
 
 *       SWI
 *       FCB 100    ; Fatal Core Dump, just to stop the emulator.

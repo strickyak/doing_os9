@@ -68,6 +68,12 @@ func HyperOp(hop byte) {
 				fmt.Printf(" ")
 			}
 		}
+		for i := Word(0); i < 32; i += 1 {
+			fmt.Printf("%c", Nice(PeekBWithTask(addr+i, task)))
+			if (i & 7) == 7 {
+				fmt.Printf(" ")
+			}
+		}
 		fmt.Printf("}}` ")
 
 	default:

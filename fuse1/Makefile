@@ -29,7 +29,7 @@ _run:
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && export NITROS9DIR=/home/strick/go/src/github.com/n6il/nitros9 ; ( make clean ; make && make NOS9_6809_L2_v030300_coco3_80d.dsk  )
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && cp -v NOS9_6809_L2_v030300_coco3_80d.dsk ~/sy/doing_os9/gomar/drive/disk2
 	:
-	echo 'list /fuse/daemon/foo & echo SLEEP ; sleep 60 ; echo WAKE; list /fuse/foo/45 ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
+	echo 'list /fuse/daemon/foo & echo SLEEP ; sleep 60 ; echo WAKE; list /fuse/foo/eleven ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	# echo 'list /fuse/daemon/foo' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	# echo 'ncl < run.tcl' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	:
