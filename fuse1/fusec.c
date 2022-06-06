@@ -53,7 +53,6 @@ struct Regs {
 
 struct Fuse { // embeds in PathDesc
   byte state;
-  byte char_hack;
   struct PathDesc* parent_fd;  // NULL for daemon,  daemon for client.
   byte num_child;  // how many open clients a daemon has.
   byte current_task;
@@ -483,7 +482,6 @@ void ShowPathDesc(struct PathDesc* pd) {
   ShowStr("regs"); ShowHex(pd->regs); ShowChar(13);
   ShowStr("unused_buffer"); ShowHex(pd->unused_buffer); ShowChar(13);
   ShowStr("state"); ShowHex(pd->fuse.state); ShowChar(13);
-  ShowStr("char_hack"); ShowHex(pd->fuse.char_hack); ShowChar(13);
   ShowStr("parent_fd"); ShowHex(pd->fuse.parent_fd); ShowChar(13);
   ShowStr("num_child"); ShowHex(pd->fuse.num_child); ShowChar(13);
   ShowStr("current_task"); ShowHex(pd->fuse.current_task); ShowChar(13);
@@ -747,7 +745,6 @@ error DaemonOpen(
 
   assert(pd);
   pd->fuse.state = D_IDLE;
-  pd->fuse.char_hack = 'A';
   pd->fuse.parent_fd = NULL;
   pd->fuse.num_child = 0;
   pd->fuse.current_client = NULL;
@@ -764,7 +761,6 @@ error ClientOpen(
     char* begin2,
     char* end2) {
   pd->fuse.state = C_IDLE;
-  pd->fuse.char_hack = 'A';
   pd->fuse.num_child = 0;
   pd->fuse.current_client = NULL;
   pd->fuse.cl_op = OP_OPEN;
@@ -863,32 +859,6 @@ error CloseC(struct PathDesc* pd, struct Regs* regs) {
   return OKAY;
 }
 
-error ClientReadLn(
-              struct PathDesc* pd, struct Regs* regs) {
-  return 23;
-}
-
-error DaemonReadLn(
-              struct PathDesc* pd, struct Regs* regs) {
-#if 1
-  ShowStr(" ReadLn ");
-  if (pd->fuse.char_hack >= 'G') {
-    ShowStr("*EOF*");
-    regs->ry = 0;  // count
-    return E_EOF;
-  } else {
-    // ShowChar('R');
-    // ShowHex(pd->fuse.char_hack);
-    pd->fuse.char_hack ++;
-    regs->ry = 2;  // count
-    byte task = Os9CurrentProcessTask();
-    Os9StoreByteToTask(task, regs->rx, pd->fuse.char_hack);
-    Os9StoreByteToTask(task, regs->rx + 1, 13/*CR*/);
-  }
-#endif
-  return OKAY;
-}
-
 error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
   ShowStr("\r##### READ LINE: #####\r");
   ShowRegs(regs);
@@ -937,13 +907,6 @@ error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
   }
 
 Finish:
-#if 0
-  if (pd->fuse.parent_fd) {
-    return ClientReadLn(pd, regs);
-  } else {
-    return DaemonReadLn(pd, regs);
-  }
-#endif
   ShowStr("\r##### READ LINE: ##### "); ShowHex(pd);
   ShowHex(err); ShowStr("\r");
   return err;
@@ -987,16 +950,13 @@ error GetStatC(struct PathDesc* pd, struct Regs* regs) {
     case 6: { // SS.EOF
         regs->rx = 0;  // MSW of file size: unknown.
         regs->ru = 0;  // LSW of file size: unknown.
-        if (pd->fuse.char_hack >= 'G') {
-          return E_EOF;
-        }
     }
     break;
     default: {
       return 17;
     }
   }
-  return 0;
+  return OKAY;
 }
 
 error SetStatC(struct PathDesc* pd, struct Regs* regs) {
