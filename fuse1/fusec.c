@@ -17,7 +17,8 @@ enum FuseState {
   D_GOT_WORK = 3,     // ReadLn returned a Clop.
   C_POISON = 11,  // daemon death poisons its clients.
   C_IDLE = 12,   // no client stuff pending.
-  C_REQUESTED = 13,  // client made an IO call (a Clop).
+  C_WAIT_FOR_DAEMON_READLN = 13,   // we beat the deamon readln.
+  C_REQUESTED = 14,  // client made an IO call (a Clop).
 };
 
 enum ClientOp {
@@ -53,7 +54,7 @@ struct Regs {
 
 struct Fuse { // embeds in PathDesc
   byte state;
-  struct PathDesc* parent_fd;  // NULL for daemon,  daemon for client.
+  struct PathDesc* parent_pd;  // NULL for daemon,  daemon for client.
   byte num_child;  // how many open clients a daemon has.
   byte current_task;
   struct PathDesc* current_client;
@@ -482,7 +483,7 @@ void ShowPathDesc(struct PathDesc* pd) {
   ShowStr("regs"); ShowHex(pd->regs); ShowChar(13);
   ShowStr("unused_buffer"); ShowHex(pd->unused_buffer); ShowChar(13);
   ShowStr("state"); ShowHex(pd->fuse.state); ShowChar(13);
-  ShowStr("parent_fd"); ShowHex(pd->fuse.parent_fd); ShowChar(13);
+  ShowStr("parent_pd"); ShowHex(pd->fuse.parent_pd); ShowChar(13);
   ShowStr("num_child"); ShowHex(pd->fuse.num_child); ShowChar(13);
   ShowStr("current_task"); ShowHex(pd->fuse.current_task); ShowChar(13);
   ShowStr("current_client"); ShowHex(pd->fuse.current_client); ShowChar(13);
@@ -563,7 +564,7 @@ bool ParsedNameEquals(word begin, word end, const char*s) {
 // FindDaemon traverses all path descriptors looking for
 // one that is (1) open (path_num is set),
 // (2) has the given device_table_entry (it is a /fuse),
-// (3) is a daemon path (the parent_fd is null),
+// (3) is a daemon path (the parent_pd is null),
 // (4) has the name indicated by begin/end.
 struct PathDesc* FindDaemon(struct DeviceTableEntry* dte, word begin, word end) {
   struct PathDesc* got = NULL;
@@ -587,7 +588,7 @@ struct PathDesc* FindDaemon(struct DeviceTableEntry* dte, word begin, word end) 
         if (pd->path_num && pd->device_table_entry == dte) {
           ShowStr("--dte--");
 
-          if (!pd->fuse.parent_fd && ParsedNameEquals(begin, end, pd->name)) {
+          if (!pd->fuse.parent_pd && ParsedNameEquals(begin, end, pd->name)) {
             ShowStr("---YES---"); ShowHex(pd->path_num); ShowHex(pd);
             assert(pd->path_num == 4*i+j);
             got = pd; // return pd;
@@ -618,6 +619,14 @@ byte LoNyb(byte x) { return 15 & x; }
 byte HiByt(word x) { return (byte)(x>>8); }
 byte LoByt(word x) { return (byte)x; }
 
+void RecordClientOpInClient(struct PathDesc* cli,
+                          byte client_op) {
+  // Assert we only call this from Client process.
+  // Later we must figure out how to do it, if client ops before daemon readlns.
+  assert(Os9CurrentProcessTask() == cli->fuse.current_task);
+  cli->fuse.cl_op = client_op;
+  cli->fuse.cl_regs = *cli->regs;  // this breaks if not in Client process.
+}
 void MarshalClientOpToDaemon(struct PathDesc* cli,
                           struct PathDesc* dae) {
   word ptr = dae->regs->rx;
@@ -680,7 +689,7 @@ error DaemonOpen(
 
   assert(pd);
   pd->fuse.state = D_IDLE;
-  pd->fuse.parent_fd = NULL;
+  pd->fuse.parent_pd = NULL;
   pd->fuse.num_child = 0;
   pd->fuse.current_client = NULL;
 
@@ -698,19 +707,19 @@ error ClientOpen(
   pd->fuse.state = C_IDLE;
   pd->fuse.num_child = 0;
   pd->fuse.current_client = NULL;
-  pd->fuse.cl_op = OP_OPEN;
-  pd->fuse.cl_regs = *pd->regs;
   CopyParsedName(begin2, end2, pd->name, sizeof pd->name);
 
   // Client (child) must already have Daemon (parent).
   struct PathDesc *parent = FindDaemon(pd->device_table_entry, begin1, end1);
   if (!parent) return E_NES;  // non-existing segment.
-  pd->fuse.parent_fd = parent;
-                              //
+  pd->fuse.parent_pd = parent;
+
+  if (parent->fuse.current_client) return 39;
+
   ++ parent->fuse.num_child;
   parent->fuse.current_client = pd;
-  parent->fuse.current_task = Os9CurrentProcessTask();
 
+  RecordClientOpInClient(pd, OP_OPEN);
   MarshalClientOpToDaemon(pd, parent);
   return OKAY;
 }
@@ -783,8 +792,8 @@ error CloseC(struct PathDesc* pd, struct Regs* regs) {
   ShowPathDesc(pd);
   pd->fuse.current_task = Os9CurrentProcessTask();
 
-  if (pd->fuse.parent_fd) {
-    -- pd->fuse.parent_fd->fuse.num_child;
+  if (pd->fuse.parent_pd) {
+    -- pd->fuse.parent_pd->fuse.num_child;
   }
   bzero((void*)(&pd->fuse), sizeof(pd->fuse));
   bzero(pd->name, sizeof(pd->name));
@@ -814,8 +823,9 @@ error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
           pd->fuse.state = D_WAIT_FOR_WORK;
           Os9Pause();
         }
-        pd->fuse.state = D_GOT_WORK;
-        pd->fuse.state = D_IDLE;
+        pd->fuse.state = D_GOT_WORK;  // TODO
+        pd->fuse.state = D_IDLE;      // FORNOW
+        pd->fuse.current_client = NULL;
         FINISH( OKAY);
       }
     break;
@@ -829,7 +839,12 @@ error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
       FINISH( 25);
     break;
     case C_IDLE:
-      FINISH( 26);
+      // did Daemon get here first? assume so.
+      RecordClientOpInClient(pd, OP_READLN);
+      MarshalClientOpToDaemon(pd, pd->fuse.parent_pd);
+      // TODO -- we're not sleeping for daemon to run,
+      // so we're running over and over again.
+      FINISH(OKAY);
     break;
     case C_REQUESTED:
       FINISH( 27);
