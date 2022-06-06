@@ -532,11 +532,8 @@ void ShowParsedName(word current, word begin, word end) {
 // The other string s is an upper-case 0-terminated
 // C string, in normal memory, with no high bits.
 bool ParsedNameEquals(word begin, word end, const char*s) {
-  byte pid = Os9CurrentProcessId();
   byte task = Os9CurrentProcessTask();
   ShowStr(s);
-  //ShowRam(begin);
-  //ShowRam(s);
   word p = begin;
   for (; *s && p < end; p++, s++) {
     byte ch = 0;
@@ -562,46 +559,6 @@ bool ParsedNameEquals(word begin, word end, const char*s) {
   ShowChar(13);
   return (p==end) && ((*s)==0);
 }
-
-////////////////////////////////////////////////
-
-#if 0
-word BaseForAlloc64(struct PathDesc* pathdesc) {
-  assert(pathdesc);
-    struct DeviceTableEntry* dte =
-      (struct DeviceTableEntry*)(pathdesc->device_table_entry);
-  assert(dte);
-    struct DeviceVars *vars = dte->dt_device_vars;
-  assert(vars);
-    word base = vars->fuse_alloc64_base;
-  assert(base);
-  return base;
-}
-#endif
-
-#if 0
-struct Daemon* MakeDaemon(word base, word begin, word end) {
-  struct Daemon *d = NULL;
-  byte index = 0;
-  error err = Os9All64(base, &index, (word*)&d);
-  assert(!err);
-  assert(d->d_id == index);
-  err = CopyParsedName(begin, end, d->d_daemon_name, 30);
-  assert(!err);
-  return d;
-}
-
-struct Client* MakeClient(word base, word begin, word end) {
-  struct Client *c = NULL;
-  byte index = 0;
-  error err = Os9All64(base, &index, (word*)&c);
-  assert(!err);
-  assert(c->c_id == index);
-  err = CopyParsedName(begin, end, c->c_client_name, 30);
-  assert(!err);
-  return c;
-}
-#endif
 
 // FindDaemon traverses all path descriptors looking for
 // one that is (1) open (path_num is set),
@@ -648,28 +605,6 @@ struct PathDesc* FindDaemon(struct DeviceTableEntry* dte, word begin, word end) 
   ShowStr("\r");
   return got; // NULL;
 }
-
-#if 0
-void* FindDaemonOrClientByPathDesc(word base, struct PathDesc* pathdesc) {
-  for (byte i = 0; i < 64; i++) {
-    byte page = ((byte*)base)[i];
-    if (!page) continue;
-    word addr = (word)page << 8;
-    for (byte j = 0; j<4; j++) {
-      if (i!=0 || j!=0) {
-        // Either Daemon or Client will do.
-        struct Daemon* d = (struct Daemon*)addr;
-        if (d->d_id!=0 && d->d_pathdesc == pathdesc) {
-          assert(d->d_id == 4*i+j);
-          return d;
-        }
-      }
-      addr += 64;
-    }
-  }
-  return NULL;
-}
-#endif
 
 ////////////////////////////////////////////////
 
@@ -846,8 +781,6 @@ error CloseC(struct PathDesc* pd, struct Regs* regs) {
   ShowStr("\r##### CLOSING: #####\r");
   ShowRegs(regs);
   ShowPathDesc(pd);
-  // pd->regs = regs;
-  // pd->current_process_id = Os9CurrentProcessId();
   pd->fuse.current_task = Os9CurrentProcessTask();
 
   if (pd->fuse.parent_fd) {
@@ -863,8 +796,6 @@ error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
   ShowStr("\r##### READ LINE: #####\r");
   ShowRegs(regs);
   ShowPathDesc(pd);
-  // pd->regs = regs;
-  // pd->current_process_id = Os9CurrentProcessId();
   pd->fuse.current_task = Os9CurrentProcessTask();
   error err = 0;
 
@@ -876,6 +807,7 @@ error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
       // so daemon can learn the next Clop.
       if (pd->fuse.current_client) {
         // Client got here first.
+        assert(0);
       } else {
         // Daemon got here first.  Sleep until client.
         while (!pd->fuse.current_client) {
@@ -913,30 +845,22 @@ Finish:
 }
 
 error WritLnC(struct PathDesc* pd, struct Regs* regs) {
-  // pd->regs = regs;
-  // pd->current_process_id = Os9CurrentProcessId();
   pd->fuse.current_task = Os9CurrentProcessTask();
   return 20;
 }
 
 error ReadC(struct PathDesc* pd, struct Regs* regs) {
-  // pd->regs = regs;
-  // pd->current_process_id = Os9CurrentProcessId();
   pd->fuse.current_task = Os9CurrentProcessTask();
   // Read same as ReadLn.
   return ReadLnC(pd, regs);
 }
 
 error WriteC(struct PathDesc* pd, struct Regs* regs) {
-  // pd->regs = regs;
-  // pd->current_process_id = Os9CurrentProcessId();
   pd->fuse.current_task = Os9CurrentProcessTask();
   return 19;
 }
 
 error GetStatC(struct PathDesc* pd, struct Regs* regs) {
-  // pd->regs = regs;
-  // pd->current_process_id = Os9CurrentProcessId();
   pd->fuse.current_task = Os9CurrentProcessTask();
   switch (regs->rb) {
     case 1: { // SS.READY
@@ -960,8 +884,6 @@ error GetStatC(struct PathDesc* pd, struct Regs* regs) {
 }
 
 error SetStatC(struct PathDesc* pd, struct Regs* regs) {
-  // pd->regs = regs;
-  // pd->current_process_id = Os9CurrentProcessId();
   pd->fuse.current_task = Os9CurrentProcessTask();
   return 18;
 }
