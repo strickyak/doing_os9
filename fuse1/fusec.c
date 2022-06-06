@@ -256,6 +256,13 @@ MoveBad
 }
 
 error Os9Send(byte to_pid, byte signal) {
+#if 1
+  ShowStr("\r@@@@ SEND pid=");
+  ShowHex(Os9CurrentProcessId());
+  ShowHex(to_pid);
+  ShowHex(signal);
+  ShowStr("\r");
+#endif
   error err;
   asm {
     PSHS Y,U       ; save frame
@@ -272,8 +279,17 @@ SendBad
   }
   return err;
 }
+error Os9Wake(byte to_pid) {
+  return Os9Send(to_pid, 1);
+}
 
 error Os9Sleep(word num_ticks) {
+#if 1
+  ShowStr("\r@@@@ SLEEP pid=");
+  ShowHex(Os9CurrentProcessId());
+  ShowStr("\r");
+#endif
+
   error err;
   asm {
     PSHS Y,U       ; save frame
@@ -287,6 +303,11 @@ error Os9Sleep(word num_ticks) {
 SleepBad
     stb err
   }
+#if 1
+  ShowStr("\r@@@@ SLEEP -> AWAKE pid=");
+  ShowHex(Os9CurrentProcessId());
+  ShowStr("\r");
+#endif
   return err;
 }
 
@@ -674,7 +695,7 @@ void MarshalClientOpToDaemon(struct PathDesc* cli,
   word bytes_used = dae->regs->ry - remain;
   dae->regs->ry = bytes_used;
 
-  Os9Send(dae->current_process_id, 1); // wakeup
+  Os9Wake(dae->current_process_id); // wakeup
 }
 
 //////////////////////////////////////
@@ -825,6 +846,7 @@ error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
         }
         pd->fuse.state = D_GOT_WORK;  // TODO
         pd->fuse.state = D_IDLE;      // FORNOW
+        Os9Wake(pd->fuse.current_client->current_process_id);
         pd->fuse.current_client = NULL;
         FINISH( OKAY);
       }
@@ -844,6 +866,7 @@ error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
       MarshalClientOpToDaemon(pd, pd->fuse.parent_pd);
       // TODO -- we're not sleeping for daemon to run,
       // so we're running over and over again.
+      Os9Pause();
       FINISH(OKAY);
     break;
     case C_REQUESTED:
