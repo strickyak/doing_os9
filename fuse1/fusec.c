@@ -13,15 +13,19 @@ typedef unsigned int word;
 
 enum FuseState {
   D_IDLE = 1,
-  D_WAIT_FOR_WORK = 2,  // called ReadLn
   D_GOT_WORK = 3,     // ReadLn returned a Clop.
+
   C_POISON = 11,  // daemon death poisons its clients.
   C_IDLE = 12,   // no client stuff pending.
-  C_WAIT_FOR_DAEMON_READLN = 13,   // we beat the deamon readln.
-  C_REQUESTED = 14,  // client made an IO call (a Clop).
+  C_REQUESTING = 13,
+  C_REQUESTED = 13,
+  C_RESULT = 14,
 };
 
 enum ClientOp {
+  OP_NONE = 0,     // no operation requested.
+  OP_PENDING = 1,  // Daemon is working on it.
+  OP_STATUS = 2,   // Daemon set a result status.
   OP_CREATE = 'c',
   OP_OPEN = 'o',
   OP_CLOSE = 'C',
@@ -49,17 +53,23 @@ struct DeviceVars {
 struct Regs {
   byte rcc, ra, rb, rdp;
   word rx, ry, ru, rpc;
-};
+};  // size 12
+struct ShortRegs {
+  byte rcc, ra, rb, rdp;
+  word rx, ry, ru;  // omit rpc, saves 2 bytes.
+};  // size 10
 #define REGS_D(regs) (*(word*)(&(regs)->ra))
 
 struct Fuse { // embeds in PathDesc
   byte state;
+  bool paused;
   struct PathDesc* parent_pd;  // NULL for daemon,  daemon for client.
   byte num_child;  // how many open clients a daemon has.
   byte current_task;
   struct PathDesc* current_client;
-  byte cl_op;
-  struct Regs cl_regs;
+  byte cl_op;     // from client
+  error d_status;  // from daemon
+  struct ShortRegs cl_regs;
 };
 
 struct PathDesc {
@@ -304,15 +314,23 @@ SleepBad
     stb err
   }
 #if 1
-  ShowStr("\r@@@@ SLEEP -> AWAKE pid=");
+  ShowStr("\r@@@@ AWAKE pid=");
   ShowHex(Os9CurrentProcessId());
   ShowStr("\r");
 #endif
   return err;
 }
 
-void Os9Pause() {
+void Os9Pause(struct PathDesc* pd) {
+  ShowStr("\rPAUSING ");
+  ShowHex(pd->current_process_id);
+  ShowStr("\r");
+  pd->fuse.paused = TRUE;
   Os9Sleep(0);  // until signalled.
+  pd->fuse.paused = FALSE;
+  ShowStr("\rFINISHED PAUSE ");
+  ShowHex(pd->current_process_id);
+  ShowStr("\r");
 }
 
 void memcpy(char* dest, const char* src, word len) {
@@ -330,99 +348,6 @@ void memcpy(char* dest, const char* src, word len) {
 memcpy bra _memcpy
   }
 }
-
-#if 0
-error Os9All64(word base_page, byte* index_out, word* addr_out) {
-  error err;
-  asm {
-    PSHS Y,U       ; save frame
-    LDX base_page
-
-    SWI2
-    FCB F$All64
-
-    TFR Y,X        ; addr
-    PULS Y,U       ; restore frame
-    BCS All64Bad
-
-    STX [addr_out]   ; was in Y
-    STA [index_out]
-    CLRB
-All64Bad
-    STB err
-  }
-  return err;
-}
-#endif
-
-#if 0
-error Os9Find64(word base_page, byte index_wanted, word* addr_out) {
-  error err;
-  asm {
-    PSHS Y,U       ; save frame
-    LDX base_page
-    LDA index_wanted
-
-    SWI2
-    FCB F$Find64
-
-    TFR Y,X        ; addr
-    PULS Y,U       ; restore frame
-    BCs Find64Bad
-
-    STX [addr_out]
-    CLRB
-Find64Bad
-    STB err
-  }
-  return err;
-}
-#endif
-
-#if 0
-error Os9Ret64(word base_page, byte index) {
-  error err;
-  asm {
-    PSHS Y,U       ; save frame
-    LDX base_page
-    LDA index
-
-    SWI2
-    FCB F$Ret64
-
-    TFR Y,X        ; addr
-    PULS Y,U       ; restore frame
-    BCs Ret64Bad
-
-    CLRB
-Ret64Bad
-    STB err
-  }
-  return err;
-}
-#endif
-
-#if 0
-// Probably don't need AllRAM
-error Os9AllRAM(byte num_pages, void* *addr_out) {
-  error err;
-  asm {
-    LDB num_pages
-
-    PSHS Y,U
-    SWI2
-    FCB $39 ; F$AllRAM
-    PULS Y,U
-
-    STD [addr_out]
-    BCS AllRamBad    ; D & Carry still available.
-    CLRB    ; OK status
-AllRamBad
-    STB err
-  }
-  return err;
-}
-#endif
 
 error Os9PrsNam(char* ptr, char** eow_out, char**next_name_out) {
   error err;
@@ -504,13 +429,14 @@ void ShowPathDesc(struct PathDesc* pd) {
   ShowStr("regs"); ShowHex(pd->regs); ShowChar(13);
   ShowStr("unused_buffer"); ShowHex(pd->unused_buffer); ShowChar(13);
   ShowStr("state"); ShowHex(pd->fuse.state); ShowChar(13);
+  ShowStr("paused"); ShowHex(pd->fuse.paused); ShowChar(13);
   ShowStr("parent_pd"); ShowHex(pd->fuse.parent_pd); ShowChar(13);
   ShowStr("num_child"); ShowHex(pd->fuse.num_child); ShowChar(13);
   ShowStr("current_task"); ShowHex(pd->fuse.current_task); ShowChar(13);
   ShowStr("current_client"); ShowHex(pd->fuse.current_client); ShowChar(13);
   ShowStr("cl_op"); ShowHex(pd->fuse.cl_op); ShowChar(13);
   ShowStr("device_type"); ShowHex(pd->device_type); ShowChar(13);
-  ShowRegs(&pd->fuse.cl_regs);
+  ShowRegs((struct Regs*) &pd->fuse.cl_regs);
   ShowChar(13);
   // ShowRam((word)pd->device_table_entry); ShowChar(13);
   ShowDeviceTableEntry((struct DeviceTableEntry*)(pd->device_table_entry));
@@ -555,30 +481,30 @@ void ShowParsedName(word current, word begin, word end) {
 // C string, in normal memory, with no high bits.
 bool ParsedNameEquals(word begin, word end, const char*s) {
   byte task = Os9CurrentProcessTask();
-  ShowStr(s);
+  //ShowStr(s);
   word p = begin;
   for (; *s && p < end; p++, s++) {
     byte ch = 0;
     error err = Os9LoadByteFromTask(task, p, &ch);
     assert(!err);
-    ShowHex(p); ShowHex(s);
-    ShowChar(ch); ShowChar(*s);
+    //ShowHex(p); ShowHex(s);
+    //ShowChar(ch); ShowChar(*s);
 
     if (ToUpper(ch) != *s) {
-      ShowChar('F');
+      //ShowChar('F');
       return FALSE;  // does not match.
     }
   }
 
   // If both termination conditions are true,
   // strings are equal.
-  ShowChar('R');
-  ShowHex( ((*s)==0) );
-  ShowHex( (p==end) );
-      ShowChar('R');
-  ShowHex( (p==end) && ((*s)==0) );
-  ShowChar(13);
-  ShowChar(13);
+  //ShowChar('R');
+  //ShowHex( ((*s)==0) );
+  //ShowHex( (p==end) );
+      //ShowChar('R');
+  //ShowHex( (p==end) && ((*s)==0) );
+  //ShowChar(13);
+  //ShowChar(13);
   return (p==end) && ((*s)==0);
 }
 
@@ -589,13 +515,13 @@ bool ParsedNameEquals(word begin, word end, const char*s) {
 // (4) has the name indicated by begin/end.
 struct PathDesc* FindDaemon(struct DeviceTableEntry* dte, word begin, word end) {
   struct PathDesc* got = NULL;
-  ShowStr("\rFindDaemon: ");
-  ShowHex(end-begin);
-  ShowTaskRam(Os9CurrentProcessTask(), begin);
-  ShowStr(" ... table=");
+  //ShowStr("\rFindDaemon: ");
+  //ShowHex(end-begin);
+  // ShowTaskRam(Os9CurrentProcessTask(), begin);
+  //ShowStr(" ... table=");
   byte* table = Os9PathDescBaseTable();
-  ShowRam(table);
-  ShowStr(" ...\r");
+  //ShowRam(table);
+  //ShowStr(" ...\r");
   for (byte i = 0; i < 64; i++) {  // how big can it get?
     byte page = table[i];
     if (!page) continue;
@@ -603,18 +529,18 @@ struct PathDesc* FindDaemon(struct DeviceTableEntry* dte, word begin, word end) 
     for (byte j = 0; j<4; j++) {
       if (i!=0 || j!=0) {
         struct PathDesc* pd = (struct PathDesc*)addr;
-        ShowStr("\rfd#"); ShowHex(4*i + j); ShowHex(pd);
-          ShowRam((word)pd);
-          ShowRam((word)pd+32);
+        //ShowStr("\rfd#"); ShowHex(4*i + j); ShowHex(pd);
+          //ShowRam((word)pd);
+          //ShowRam((word)pd+32);
         if (pd->path_num && pd->device_table_entry == dte) {
-          ShowStr("--dte--");
+          //ShowStr("--dte--");
 
           if (!pd->fuse.parent_pd && ParsedNameEquals(begin, end, pd->name)) {
-            ShowStr("---YES---"); ShowHex(pd->path_num); ShowHex(pd);
+            //ShowStr("---YES---"); ShowHex(pd->path_num); ShowHex(pd);
             assert(pd->path_num == 4*i+j);
             got = pd; // return pd;
           } else {
-            ShowStr("---no---\n");
+            //ShowStr("---no---\n");
           }
         }
       }
@@ -622,7 +548,7 @@ struct PathDesc* FindDaemon(struct DeviceTableEntry* dte, word begin, word end) 
     }
   }
 
-  ShowStr("\rFindDaemon -->> ");
+  ShowStr(" FindDaemon -->> ");
   ShowHex(got);
   ShowStr("\r");
   return got; // NULL;
@@ -640,30 +566,87 @@ byte LoNyb(byte x) { return 15 & x; }
 byte HiByt(word x) { return (byte)(x>>8); }
 byte LoByt(word x) { return (byte)x; }
 
+void SetDaemonState(struct PathDesc* pd, byte x) {
+  ShowStr("\rSetDaemonState: ");
+  ShowHex(pd->fuse.state);
+  ShowStr(" -->> ");
+  pd->fuse.state = x;
+  ShowHex(pd->fuse.state);
+  ShowStr("\r");
+}
+void SetClientState(struct PathDesc* pd, byte x) {
+  ShowStr("\rSetClientState: ");
+  ShowHex(pd->fuse.state);
+  ShowStr(" -->> ");
+  if (pd->fuse.state != C_POISON) pd->fuse.state = x;
+  ShowHex(pd->fuse.state);
+  ShowStr("\r");
+}
+void RecordResultInClient(struct PathDesc* cli,
+    struct PathDesc* dae) {
+  error err = OKAY;
+  switch (cli->fuse.cl_op) {
+    case OP_OPEN:
+      // Exit: A=path_num; X=byte after pathlist
+      cli->fuse.cl_regs.ra = cli->path_num;
+      break;
+    case OP_READLN: {
+      // Enter: A=path_num X=addr Y=max_bytes
+      // Exit: Y=bytes_read
+        word addr = cli->fuse.cl_regs.rx;
+        word max = cli->fuse.cl_regs.ry;
+        for (word i = 0; i < max-1; i++) {
+          Os9StoreByteToTask(cli->fuse.current_task, addr,
+              i==0 ? 'A' : 'a');
+          addr++;
+        }
+        Os9StoreByteToTask(cli->fuse.current_task, addr, 13);
+      }
+      break;
+    case OP_CLOSE:
+      break;
+    default:
+      break;
+  }
+  cli->fuse.d_status = err;
+  cli->fuse.state = C_RESULT;
+  Os9Wake(cli->current_process_id);
+}
 void RecordClientOpInClient(struct PathDesc* cli,
                           byte client_op) {
   // Assert we only call this from Client process.
   // Later we must figure out how to do it, if client ops before daemon readlns.
   assert(Os9CurrentProcessTask() == cli->fuse.current_task);
+
   cli->fuse.cl_op = client_op;
-  cli->fuse.cl_regs = *cli->regs;  // this breaks if not in Client process.
+  // this breaks if not in Client process.
+  cli->fuse.cl_regs = *(struct ShortRegs*)cli->regs;
 }
+
+void Add(byte ch, struct PathDesc* dae,
+         word* ptr, word* remain) {
+  if ((*remain) > 0) { --(*remain);
+    ShowChar('#'); ShowChar('#'); ShowChar(ch);
+    error e = Os9StoreByteToTask(
+               dae->fuse.current_task, (*ptr)++, ch);
+      assert(!e);
+  }
+}
+
 void MarshalClientOpToDaemon(struct PathDesc* cli,
                           struct PathDesc* dae) {
   word ptr = dae->regs->rx;
   word remain = dae->regs->ry;
 
-#define ADD(CHAR)  \
-  if (remain > 0) { --remain; \
-    error e = Os9StoreByteToTask(  \
-               dae->fuse.current_task, ptr++, (CHAR));  \
-      assert(!e); }
+#define ADD(CHAR) Add((CHAR), dae, &ptr, &remain)
 
 #define ADD_BYTE(B) { byte b = (B); ADD(Hex(HiNyb(b))); ADD(Hex(LoNyb(b))); ADD(' '); }
+
 #define ADD_WORD(W) { word w = (W); ADD_BYTE(HiByt(w)); ADD_BYTE(LoByt(w)); ADD(' '); }
 
   ADD(cli->fuse.cl_op);
   ADD(' ');
+  ADD_BYTE(cli->path_num);
 
   switch (cli->fuse.cl_op) {
     case OP_OPEN:
@@ -687,6 +670,8 @@ void MarshalClientOpToDaemon(struct PathDesc* cli,
       break;
         ADD_WORD(cli->regs->ry);  // max bytes to read.
     default:
+      ShowStr(" BILBO "); ShowHex(cli);
+      ShowPathDesc(cli);
       ShowHex(cli->fuse.cl_op);
       assert(0);
   }
@@ -695,12 +680,42 @@ void MarshalClientOpToDaemon(struct PathDesc* cli,
   word bytes_used = dae->regs->ry - remain;
   dae->regs->ry = bytes_used;
 
-  Os9Wake(dae->current_process_id); // wakeup
+  SetClientState(cli, C_REQUESTED);
+  cli->fuse.cl_op = 0;
+  // Os9Wake(cli->current_process_id); // wakeup
 }
 
 //////////////////////////////////////
 
-error DaemonOpen(
+
+error PerformClient(struct PathDesc* pd, byte op) {
+  if (pd->fuse.state == C_POISON) return E_PRCABT;
+
+  RecordClientOpInClient(pd, op);
+  SetClientState(pd, C_REQUESTING);
+  ShowStr(" NANDO0 "); ShowHex(op);
+
+  do {
+    ShowStr(" NANDO1 "); ShowHex(op);
+    Os9Wake(pd->fuse.parent_pd->current_process_id);
+    ShowStr(" NANDO2 "); ShowHex(op);
+    Os9Pause(pd);
+    ShowStr(" NANDO3 "); ShowHex(op);
+  } while (pd->fuse.state == C_REQUESTING ||
+           pd->fuse.state == C_REQUESTED);
+
+  ShowStr(" NANDO4 "); ShowHex(op);
+
+  if (pd->fuse.state == C_POISON) return E_PRCABT;
+  assert(pd->fuse.state == C_RESULT);
+
+  // Here we would consume the C_RESULT and change state to C_IDLE.
+
+  SetClientState(pd, C_IDLE);
+  return pd->fuse.d_status;  // status from daemon.
+}
+
+error OpenDaemon(
     struct PathDesc* pd,
     word begin2,
     word end2) {
@@ -719,13 +734,13 @@ error DaemonOpen(
   return OKAY;
 }
 
-error ClientOpen(
+error OpenClient(
     struct PathDesc* pd,
     char* begin1,
     char* end1,
     char* begin2,
     char* end2) {
-  pd->fuse.state = C_IDLE;
+  SetClientState(pd, C_IDLE);
   pd->fuse.num_child = 0;
   pd->fuse.current_client = NULL;
   CopyParsedName(begin2, end2, pd->name, sizeof pd->name);
@@ -733,21 +748,20 @@ error ClientOpen(
   // Client (child) must already have Daemon (parent).
   struct PathDesc *parent = FindDaemon(pd->device_table_entry, begin1, end1);
   if (!parent) return E_NES;  // non-existing segment.
-  pd->fuse.parent_pd = parent;
+  // Current Limitation: only one client per parent daemon.
+  if (parent->fuse.current_client) return E_SHARE;
 
-  if (parent->fuse.current_client) return 39;
-
-  ++ parent->fuse.num_child;
   parent->fuse.current_client = pd;
+  pd->fuse.parent_pd = parent;
+  ++ parent->fuse.num_child;
 
-  RecordClientOpInClient(pd, OP_OPEN);
-  MarshalClientOpToDaemon(pd, parent);
-  return OKAY;
+  return PerformClient(pd, OP_OPEN);
 }
 
 ////////////////////////////////////////////////
 
 error CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
+  pd->fuse.current_task = Os9CurrentProcessTask();
 #if 1
   ShowStr("\rsizeof Fuse: "); ShowHex(sizeof(struct Fuse));
   ShowStr("\rCreateOrOpen: ");
@@ -758,9 +772,6 @@ error CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
   ShowRegs(regs);
   ShowPathDesc(pd);
 #endif
-  // pd->regs = regs;
-  // pd->current_process_id = Os9CurrentProcessId();
-  pd->fuse.current_task = Os9CurrentProcessTask();
 
   char *begin1=NULL, *end1=NULL, *begin2=NULL, *end2=NULL;
   byte i = 0;
@@ -798,9 +809,9 @@ error CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
   ShowHex(i);
   ShowChar(13);
   if (i==3 && ParsedNameEquals(begin1, end1, "DAEMON")) {
-    return DaemonOpen(pd, begin2, end2);
+    return OpenDaemon(pd, begin2, end2);
   } else if (i > 1) {
-    return ClientOpen(pd, begin1, end1, begin2, end2);
+    return OpenClient(pd, begin1, end1, begin2, end2);
   } else {
     assert(0);
     return E_BNAM;
@@ -808,22 +819,30 @@ error CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
 }
 
 error CloseC(struct PathDesc* pd, struct Regs* regs) {
-  ShowStr("\r##### CLOSING: #####\r");
-  ShowRegs(regs);
-  ShowPathDesc(pd);
   pd->fuse.current_task = Os9CurrentProcessTask();
+  ShowStr("\r##### CLOSING: #####\r"); ShowHex(pd->path_num);
+  // ShowRegs(regs);
+  // ShowPathDesc(pd);
 
+  error err = OKAY;
   if (pd->fuse.parent_pd) {
     -- pd->fuse.parent_pd->fuse.num_child;
+    err = PerformClient(pd, OP_CLOSE);
   }
-  bzero((void*)(&pd->fuse), sizeof(pd->fuse));
-  bzero(pd->name, sizeof(pd->name));
-  ShowStr("\r##### CLOSED #####\r");
-  return OKAY;
+  if (pd->fuse.current_client) {
+      SetClientState(pd->fuse.current_client, C_POISON);
+  }
+
+  //? bzero((void*)(&pd->fuse), sizeof(pd->fuse));
+  //? bzero(pd->name, sizeof(pd->name));
+  ShowStr("\r##### FINISH: CLOSED #####"); ShowHex(pd->path_num);
+  ShowStr("\r");
+  return err;
 }
 
 error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
-  ShowStr("\r##### READ LINE: #####\r");
+  ShowStr("\r##### READ LINE: #####"); ShowHex(pd->path_num);
+  ShowStr("\r");
   ShowRegs(regs);
   ShowPathDesc(pd);
   pd->fuse.current_task = Os9CurrentProcessTask();
@@ -833,26 +852,28 @@ error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
 
   switch (pd->fuse.state) {
     case D_IDLE:
-      // We expect ReadLn when daemon is idle,
-      // so daemon can learn the next Clop.
-      if (pd->fuse.current_client) {
-        // Client got here first.
-        assert(0);
-      } else {
-        // Daemon got here first.  Sleep until client.
-        while (!pd->fuse.current_client) {
-          pd->fuse.state = D_WAIT_FOR_WORK;
-          Os9Pause();
+      // We want a client and a cl_op to do.
+      while (!pd->fuse.current_client || pd->fuse.current_client->fuse.state != C_REQUESTING || !pd->fuse.current_client->fuse.cl_op ) {
+        ShowStr("Because cc = "); ShowHex(pd->fuse.current_client);
+        if (pd->fuse.current_client) {
+          ShowStr("Because cl_op = "); ShowHex(pd->fuse.current_client->fuse.cl_op);
         }
-        pd->fuse.state = D_GOT_WORK;  // TODO
-        pd->fuse.state = D_IDLE;      // FORNOW
-        Os9Wake(pd->fuse.current_client->current_process_id);
-        pd->fuse.current_client = NULL;
-        FINISH( OKAY);
+        if (pd->fuse.current_client) Os9Wake(pd->fuse.current_client->current_process_id);
+        Os9Pause(pd);
       }
-    break;
-    case D_WAIT_FOR_WORK:
-      FINISH( 23);
+      //+ SetDaemonState(pd, D_GOT_WORK);
+
+      ShowChar('%'); ShowHex(pd->fuse.current_client->fuse.state);
+      assert(pd->fuse.current_client->fuse.state == C_REQUESTING);
+      SetClientState(pd->fuse.current_client, C_REQUESTED);
+ShowStr(" Drequested ");
+
+      MarshalClientOpToDaemon(pd->fuse.current_client, pd);
+ShowStr(" Dmarshalled ");
+      // Next should come from WriteLn:
+      RecordResultInClient(pd->fuse.current_client, pd);
+ShowStr(" Dfinish ");
+      FINISH( OKAY);
     break;
     case D_GOT_WORK:
       FINISH( 24);
@@ -861,13 +882,8 @@ error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
       FINISH( 25);
     break;
     case C_IDLE:
-      // did Daemon get here first? assume so.
-      RecordClientOpInClient(pd, OP_READLN);
-      MarshalClientOpToDaemon(pd, pd->fuse.parent_pd);
-      // TODO -- we're not sleeping for daemon to run,
-      // so we're running over and over again.
-      Os9Pause();
-      FINISH(OKAY);
+      err = PerformClient(pd, OP_READLN);
+      FINISH(err);
     break;
     case C_REQUESTED:
       FINISH( 27);
@@ -877,7 +893,7 @@ error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
   }
 
 Finish:
-  ShowStr("\r##### READ LINE: ##### "); ShowHex(pd);
+  ShowStr("\r##### FINISH: READ LINE ##### "); ShowHex(pd->path_num);
   ShowHex(err); ShowStr("\r");
   return err;
 }

@@ -2495,16 +2495,10 @@ func swi() {
 	case 1: /* SWI2 */
 		describe, returns := DecodeOs9Opcode(B(pcreg))
 		proc := W0(sym.D_Proc)
+		pid := B0(proc + sym.P_ID)
 		pmodul := W0(proc + sym.P_PModul)
-		/*
-			for k := 0; k < 16; k++ {
-				L("[%x] %x %c\n", k, B0(pmodul+Word(k)), (0x40 | 0x7F&B0(pmodul+Word(k))))
-			}
-			for k := 0; k < 16; k++ {
-				L("[%x] %x %c\n", k, B1(pmodul+Word(k)), (0x40 | 0x7F&B1(pmodul+Word(k))))
-			}
-		*/
-		L("{proc=%x#%x,pmodul=%x} OS9KERNEL%d: %s", proc, B0(proc+sym.P_ID), pmodul, MmuTask, describe)
+		moduleName := Os9String(pmodul + W(pmodul+4))
+		L("{proc=%x%q} OS9KERNEL%d: %s", pid, moduleName, MmuTask, describe)
 		L("\tregs: %s", Regs())
 		L("\t%s", ExplainMMU())
 
