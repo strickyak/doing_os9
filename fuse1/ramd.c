@@ -10,6 +10,8 @@ typedef unsigned int word;
 
 char* p;
 char buf[200];
+char contents[4096];
+int contents_len;
 
 #define CHECK(ACTION) {int err = ACTION; if (err) { printf("\nFAILURE in line %d: %s: error %d\n", __LINE__, #ACTION, err); exit(err); }}
 
@@ -46,32 +48,41 @@ word ParseHexWord() {
 int main() {
   int ram_fd;
   CHECK( Os9Open("/fuse/daemon/ram", 3, &ram_fd) );
+  printf("@@@@@@@@ Daemon Opened\n");
   while (1) {
-    int consumed = 0;
-    CHECK( Os9ReadLn(ram_fd, buf, sizeof buf - 1, &consumed) );
-    assert(consumed > 1);
-    buf[consumed+1] = '\0';
+    int len = 0;
+    byte eee;
+    CHECK( (eee = Os9ReadLn(ram_fd, buf, sizeof buf - 1, &len)) );
+    printf("@@@@@@@@ Daemon command: err=$%x=%d. len=%d  buf = {{{%s}}}\n", eee, eee, len, buf);
+    assert(len > 3);    // sanity.
+    buf[len+1] = '\0';  // Ensure NUL-termination.
 
     StartParse();
     byte op = ParseChar();
     switch (op) {
       case 'o':
-        printf(" Open ");
+        printf("@@@@@@@@  Open\n");
         break;
       case 'R':
-        printf(" ReadLn ");
+        printf("@@@@@@@@  ReadLn\n");
+        CHECK( Os9WritLn(ram_fd, contents, contents_len, &len) );
+        assert( len == contents_len );
         break;
       case 'W':
-        printf(" WriteLn ");
+        printf("@@@@@@@@  WriteLn\n");
+        CHECK( Os9ReadLn(ram_fd, contents, sizeof contents - 1, &contents_len) );
+        contents[contents_len+1] = '\0';  // Ensure NUL-termination.
+        printf("@@@@@@@@  Contents {{{%s}}}\n", contents);
         break;
       case 'C':
-        printf(" Close ");
+        printf("@@@@@@@@  Close\n");
         break;
       default:
-        printf("\nERROR: Unknown op: $%x `%c`\n", op, op);
+        printf("\n@@@@@@@@ ERROR: Unknown op: $%x `%c`\n", op, op);
         break;
     }
   }
+  /*NOTREACHED*/
   return 0;
 }
 
