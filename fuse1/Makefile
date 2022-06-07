@@ -1,4 +1,4 @@
-all: _generated_from_fusec_.a fuseman.os9 fuser.os9 fuse.os9 _run
+all: ramd _generated_from_fusec_.a fuseman.os9 fuser.os9 fuse.os9 _run
 
 XDEFDIR=/home/strick/go/src/github.com/strickyak/doing_os9/gomar/eouBeta610/udisk/sourcecode/asm/nitros9/
 DEFDIR=/dd/asm/nitros9/
@@ -10,8 +10,10 @@ T=../gomar/drive/disk2
 	lwasm-orig --6809 -f os9 -l'$@.list' -I'$(DEFDIR)' -I'.' -o '$@' '$<'
 
 clean:
-	rm -f *.list *.lst *.os9  *.map *.link _generated_from_fusec_.*
+	rm -f ramd *.o *.s *.list *.lst *.os9  *.map *.link _generated_from_fusec_.*
 
+ramd:
+	cmoc -i --os9 -I.. ramd.c ../os9call/os9call.c
 
 _generated_from_fusec_.a :
 	cmoc -i -S fusec.c
