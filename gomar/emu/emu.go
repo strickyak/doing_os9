@@ -1695,7 +1695,7 @@ func plusn() EA {
 	b := ImmByte()
 	/* negative offsets alway decimal, otherwise hex */
 	if (b & 0x80) != 0 {
-		off = F("%d,", -(b^0xff)-1)
+		off = F("%d,", int(b)-256)
 	} else {
 		off = F("$%02x,", b)
 	}
