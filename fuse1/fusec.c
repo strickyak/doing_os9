@@ -13,13 +13,14 @@ typedef unsigned int word;
 
 enum FuseState {
   D_IDLE = 1,
-  D_GOT_WORK = 3,     // ReadLn returned a Clop.
+  D_PAYLOAD = 2,  // daemon reads or writes a payload.
+  D_STATUS = 3,   // daemon returns a result status.
 
   C_POISON = 11,  // daemon death poisons its clients.
   C_IDLE = 12,   // no client stuff pending.
   C_REQUESTING = 13,
-  C_REQUESTED = 13,
-  C_RESULT = 14,
+  C_REQUESTED = 14,
+  C_RESULT = 15,
 };
 
 enum ClientOp {
@@ -30,6 +31,9 @@ enum ClientOp {
   OP_OPEN = 'o',
   OP_CLOSE = 'C',
   OP_READLN = 'R',
+  OP_WRITLN = 'W',
+  OP_READ = 'r',
+  OP_WRITE = 'w',
 };
 
 struct DeviceTableEntry {
@@ -66,9 +70,12 @@ struct Fuse { // embeds in PathDesc
   struct PathDesc* parent_pd;  // NULL for daemon,  daemon for client.
   byte num_child;  // how many open clients a daemon has.
   byte current_task;
+  byte recent_pid;
   struct PathDesc* current_client;
   byte cl_op;     // from client
   error d_status;  // from daemon
+  word orig_rx;  // original X register (before it was updated).
+  word payload_len;
   struct ShortRegs cl_regs;
 };
 
@@ -289,8 +296,10 @@ SendBad
   }
   return err;
 }
-error Os9Wake(byte to_pid) {
-  return Os9Send(to_pid, 1);
+error Wake(struct PathDesc* pd) {
+  byte to_pid = pd->fuse.recent_pid;
+  assert(to_pid > 0);
+  return Os9Send(to_pid, 1);  // Wakeup Signal.
 }
 
 error Os9Sleep(word num_ticks) {
@@ -377,6 +386,37 @@ PrsNamBad
   return err;
 }
 
+word GetHex(word *pp) {
+  byte task = Os9CurrentProcessTask();
+
+  // skip white space.
+  while (1) {
+    byte b;
+    error err = Os9LoadByteFromTask(task, *pp, &b);
+    assert(!err);
+    if (b > ' ') break;
+    ++(*pp);
+  }
+  // accumulate result in z.
+  word z = 0;
+  while (1) {
+    byte b;
+    error err = Os9LoadByteFromTask(task, *pp, &b);
+    assert(!err);
+    ++(*pp);
+
+    if ('0' <= b && b <= '9') {
+      z = (z << 4) + (b - '0');
+    } else if ('A' <= b && b <= 'Z') {
+      z = (z << 4) + (b - 'A' + 10);
+    } else if ('a' <= b && b <= 'z') {
+      z = (z << 4) + (b - 'a' + 10);
+    } else {
+      return z;
+    }
+  }
+}
+
 ////////////////////////////////////////////////
 
 void ShowModuleName(word addr) {
@@ -433,10 +473,13 @@ void ShowPathDesc(struct PathDesc* pd) {
   ShowStr("parent_pd"); ShowHex(pd->fuse.parent_pd); ShowChar(13);
   ShowStr("num_child"); ShowHex(pd->fuse.num_child); ShowChar(13);
   ShowStr("current_task"); ShowHex(pd->fuse.current_task); ShowChar(13);
+  ShowStr("recent_pid"); ShowHex(pd->fuse.recent_pid); ShowChar(13);
   ShowStr("current_client"); ShowHex(pd->fuse.current_client); ShowChar(13);
   ShowStr("cl_op"); ShowHex(pd->fuse.cl_op); ShowChar(13);
-  ShowStr("device_type"); ShowHex(pd->device_type); ShowChar(13);
+  ShowStr("d_status"); ShowHex(pd->fuse.d_status); ShowChar(13);
+  ShowStr("orig_rx"); ShowHex(pd->fuse.orig_rx); ShowChar(13);
   ShowRegs((struct Regs*) &pd->fuse.cl_regs);
+  ShowStr("device_type"); ShowHex(pd->device_type); ShowChar(13);
   ShowChar(13);
   // ShowRam((word)pd->device_table_entry); ShowChar(13);
   ShowDeviceTableEntry((struct DeviceTableEntry*)(pd->device_table_entry));
@@ -461,6 +504,9 @@ error CopyParsedName(word begin, word end, char* dest, word max_len) {
 void ShowParsedName(word current, word begin, word end) {
   byte task = Os9CurrentProcessTask();
   ShowChar('{'); ShowChar('{'); ShowChar('{');
+  ShowHex(task);
+  ShowHex(begin);
+  ShowHex(end);
   ShowHex(end-current);
   ShowHex(end-begin);
   byte ch = 0;
@@ -481,30 +527,19 @@ void ShowParsedName(word current, word begin, word end) {
 // C string, in normal memory, with no high bits.
 bool ParsedNameEquals(word begin, word end, const char*s) {
   byte task = Os9CurrentProcessTask();
-  //ShowStr(s);
   word p = begin;
   for (; *s && p < end; p++, s++) {
     byte ch = 0;
     error err = Os9LoadByteFromTask(task, p, &ch);
     assert(!err);
-    //ShowHex(p); ShowHex(s);
-    //ShowChar(ch); ShowChar(*s);
 
     if (ToUpper(ch) != *s) {
-      //ShowChar('F');
       return FALSE;  // does not match.
     }
   }
 
   // If both termination conditions are true,
   // strings are equal.
-  //ShowChar('R');
-  //ShowHex( ((*s)==0) );
-  //ShowHex( (p==end) );
-      //ShowChar('R');
-  //ShowHex( (p==end) && ((*s)==0) );
-  //ShowChar(13);
-  //ShowChar(13);
   return (p==end) && ((*s)==0);
 }
 
@@ -610,7 +645,7 @@ void RecordResultInClient(struct PathDesc* cli,
   }
   cli->fuse.d_status = err;
   cli->fuse.state = C_RESULT;
-  Os9Wake(cli->current_process_id);
+  Wake(cli);
 }
 void RecordClientOpInClient(struct PathDesc* cli,
                           byte client_op) {
@@ -633,7 +668,7 @@ void Add(byte ch, struct PathDesc* dae,
   }
 }
 
-void MarshalClientOpToDaemon(struct PathDesc* cli,
+byte MarshalClientOpToDaemon(struct PathDesc* cli,
                           struct PathDesc* dae) {
   word ptr = dae->regs->rx;
   word remain = dae->regs->ry;
@@ -641,39 +676,61 @@ void MarshalClientOpToDaemon(struct PathDesc* cli,
 #define ADD(CHAR) Add((CHAR), dae, &ptr, &remain)
 
 #define ADD_BYTE(B) { byte b = (B); ADD(Hex(HiNyb(b))); ADD(Hex(LoNyb(b))); ADD(' '); }
+#define ADD_BYTE_MORE(B) { byte b = (B); ADD(Hex(HiNyb(b))); ADD(Hex(LoNyb(b))); }
 
-#define ADD_WORD(W) { word w = (W); ADD_BYTE(HiByt(w)); ADD_BYTE(LoByt(w)); ADD(' '); }
+#define ADD_WORD(W) { word w = (W); ADD_BYTE_MORE(HiByt(w)); ADD_BYTE(LoByt(w)); ADD(' '); }
 
   ADD(cli->fuse.cl_op);
   ADD(' ');
   ADD_BYTE(cli->path_num);
 
+  byte cl_task = cli->fuse.current_task;
+  ShowStr(" FRODO  cl_task="); ShowHex(cl_task); ShowStr("   ");
+
+  byte next_d_state = D_STATUS;
   switch (cli->fuse.cl_op) {
-    case OP_OPEN:
-      {
-      ADD_BYTE(cli->regs->ra);  // access mode
+    case OP_OPEN: {
+      ADD_BYTE(cli->fuse.cl_regs.ra);  // access mode
 
-      word s = cli->regs->rx;  // pathname string.
-      byte ch = 0;
-      do {
-        error e = Os9LoadByteFromTask(cli->fuse.current_task, s, &ch);
-        assert(!e);
-        if (!ch) break;
-        ADD(ToUpper(ch));
-
-      } while (ch>32 && ch<128);
-  }
-        break;
-    case OP_CLOSE:
+      byte i;
+      for (i=0; i<sizeof cli->name; i++) {
+        byte ch = cli->name[i];
+        if (ch <= ' ') break;
+        ADD(ch);
+      }
+      ADD(13);
+      ShowStr(" FRODO  remain="); ShowHex(remain); ShowStr("   ");
       break;
-    case OP_READLN:
+    }
+    case OP_CLOSE: {
       break;
-        ADD_WORD(cli->regs->ry);  // max bytes to read.
-    default:
+                   }
+    case OP_READLN: {
+        ADD_WORD(cli->fuse.cl_regs.ry);  // max bytes to read.
+      next_d_state = D_PAYLOAD;
+      break;
+                    }
+    case OP_WRITLN: {
+        ADD_WORD(cli->fuse.cl_regs.ry);  // max bytes to read.
+      next_d_state = D_PAYLOAD;
+      break;
+                    }
+    case OP_READ: {
+        ADD_WORD(cli->fuse.cl_regs.ry);  // max bytes to read.
+      next_d_state = D_PAYLOAD;
+      break;
+                    }
+    case OP_WRITE: {
+        ADD_WORD(cli->fuse.cl_regs.ry);  // max bytes to read.
+      next_d_state = D_PAYLOAD;
+      break;
+                    }
+    default: {
       ShowStr(" BILBO "); ShowHex(cli);
       ShowPathDesc(cli);
       ShowHex(cli->fuse.cl_op);
       assert(0);
+             }
   }
   ADD(13);  // Terminating CR.
 
@@ -682,7 +739,8 @@ void MarshalClientOpToDaemon(struct PathDesc* cli,
 
   SetClientState(cli, C_REQUESTED);
   cli->fuse.cl_op = 0;
-  // Os9Wake(cli->current_process_id); // wakeup
+
+  return next_d_state;
 }
 
 //////////////////////////////////////
@@ -697,7 +755,7 @@ error PerformClient(struct PathDesc* pd, byte op) {
 
   do {
     ShowStr(" NANDO1 "); ShowHex(op);
-    Os9Wake(pd->fuse.parent_pd->current_process_id);
+    Wake(pd->fuse.parent_pd);
     ShowStr(" NANDO2 "); ShowHex(op);
     Os9Pause(pd);
     ShowStr(" NANDO3 "); ShowHex(op);
@@ -761,7 +819,10 @@ error OpenClient(
 ////////////////////////////////////////////////
 
 error CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
+  pd->fuse.recent_pid = Os9CurrentProcessId();
   pd->fuse.current_task = Os9CurrentProcessTask();
+  pd->fuse.orig_rx = pd->regs->rx;
+
 #if 1
   ShowStr("\rsizeof Fuse: "); ShowHex(sizeof(struct Fuse));
   ShowStr("\rCreateOrOpen: ");
@@ -784,7 +845,7 @@ error CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
     if (err) break;
 
     ShowStr("\rPrsNamLoop: ");
-    ShowChar('@');
+    ShowChar('=');
     ShowHex(err);
     ShowParsedName(current, begin, end);
     ShowStr("\r");
@@ -800,11 +861,23 @@ error CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
         // TODO:  more than one name.
         begin2 = begin;
         end2 = end;
+        pd->fuse.orig_rx = begin2;
         break;
       default:
         {}// Ignore extra names for now.
     }
   }
+
+  {
+    ShowStr(" [[[LOAD=");
+    byte ch = 0;
+    error e = Os9LoadByteFromTask(pd->fuse.current_task, pd->fuse.orig_rx, &ch);
+    ShowHex(pd->fuse.current_task);
+    ShowHex(pd->fuse.orig_rx);
+    ShowHex(ch);
+    ShowStr("]]] ");
+  }
+
   ShowStr("\r i= ");
   ShowHex(i);
   ShowChar(13);
@@ -841,43 +914,48 @@ error CloseC(struct PathDesc* pd, struct Regs* regs) {
 }
 
 error ReadLnC(struct PathDesc* pd, struct Regs* regs) {
+  pd->fuse.current_task = Os9CurrentProcessTask();
   ShowStr("\r##### READ LINE: #####"); ShowHex(pd->path_num);
   ShowStr("\r");
   ShowRegs(regs);
   ShowPathDesc(pd);
-  pd->fuse.current_task = Os9CurrentProcessTask();
-  error err = 0;
 
 #define FINISH(E) { err=(E); goto Finish; }
 
+  error err = 0;
   switch (pd->fuse.state) {
-    case D_IDLE:
+    case D_IDLE: {
+      struct PathDesc* cli = pd->fuse.current_client;
+      ShowStr(" FRODO   cli="); ShowHex(cli); ShowStr("   ");
+
       // We want a client and a cl_op to do.
-      while (!pd->fuse.current_client || pd->fuse.current_client->fuse.state != C_REQUESTING || !pd->fuse.current_client->fuse.cl_op ) {
-        ShowStr("Because cc = "); ShowHex(pd->fuse.current_client);
-        if (pd->fuse.current_client) {
-          ShowStr("Because cl_op = "); ShowHex(pd->fuse.current_client->fuse.cl_op);
+      while (!cli || cli->fuse.state != C_REQUESTING || !cli->fuse.cl_op ) {
+        ShowStr("Because cc = "); ShowHex(cli);
+        if (cli) {
+          ShowStr("Because cl_op = "); ShowHex(cli->fuse.cl_op);
         }
-        if (pd->fuse.current_client) Os9Wake(pd->fuse.current_client->current_process_id);
+        if (cli) Wake(cli);
         Os9Pause(pd);
+        cli = pd->fuse.current_client;
+      ShowStr(" FRODO   now cli="); ShowHex(cli); ShowStr("   ");
       }
-      //+ SetDaemonState(pd, D_GOT_WORK);
 
-      ShowChar('%'); ShowHex(pd->fuse.current_client->fuse.state);
-      assert(pd->fuse.current_client->fuse.state == C_REQUESTING);
-      SetClientState(pd->fuse.current_client, C_REQUESTED);
-ShowStr(" Drequested ");
+      ShowChar('%'); ShowHex(cli->fuse.state);
+      assert(cli->fuse.state == C_REQUESTING);
+      SetClientState(cli, C_REQUESTED);
+      ShowStr(" FRODO Drequested ");
 
-      MarshalClientOpToDaemon(pd->fuse.current_client, pd);
-ShowStr(" Dmarshalled ");
+      // Remember what op the client was doing.
+      pd->fuse.cl_op = cli->fuse.cl_op;
+
+      MarshalClientOpToDaemon(cli, pd);
+      ShowStr(" FRODO Dmarshalled ");
       // Next should come from WriteLn:
-      RecordResultInClient(pd->fuse.current_client, pd);
-ShowStr(" Dfinish ");
+      RecordResultInClient(cli, pd);
+      ShowStr(" FRODO Dfinish ");
       FINISH( OKAY);
-    break;
-    case D_GOT_WORK:
-      FINISH( 24);
-    break;
+      break;
+    }
     case C_POISON:
       FINISH( 25);
     break;
@@ -900,7 +978,69 @@ Finish:
 
 error WritLnC(struct PathDesc* pd, struct Regs* regs) {
   pd->fuse.current_task = Os9CurrentProcessTask();
-  return 20;
+
+  ShowStr("\r##### WRITE LINE: #####"); ShowHex(pd->path_num);
+  ShowStr("\r");
+  ShowRegs(regs);
+  ShowPathDesc(pd);
+
+
+  word p = pd->regs->rx;
+  word remain = pd->regs->ry;
+
+  error err = 0;
+  switch (pd->fuse.state) {
+    case D_PAYLOAD: {
+      struct PathDesc* cli = pd->fuse.current_client;
+      assert(cli);
+
+      error err = Os9Move(
+          /*count=*/ pd->fuse.payload_len,
+          /*src=*/ pd->regs->rx,
+          /*srcMap=*/ pd->fuse.current_task,
+          /*dest=*/ cli->fuse.payload_len,
+          /*destMap=*/ cli->fuse.current_task);
+
+      cli->regs->rx = pd->fuse.payload_len;
+
+        switch (pd->fuse.cl_op) {
+          case OP_READLN:
+          case OP_READ:
+            // payload comes first
+            break;
+          case OP_WRITLN:
+          case OP_WRITE:
+            // payload comes last
+            pd->fuse.payload_len = GetHex(&p);
+            pd->fuse.state = D_PAYLOAD;
+            break;
+        }
+
+                    }
+      break;
+    case D_STATUS: {
+        byte status = (byte)GetHex(&p);
+        switch (pd->fuse.cl_op) {
+          case OP_READLN:
+          case OP_READ:
+            // payload comes first
+            break;
+          case OP_WRITLN:
+          case OP_WRITE:
+            // payload comes last
+            pd->fuse.payload_len = GetHex(&p);
+            pd->fuse.state = D_PAYLOAD;
+            break;
+        }
+                   }
+      break;
+    default:
+      break;
+  }
+Finish:
+  ShowStr("\r##### FINISH: READ LINE ##### "); ShowHex(pd->path_num);
+  ShowHex(err); ShowStr("\r");
+  return err;
 }
 
 error ReadC(struct PathDesc* pd, struct Regs* regs) {
