@@ -1,6 +1,8 @@
 #ifndef _FROBIO_W5100S_H
 #define _FROBIO_W5100S_H
 
+#include <cmoc.h>
+
 typedef unsigned char bool;
 typedef unsigned char byte;
 typedef unsigned char error;
@@ -40,7 +42,10 @@ void wiz_reset();
 void wiz_configure();
 void wiz_delay(int n);
 
-error udp_open(byte socket_n, word src_port, byte* dest_ip, word dest_port);
-error udp_send(byte socket_n, byte* payload, word size);
+error wiz_arp(byte* dest_ip);
+error wiz_ping(byte* dest_ip);
+
+error udp_open(byte socknum, word src_port, byte* dest_ip, word dest_port);
+error udp_send(byte socknum, byte* payload, word size);
 
 #endif // _FROBIO_W5100S_H

@@ -3,12 +3,18 @@
 
 #include "frobio/w5100s.h"
 
-byte dest_ip[4] = {192, 168, 8, 148};
+// byte dest_ip[4] = {192, 168, 86, 36};
+byte dest_ip[4] = {10, 2, 2, 2};
+
 char payload[] = "!!!!!! Frobio Frobio Frobio Frobio !!!!!!";
 
 int main() {
   wiz_reset();
   wiz_configure();
+  wiz_arp(dest_ip);
+  for (byte i = 0; i < 10; i++) {
+    wiz_ping(dest_ip);
+  }
 
   byte sock = 0;
   printf(" open...");
