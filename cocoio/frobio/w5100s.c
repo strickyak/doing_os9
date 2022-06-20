@@ -80,8 +80,11 @@ void wiz_configure() {
   poke(0x001a/*=Rx Memory Size*/, 0x55); // 2k per sock
   poke(0x001b/*=Tx Memory Size*/, 0x55); // 2k per sock
 
-  // UDP Unreach Block. TCP RST Block.
-  //// NO //  poke(0x0030, 0x60);
+  for (byte socknum=0; socknum<4; socknum++) {
+      word base = ((word)socknum + 4) << 8;
+      poke(base+SockCommand, 0x10/*CLOSE*/);
+      poke(base+SockMode, 0x00/*Protocol: Socket Closed*/);
+  }
 }
 
 error wiz_arp(byte* dest_ip) {
@@ -142,8 +145,14 @@ error wiz_ping(byte* dest_ip) {
 
 error udp_open(byte socknum, word src_port, byte* dest_ip, word dest_port) {
   printf("OPEN: sock=%x src_p=%x dest_ip=%d.%d.%d.%d dest_p=%x ", socknum, src_port, dest_ip[0],dest_ip[1], dest_ip[2],  dest_ip[3], dest_port);
+  if (socknum > 3) return 0xf0/*E_UNIT*/;
   word base = ((word)socknum + 4) << 8;
-  printf("udp base=%x", base);
+  word buf = TX_BUF(socknum);
+  printf("udp base=%x buf=%x", base, buf);
+
+  byte status = peek(base+SockStatus);
+  if (status != 0x00/*SOCK_CLOSED*/) return 0xf6 /*E_NOTRDY*/;
+
   poke(base+SockMode, 2); // Set UDP Protocol mode.
 
   printf("src_p ");
@@ -155,7 +164,7 @@ error udp_open(byte socknum, word src_port, byte* dest_ip, word dest_port) {
 
   poke(base+0x001e/*_RXBUF_SIZE*/, 2); // 2KB
   poke(base+0x001f/*_TXBUF_SIZE*/, 2); // 2KB
-  poke(base+0x002c/*_IMR*/, 0xFF); // mask all irqs.
+  poke(base+0x002c/*_IMR*/, 0xFF); // mask all interrupts.
   poke_word(base+0x002d/*_FRAGR*/, 0); // don't fragment.
   poke(base+0x002f/*_MR2*/, 0x00); // no blocks.
 
@@ -163,13 +172,22 @@ error udp_open(byte socknum, word src_port, byte* dest_ip, word dest_port) {
   printf("cmd:OPEN ");
   poke(base+SockCommand, 1/*=OPEN*/);  // OPEN IT!
   printf("status->%x ", peek(base+SockStatus));
-  return OKAY;
+  for(word i = 0; i < 60000; i++) {
+    byte status = peek(base+SockStatus);
+    if (status == 0x22/*SOCK_UDP*/) return OKAY;
+  }
+  return 0xfa/*E_DEVBSY*/;
 }
 
 error udp_send(byte socknum, byte* payload, word size) {
   printf("SEND: sock=%x payload=%x size=%x ", socknum, payload, size);
+  if (socknum > 3) return 0xf0/*E_UNIT*/;
+
   word base = ((word)socknum + 4) << 8;
   word buf = TX_BUF(socknum);
+
+  byte status = peek(base+SockStatus);
+  if (status != 0x22/*SOCK_UDP*/) return 0xf6 /*E_NOTRDY*/;
 
   word free = peek_word(base + TxFreeSize);
   printf("SEND: base=%x buf=%x free=%x ", base, buf, free);
@@ -196,9 +214,23 @@ error udp_send(byte socknum, byte* payload, word size) {
   printf("status->%x ", peek(base+SockStatus));
   sock_show(socknum);
   printf("cmd:SEND ");
+
+  poke(base+SockInterrupt, 0);  // Reset interrupts.
   poke(base+SockCommand, 0x20/*=SEND*/);  // SEND IT!
   printf("status->%x ", peek(base+SockStatus));
-  return OKAY;
+
+  error err = OKAY;
+  while(1) {
+    byte irq = peek(base+SockInterrupt);
+    if (irq) {
+      if (irq != 0x10 /*=SENDOK*/) {
+        err = 0xf5/*=E_WRITE*/;
+      }
+      break;
+    }
+  }
+  poke(base+SockInterrupt, 0);  // Reset interrupts.
+  return err;
 }
 
 void sock_show(byte socknum) {

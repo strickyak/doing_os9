@@ -9,6 +9,7 @@ byte dest_ip[4] = {10, 2, 2, 2};
 char payload[] = "!!!!!! Frobio Frobio Frobio Frobio !!!!!!";
 
 int main() {
+  printf("DestIp(%lx)\nABC\r", *(unsigned long*)dest_ip);
   wiz_verbose = 1;
   wiz_reset();
   wiz_configure();
