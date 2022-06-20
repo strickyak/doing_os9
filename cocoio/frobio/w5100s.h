@@ -34,4 +34,9 @@
 #define RxReadPtr 0x28
 #define RxWritePtr 0x2A
 
+struct UdpRecvHeader {
+    ip4addr addr;
+    word port;
+    word len;
+};
 #endif // _FROBIO_W5100S_H

@@ -235,7 +235,7 @@ error udp_send(byte socknum, byte* payload, word size, ip4addr dest_ip, word des
   sock_show(socknum);
   Say("cmd:SEND ");
 
-  poke(base+SockInterrupt, 0);  // Reset interrupts.
+  poke(base+SockInterrupt, 0x1f);  // Reset interrupts.
   poke(base+SockCommand, 0x20/*=SEND*/);  // SEND IT!
   Say("status->%x ", peek(base+SockStatus));
 
@@ -249,8 +249,65 @@ error udp_send(byte socknum, byte* payload, word size, ip4addr dest_ip, word des
       break;
     }
   }
-  poke(base+SockInterrupt, 0);  // Reset interrupts.
+  poke(base+SockInterrupt, 0x1f);  // Reset interrupts.
   return err;
+}
+
+error udp_recv(byte socknum, byte* payload, word* size_in_out, ip4addr* from_addr_out, word* from_port_out) {
+  Say("RECV: sock=%x payload=%x size=%x ", socknum, payload, *size_in_out);
+  if (socknum > 3) return 0xf0/*E_UNIT*/;
+
+  word base = ((word)socknum + 4) << 8;
+  word buf = RX_BUF(socknum);
+  Say("RECV: base=%x buf=%x ", base, buf);
+
+  byte status = peek(base+SockStatus);
+  if (status != 0x22/*SOCK_UDP*/) return 0xf6 /*E_NOTRDY*/;
+
+  poke_word(base+0x000c, 0); // clear Dest IP Addr
+  poke_word(base+0x000e, 0); // ...
+  poke_word(base+0x0010, 0); // clear Dest port addr
+
+  poke(base+SockInterrupt, 0x1f);  // Reset interrupts.
+  poke(base+SockCommand, 0x40/*=RECV*/);  // RECV command.
+  Say("status->%x ", peek(base+SockStatus));
+
+  Say(" ====== WAIT ====== ");
+  while(1) {
+    bool v = wiz_verbose;
+    wiz_verbose = 0;
+    byte irq = peek(base+SockInterrupt);
+    if (irq) {
+      wiz_verbose = v;
+      poke(base+SockInterrupt, 0x1f);  // Reset interrupts.
+      if (irq != 0x04 /*=RECEIVED*/) {
+        return 0xf4/*=E_READ*/;
+      }
+      break;
+    }
+  }
+
+  word recv_size = peek_word(base+0x0026/*_RX_RSR*/);
+
+  word ptr = peek_word(base+0x0028/*_RX_RD*/);
+  struct UdpRecvHeader hdr;
+  for (word i = 0; i < sizeof hdr; i++) {
+      ((byte*)&hdr)[i] = peek(buf+ptr);
+      ptr++;
+      ptr &= RX_MASK;
+  }
+  recv_size -= sizeof hdr;
+  if (recv_size > *size_in_out) return 0xed/*E_NORAM*/;
+  for (word i = 0; i < recv_size; i++) {
+      payload[i] = peek(buf+ptr);
+      ptr++;
+      ptr &= RX_MASK;
+  }
+
+  *size_in_out = hdr.len;
+  *from_addr_out = hdr.addr;
+  *from_port_out = hdr.port;
+  return OKAY;
 }
 
 void sock_show(byte socknum) {
