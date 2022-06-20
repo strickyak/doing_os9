@@ -1,6 +1,8 @@
 #include "frobio/w5100s.h"
 #include "frobio/config.h"
 
+bool wiz_verbose;
+
 static byte* cocoio_port = (byte*)(COCOIO_PORT);
 static byte ether_mac[6] = ETHER_MAC;
 static byte ip_addr[4] = IP_ADDR;
@@ -16,7 +18,7 @@ byte peek(word reg) {
   P1 = (byte)(reg >> 8);
   P2 = (byte)(reg);
   byte z = P3;
-  printf("[%x->%2x] ", reg, z);
+  if (wiz_verbose) printf("[%x->%2x] ", reg, z);
   return z;
 }
 word peek_word(word reg) {
@@ -25,31 +27,31 @@ word peek_word(word reg) {
   byte hi = P3;
   byte lo = P3;
   word z = ((word)(hi) << 8) + lo;
-  printf("[%x->%4x] ", reg, z);
+  if (wiz_verbose) printf("[%x->%4x] ", reg, z);
   return z;
 }
 void poke(word reg, byte value) {
   P1 = (byte)(reg >> 8);
   P2 = (byte)(reg);
   P3 = value;
-  printf("[%x<=%2x] ", reg, value);
+  if (wiz_verbose) printf("[%x<=%2x] ", reg, value);
 }
 void poke_word(word reg, word value) {
   P1 = (byte)(reg >> 8);
   P2 = (byte)(reg);
   P3 = (byte)(value >> 8);
   P3 = (byte)(value);
-  printf("[%x<=%4x] ", reg, value);
+  if (wiz_verbose) printf("[%x<=%4x] ", reg, value);
 }
 void poke_n(word reg, byte* data, word size) {
   P1 = (byte)(reg >> 8);
   P2 = (byte)(reg);
-  printf("[%x<=== ", reg);
+  if (wiz_verbose) printf("[%x<=== ", reg);
   for (word i=0; i<size; i++) {
-    printf("%2x ", *data);
+    if (wiz_verbose) printf("%2x ", *data);
     P3 = *data++;
   }
-  printf("] ");
+  if (wiz_verbose) printf("] ");
 }
 
 void wiz_reset() {
@@ -140,48 +142,75 @@ error wiz_ping(byte* dest_ip) {
 
 error udp_open(byte socknum, word src_port, byte* dest_ip, word dest_port) {
   printf("OPEN: sock=%x src_p=%x dest_ip=%d.%d.%d.%d dest_p=%x ", socknum, src_port, dest_ip[0],dest_ip[1], dest_ip[2],  dest_ip[3], dest_port);
-  word regs = ((word)socknum + 4) << 8;
-  printf("udp ");
-  poke(regs+SockMode, 2); // Set UDP Protocol mode.
+  word base = ((word)socknum + 4) << 8;
+  printf("udp base=%x", base);
+  poke(base+SockMode, 2); // Set UDP Protocol mode.
 
   printf("src_p ");
-  poke_word(regs+SockSourcePort, src_port);
+  poke_word(base+SockSourcePort, src_port);
   printf("dest_ip ");
-  poke_n(regs+SockDestIp, dest_ip, /*size=*/4);
+  poke_n(base+SockDestIp, dest_ip, /*size=*/4);
   printf("dest_p ");
-  poke_word(regs+SockDestPort, dest_port);
+  poke_word(base+SockDestPort, dest_port);
 
+  poke(base+0x001e/*_RXBUF_SIZE*/, 2); // 2KB
+  poke(base+0x001f/*_TXBUF_SIZE*/, 2); // 2KB
+  poke(base+0x002c/*_IMR*/, 0xFF); // mask all irqs.
+  poke_word(base+0x002d/*_FRAGR*/, 0); // don't fragment.
+  poke(base+0x002f/*_MR2*/, 0x00); // no blocks.
+
+  printf("status->%x ", peek(base+SockStatus));
   printf("cmd:OPEN ");
-  poke(regs+SockCommand, 1/*=OPEN*/);  // OPEN IT!
+  poke(base+SockCommand, 1/*=OPEN*/);  // OPEN IT!
+  printf("status->%x ", peek(base+SockStatus));
   return OKAY;
 }
 
 error udp_send(byte socknum, byte* payload, word size) {
   printf("SEND: sock=%x payload=%x size=%x ", socknum, payload, size);
-  word regs = ((word)socknum + 4) << 8;
+  word base = ((word)socknum + 4) << 8;
   word buf = TX_BUF(socknum);
 
-  word free = TX_MASK & peek_word(TxFreeSize);
-  printf("SEND: regs=%x buf=%x free=%x ", regs, buf, free);
+  word free = peek_word(base + TxFreeSize);
+  printf("SEND: base=%x buf=%x free=%x ", base, buf, free);
   if (free < size) return 255; // no buffer room.
 
-  word tx_r = TX_MASK & peek_word(regs+TxReadPtr);
+  word tx_r = peek_word(base+TxReadPtr);
   printf("tx_r=%x ", tx_r);
   printf("size=%x ", size);
   printf("tx_r+size=%x ", tx_r+size);
   printf("TX_SIZE=%x ", TX_SIZE);
-  if (tx_r + size >= TX_SIZE) {
+  word offset = TX_MASK & tx_r;
+  if (offset + size >= TX_SIZE) {
     // split across edges of circular buffer.
-    word size1 = TX_SIZE - tx_r;
+    word size1 = TX_SIZE - offset;
     word size2 = size - size1;
-    poke_n(buf + tx_r, payload, size1);
-    poke_n(buf, payload, size2);
+    poke_n(buf + offset, payload, size1);  // 1st part
+    poke_n(buf, payload + size1, size2);   // 2nd part
   } else {
-    poke_n(buf + tx_r, payload, size);
+    // contiguous within the buffer.
+    poke_n(buf + tx_r, payload, size);  // whole thing
   }
   printf("size ");
-  poke_word(regs+TxWritePtr, size); // size goes here.
+  poke_word(base+TxWritePtr, size); // size goes here.
+  printf("status->%x ", peek(base+SockStatus));
+  sock_show(socknum);
   printf("cmd:SEND ");
-  poke(regs+SockCommand, 0x20/*=SEND*/);  // SEND IT!
+  poke(base+SockCommand, 0x20/*=SEND*/);  // SEND IT!
+  printf("status->%x ", peek(base+SockStatus));
   return OKAY;
+}
+
+void sock_show(byte socknum) {
+  word base = ((word)socknum + 4) << 8;
+  word buf = TX_BUF(socknum);
+
+  for (byte i = 0; i < 64; i+=16) {
+    printf("\r%04x: ", base+i);
+    for (byte j = 0; j < 16; j++) {
+      byte k = i+j;
+      printf("%02x ", peek(base+k));
+      if ((j&3)==3) printf(" ");
+    }
+  }
 }

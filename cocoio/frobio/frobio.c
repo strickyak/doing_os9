@@ -9,25 +9,29 @@ byte dest_ip[4] = {10, 2, 2, 2};
 char payload[] = "!!!!!! Frobio Frobio Frobio Frobio !!!!!!";
 
 int main() {
+  wiz_verbose = 1;
   wiz_reset();
   wiz_configure();
   wiz_arp(dest_ip);
-  for (byte i = 0; i < 10; i++) {
+  for (byte i = 0; i < 3; i++) {
     wiz_ping(dest_ip);
+    printf("\r");
   }
 
   byte sock = 0;
-  printf(" open...");
+  printf("\r open...");
   error err = udp_open(sock, 0x9999, dest_ip, 0x8888);
-  printf("...opened ");
+  printf("...opened:err=%x\n", err);
   assert(!err);
-  printf(" send...");
+  printf("\r send...");
   err = udp_send(sock, (byte*)payload, sizeof payload);
-  printf("...sent ");
-  assert(!err);
+  printf("...sent:err=%x\n", err);
 
+  wiz_verbose = 0;
+  sock_show(sock);
   printf(" delay...");
-  delay(1000);
+  wiz_delay(10000);
   printf(" delayed...");
+  sock_show(sock);
   return 0;
 }

@@ -20,8 +20,8 @@ typedef unsigned int word;
 #define RX_SHIFT 11
 #define TX_MASK (TX_SIZE - 1)
 #define RX_MASK (RX_SIZE - 1)
-#define TX_BUF(N) (0x8000 + ((N)<<TX_SHIFT))
-#define RX_BUF(N) (0xC000 + ((N)<<RX_SHIFT))
+#define TX_BUF(N) (0x4000 + ((N)<<TX_SHIFT))
+#define RX_BUF(N) (0x6000 + ((N)<<RX_SHIFT))
 
 // Socket register offsets:
 #define SockMode 0x00
@@ -38,6 +38,8 @@ typedef unsigned int word;
 #define RxReadPtr 0x28
 #define RxWritePtr 0x2A
 
+extern bool wiz_verbose;
+
 void wiz_reset();
 void wiz_configure();
 void wiz_delay(int n);
@@ -45,6 +47,7 @@ void wiz_delay(int n);
 error wiz_arp(byte* dest_ip);
 error wiz_ping(byte* dest_ip);
 
+void sock_show(byte socknum);
 error udp_open(byte socknum, word src_port, byte* dest_ip, word dest_port);
 error udp_send(byte socknum, byte* payload, word size);
 
