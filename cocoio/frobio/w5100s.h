@@ -1,27 +1,23 @@
 #ifndef _FROBIO_W5100S_H
 #define _FROBIO_W5100S_H
 
-#include <cmoc.h>
+#include "frobio/frobio.h"
 
-typedef unsigned char bool;
-typedef unsigned char byte;
-typedef unsigned char error;
-typedef unsigned int word;
-#define OKAY 0
+// Short names for hardware ports depend on `hwport`.
+#define P0 hwport[0]  // control reg
+#define P1 hwport[1] // addr hi
+#define P2 hwport[2] // addr lo
+#define P3 hwport[3] // data
 
-#define P0 cocoio_port[0]  // control reg
-#define P1 cocoio_port[1] // addr hi
-#define P2 cocoio_port[2] // addr lo
-#define P3 cocoio_port[3] // data
-
+// Keep this at the default of 2K for each.
 #define TX_SIZE 2048
 #define RX_SIZE 2048
 #define TX_SHIFT 11
 #define RX_SHIFT 11
 #define TX_MASK (TX_SIZE - 1)
 #define RX_MASK (RX_SIZE - 1)
-#define TX_BUF(N) (0x4000 + ((N)<<TX_SHIFT))
-#define RX_BUF(N) (0x6000 + ((N)<<RX_SHIFT))
+#define TX_BUF(N) (0x4000 + ((word)(N)<<TX_SHIFT))
+#define RX_BUF(N) (0x6000 + ((word)(N)<<RX_SHIFT))
 
 // Socket register offsets:
 #define SockMode 0x00
@@ -37,18 +33,5 @@ typedef unsigned int word;
 #define RxSize 0x26
 #define RxReadPtr 0x28
 #define RxWritePtr 0x2A
-
-extern bool wiz_verbose;
-
-void wiz_reset();
-void wiz_configure();
-void wiz_delay(int n);
-
-error wiz_arp(byte* dest_ip);
-error wiz_ping(byte* dest_ip);
-
-void sock_show(byte socknum);
-error udp_open(byte socknum, word src_port, byte* dest_ip, word dest_port);
-error udp_send(byte socknum, byte* payload, word size);
 
 #endif // _FROBIO_W5100S_H
