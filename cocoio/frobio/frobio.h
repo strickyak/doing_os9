@@ -1,7 +1,7 @@
 #ifndef _FROBIO_FROBIO_H_
 #define _FROBIO_FROBIO_H_
 
-#ifndef FROBIO_OMIT_TYPEDEFS
+#ifndef NYLIB_OMIT_TYPEDEFS
 // Fundamental type definitions for using cmoc.
 typedef unsigned char bool;
 typedef unsigned char byte;
@@ -9,6 +9,7 @@ typedef unsigned char error;
 typedef unsigned int word;
 typedef unsigned long ip4addr;
 #define OKAY (error)0
+#define NYLIB_OMIT_TYPEDEFS
 #endif
 
 #define IP4ADDR(A,B,C,D) (((ip4addr)((A)&255) << 24) | ((ip4addr)((B)&255) << 16) | ((ip4addr)((C)&255) << 8) | (ip4addr)((D)&255) )
