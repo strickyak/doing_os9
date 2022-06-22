@@ -229,28 +229,27 @@ error udp_send(byte socknum, byte* payload, word size, ip4addr dest_ip, word des
     // contiguous within the buffer.
     poke_n(buf + tx_r, payload, size);  // whole thing
   }
+
   Say("size ");
-  poke_word(base+TxWritePtr, size); // size goes here.
+  // ?
+  word tx_w = peek_word(base+TxWritePtr);
+  poke_word(base+TxWritePtr, tx_w + size);
+  //? poke_word(base+TxWritePtr, TX_MASK&(tx_r+size));
+
   Say("status->%x ", peek(base+SockStatus));
-  sock_show(socknum);
+  //sock_show(socknum);
   Say("cmd:SEND ");
 
   poke(base+SockInterrupt, 0x1f);  // Reset interrupts.
   poke(base+SockCommand, 0x20/*=SEND*/);  // SEND IT!
   Say("status->%x ", peek(base+SockStatus));
 
-  error err = OKAY;
   while(1) {
     byte irq = peek(base+SockInterrupt);
-    if (irq) {
-      if (irq != 0x10 /*=SENDOK*/) {
-        err = 0xf5/*=E_WRITE*/;
-      }
-      break;
-    }
+    if (irq&0x10) break;
   }
-  poke(base+SockInterrupt, 0x1f);  // Reset interrupts.
-  return err;
+  poke(base+SockInterrupt, 0x10);  // Reset RECV interrupt.
+  return OKAY;
 }
 
 error udp_recv(byte socknum, byte* payload, word* size_in_out, ip4addr* from_addr_out, word* from_port_out) {
@@ -287,28 +286,116 @@ error udp_recv(byte socknum, byte* payload, word* size_in_out, ip4addr* from_add
     }
   }
 
+// TODO -- if more than one packet was received,
+// then recv_size might count for 2 or more packets.
+// Must use the size inside the header?
   word recv_size = peek_word(base+0x0026/*_RX_RSR*/);
+  word rx_rd = peek_word(base+0x0028/*_RX_RD*/);
+  word rx_wr = peek_word(base+0x002A/*_RX_WR*/);
 
-  word ptr = peek_word(base+0x0028/*_RX_RD*/);
-  struct UdpRecvHeader hdr;
-  for (word i = 0; i < sizeof hdr; i++) {
-      ((byte*)&hdr)[i] = peek(buf+ptr);
-      ptr++;
+  word ptr = rx_rd;
+  printf("\n+ ");
+  while (1) {
       ptr &= RX_MASK;
-  }
-  recv_size -= sizeof hdr;
-  if (recv_size > *size_in_out) return 0xed/*E_NORAM*/;
-  for (word i = 0; i < recv_size; i++) {
-      payload[i] = peek(buf+ptr);
-      ptr++;
+      struct UdpRecvHeader hdr;
+      printf("[=%x %04x:%04x #%x@%x= %x %x] ", recv_size, rx_rd, rx_wr,
+            peek_word(buf+ptr+6),
+            ptr,
+            peek_word(buf+ptr+8),
+            peek_word(buf+ptr+10)
+            ); 
+
+      if (peek_word(buf+ptr+6) > 519) {
+        printf(" BAD ");
+        poke_word(base+0x0028/*_RX_RD*/, rx_rd + recv_size);
+        return 13;
+      }
+
       ptr &= RX_MASK;
+      for (word i = 0; i < sizeof hdr; i++) {
+          ((byte*)&hdr)[i] = peek(buf+ptr);
+          ptr++;
+          ptr &= RX_MASK;
+      }
+      
+      if (hdr.len > *size_in_out) {
+        printf(" *** [rs=%d. sio=%d.] ", hdr.len, *size_in_out);
+        return 0xed/*E_NORAM*/;
+      }
+      ptr &= RX_MASK;
+      for (word i = 0; i < hdr.len; i++) {
+          payload[i] = peek(buf+ptr);
+          ptr++;
+          ptr &= RX_MASK;
+      }
+      *size_in_out = hdr.len;
+      *from_addr_out = hdr.addr;
+      *from_port_out = hdr.port;
+
+      break; // if (ptr >= rx_wr) break; else printf(" more ");
   }
 
-  *size_in_out = hdr.len;
-  *from_addr_out = hdr.addr;
-  *from_port_out = hdr.port;
+  // Ignore extra packets -- TODO -- use them.
+  poke_word(base+0x0028/*_RX_RD*/, rx_rd + recv_size);
+
   return OKAY;
 }
+
+#if 0
+/home/strick/go/src/github.com/Wiznet/W5100S-EVB/Loopback/Eclipse/W5100S_loopback/W5100S_Loopback/src/ioLibrary_Driver/Ethernet/W5100/w5100.c
+
+/*
+@brief  This function is being called by recv() also. This function is being used for copy the data form Receive buffer of the chip to application buffer.
+
+This function read the Rx read pointer register
+and after copy the data from receive buffer update the Rx write pointer register.
+User should read upper byte first and lower byte later to get proper value.
+It calculate the actual physical address where one has to read
+the data from Receive buffer. Here also take care of the condition while it exceed
+the Rx memory uper-bound of socket.
+*/
+void wiz_recv_data(uint8_t sn, uint8_t *wizdata, uint16_t len)
+{
+  uint16_t ptr;
+  uint16_t size;
+  uint16_t src_mask;
+  uint16_t src_ptr;
+
+  ptr = getSn_RX_RD(sn);
+
+  src_mask = (uint32_t)ptr & getSn_RxMASK(sn);
+  src_ptr = (getSn_RxBASE(sn) + src_mask);
+
+
+  if( (src_mask + len) > getSn_RxMAX(sn) )
+  {
+    size = getSn_RxMAX(sn) - src_mask;
+    WIZCHIP_READ_BUF((uint32_t)src_ptr, (uint8_t*)wizdata, size);
+    wizdata += size;
+    size = len - size;
+        src_ptr = getSn_RxBASE(sn);
+    WIZCHIP_READ_BUF(src_ptr, (uint8_t*)wizdata, size);
+  }
+  else
+  {
+    WIZCHIP_READ_BUF(src_ptr, (uint8_t*)wizdata, len);
+  }
+
+  ptr += len;
+
+  setSn_RX_RD(sn, ptr);
+}
+
+void wiz_recv_ignore(uint8_t sn, uint16_t len)
+{
+  uint16_t ptr;
+
+  ptr = getSn_RX_RD(sn);
+
+  ptr += len;
+  setSn_RX_RD(sn,ptr);
+}
+#endif
 
 void sock_show(byte socknum) {
   bool v = wiz_verbose;

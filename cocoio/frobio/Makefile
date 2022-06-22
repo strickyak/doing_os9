@@ -17,6 +17,8 @@ launch-tftp: tftp
 my: all
 	os9 copy -r ./frobio /media/strick/APRIL3/MY.DSK,CMDS/frobio
 	os9 attr -per /media/strick/APRIL3/MY.DSK,CMDS/frobio
+	os9 copy -r ./tftp /media/strick/APRIL3/MY.DSK,CMDS/tftp
+	os9 attr -per /media/strick/APRIL3/MY.DSK,CMDS/tftp
 	sync
 
 _FORCE_:

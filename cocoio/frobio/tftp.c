@@ -22,7 +22,7 @@
 
 #define SOCK 0  // device number.
 
-byte packet[1500];
+byte packet[2000];
 
 void FatalD(const char* fmt, int d) {
   printf("\n*** ");
@@ -48,9 +48,16 @@ void Reset() {
   if (err) FatalD("cannot udp_open: %d\n", err);
 }
 
-void ComposeRequest(int opcode, char* filename, bool ascii) {
+void SendAck(word block, word tid) {
+  word* wp = (word*)packet;
+  wp[0] = OP_ACK;
+  wp[1] = block;
+  error err = udp_send(SOCK, packet, 4, SERVER_ADDR, tid);
+  if (err) FatalD("cannot udp_send request: %d\n", err);
+}
+void SendRequest(word opcode, char* filename, bool ascii) {
   char* p = (char*)packet;
-  *(int*)p = opcode;
+  *(word*)p = opcode;
   p += 2;
 
   int n = strlen(filename);
@@ -62,30 +69,70 @@ void ComposeRequest(int opcode, char* filename, bool ascii) {
   strcpy(p, mode);
   p += n+1;
 
+#if 0
+  printf("\n request: ");
+  for (byte* q = packet; q < (byte*)p; q++ ) {
+    printf("%02x ", *q);
+  }
+#endif
+
   error err = udp_send(SOCK, packet, p-(char*)packet, SERVER_ADDR, SERVER_PORT);
   if (err) FatalD("cannot udp_send request: %d\n", err);
 }
 
 int Get(char* filename) {
-  ComposeRequest(OP_READ, filename, /*ascii=*/0);
+  wiz_verbose = 0;
+  SendRequest(OP_READ, filename, /*ascii=*/0);
 
   while (1) {
-    word size = 600;
+    word size = sizeof packet;
     ip4addr from_addr = 0;
     word from_port = 0;
     error err = udp_recv(SOCK, packet, &size, &from_addr, &from_port);
     if (err) FatalD("cannot udp_recv data: %d\n", err);
+    word type = ((word*)packet)[0];
+    word arg = ((word*)packet)[1];
 
-    printf("\n GOT %d BYTES FROM %lx:%x", size, from_addr, from_port);
+    // printf("\n GOT %d BYTES FROM %lx:%x", size, from_addr, from_port);
+    printf("G:%d:%d,%d ", size, type, arg);
+#if 0
+    printf("\n got: {");
     for (int i = 0; i < size; i++) {
       printf("%02x ", packet[i]);
       if ((i&3)==3) printf(" ");
       if (i>63) break;
     }
-    FatalD("Stop for now.\n", 0);
-    break;
-  }
+    printf("}\n");
+#endif
+    switch (type) {
+    case OP_DATA:
+        // arg is block number.
+        word len = size - 4;
+        SendAck(arg, from_port);
+        // printf(" [recv block %d len %d] ", arg, len);
+        if (len < 512) goto END_LOOP;
+        break;
+    case OP_ERROR:
+        // arg is error number.
+      printf(" {%s} ", packet+4);
+      FatalD("Get() got error %d", arg);
+      break;
+    default:
+      FatalD("Get() did not expect to recv type %d", type);
+    }
+  }  // while(1)
+END_LOOP:
+  printf("Get Finished.  ");
   return 0;
+}
+
+bool StrEq(const char* a, const char* b) {
+  while (*a && *b) {
+    if (*a != *b) return 0;
+    a++;
+    b++;
+  }
+  return (*a == *b);
 }
 
 int main(int argc, char* argv[]) {
@@ -98,7 +145,7 @@ int main(int argc, char* argv[]) {
 
     if (argc<3) {
       printf("tftp: wants two args\n");
-    } else if (!strcmp(argv[1], "GET")) {
+    } else if (StrEq(argv[1], "get")) {
       return Get(argv[2]);
     } else {
       printf("tftp: unknown command\n");
