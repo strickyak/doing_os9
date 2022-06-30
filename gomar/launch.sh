@@ -6,10 +6,10 @@ case "$1" in
   -* ) FLAGS=$1 ; shift ;;
 esac
 
-test -f "$1" && test -s "$1" || {
-  echo "No such file: $1" >&2
-  exit 13
-}
+#test -f "$1" && test -s "$1" || {
+#  echo "No such file: $1" >&2
+#  exit 13
+#}
 
 ARGS=''
 while [ $# -gt 0 ] ; do
@@ -25,19 +25,25 @@ COMMAND="$1" ; shift
 INPUT="$1" ; shift
 echo TWO: , $COMMAND , $INPUT , $ARGS
 
-cd $(dirname $0)
+#cd $(dirname $0)
+G=$(dirname $0)
 
-cp -v 'drive/disk2.orig' 'drive/disk2' 
+cp -v "$G/drive/disk2.orig" "$G/drive/disk2" 
 for junk in basic09 runb cobbler asm disasm os9gen format picol p9 xyz mpi megaread
 do
-  os9 del "drive/disk2,CMDS/$junk"
+  os9 del "$G/drive/disk2,CMDS/$junk"
 done
 
-C2=$(basename "$COMMAND" | tr _ -)
-os9 copy -r "$COMMAND" "drive/disk2,CMDS/$C2"
-os9 attr -per "drive/disk2,CMDS/$C2"
+for x in $(echo $COMMAND | tr "," " ")
+do
+  C2=$(basename "$x" | tr _ -)
+  os9 copy -r "$x" "$G/drive/disk2,CMDS/$C2"
+  os9 attr -per "$G/drive/disk2,CMDS/$C2"
+done
 
-os9 copy -r -l "$INPUT" "drive/disk2,input"
+os9 copy -r -l "$INPUT" "$G/drive/disk2,input"
+
+cd $G
 
 BC=
 for x
