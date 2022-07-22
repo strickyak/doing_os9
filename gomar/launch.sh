@@ -64,7 +64,7 @@ B2=$(echo $BC | tr _ -)
 ) | os9 copy -r -l /dev/stdin 'drive/disk2,startup'
 
 TRACE=${TRACE:-}
-TTL=${TTL:-60s}
+TTL=${TTL:-180s}
 ERR=${ERR:-/dev/null}
 
 if test -z "$TRACE"
