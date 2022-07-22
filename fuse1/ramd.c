@@ -145,6 +145,7 @@ byte ParseChar() {
   return *xp++;
 }
 byte ParseHexByte() {
+  // THIS IS WRONG -- ParseChar does not DeHex it.
   byte a = ParseChar();
   byte b = ParseChar();
   return (a << 4) | b;
