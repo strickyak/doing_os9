@@ -1,6 +1,10 @@
 # Compiled Object files, Static and Dynamic libs (Shared Objects)
 *.o
 *.a
+*.s
+*.map
+*.link
+*.lst
 *.so
 
 # RCS
