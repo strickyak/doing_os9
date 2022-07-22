@@ -157,6 +157,8 @@ func (rs RunSpec) RunAll() {
 			}
 			rs.RunCompiler(filename)
 			filebase := strings.TrimSuffix(filename, ".c")
+            filebase = filepath.Base(filebase)  // in case .c file was in another directory.
+
 			rs.TweakAssembler(filebase, directs)
 			rs.RunAssembler(filebase)
 			if phase == 2 {
