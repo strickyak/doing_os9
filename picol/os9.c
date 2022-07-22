@@ -1,5 +1,7 @@
 // *INDENT-OFF*
 
+#include "os9.h"
+
 #ifndef OMIT_stkcheck
 asm void stkcheck() {
 	asm {
@@ -19,12 +21,12 @@ stkcheckBAD	leax  stkcheckMSG,pcr
 
 *		ldy   #(stkcheckNUL-stkcheckMSG)
 *		lda   #2            ; stderr
-*		os9   I_WritLn
+*		os9   I_WRITLN
 
 		pshs x
 		lbsr _panic
 		ldb   #5
-		os9   F_Exit
+		os9   F_EXIT
 
 
 stkcheckMSG	fcc   / *stack oom* /
@@ -94,7 +96,7 @@ PcTraceLoop	ldd #'U'
 asm void exit(int status) {
 	asm {
 		ldd 2,s      ; status code in b.
-		os9 F_Exit
+		os9 F_EXIT
 	}
 }
 #endif
@@ -105,7 +107,7 @@ asm int Os9Create(char* path, int mode, int attrs, int* fd) {
 		ldx 6,s      ; buf
 		lda 9,s      ; mode
 		ldb 11,s      ; attrs
-		os9 0x83
+		os9 I_CREATE
 		lbcs Os9Err
 
 		tfr a,b
@@ -122,7 +124,7 @@ asm int Os9Open(char* path, int mode, int* fd) {
 		pshs y,u
 		ldx 6,s      ; buf
 		lda 9,s      ; mode
-		os9 0x84
+		os9 I_OPEN
 		lbcs Os9Err
 
 		tfr a,b
@@ -138,7 +140,7 @@ asm int Os9Delete(char* path) {
 	asm {
 		pshs y,u
 		ldx 6,s      ; path
-		os9 0x87
+		os9 I_DELETE
 		jmp ZeroOrErr,pcr
 	}
 }
@@ -148,7 +150,7 @@ asm int Os9ChgDir(char* path, int mode) {
 		pshs y,u
 		ldx 6,s      ; path
 		lda 9,s      ; mode
-		os9 0x86     ; I$ChgDir
+		os9 I_CHGDIR     ; I$ChgDir
 		jmp ZeroOrErr,pcr
 	}
 }
@@ -158,7 +160,7 @@ asm int Os9MakDir(char* path, int mode) {
 		pshs y,u
 		ldx 6,s      ; path
 		ldb 9,s      ; dir attrs
-		os9 0x85     ; I$MakDir
+		os9 I_MAKDIR     ; I$MakDir
 		jmp ZeroOrErr,pcr
 	}
 }
@@ -168,7 +170,7 @@ asm int Os9GetStt(int path, int func, int* dOut, int* xOut, int* uOut) {
 		pshs y,u
 		lda 7,s      ; path
 		ldb 9,s      ; func
-		os9 0x8D     ; I$GetStt
+		os9 I_GETSTT     ; I$GetStt
 		lbcs Os9Err
 		std [10,s]   ; dOut
 		stx [12,s]   ; xOut
@@ -184,7 +186,7 @@ asm int Os9Read(int path, char* buf, int buflen, int* bytes_read) {
 		lda 7,s      ; path
 		ldx 8,s      ; buf
 		ldy 10,s      ; buflen
-		os9 0x89
+		os9 I_READ
 		lbcs Os9Err
 		sty [12,s]   ; bytes_read
 		ldd #0
@@ -198,7 +200,7 @@ asm int Os9ReadLn(int path, char* buf, int buflen, int* bytes_read) {
 		lda 7,s      ; path
 		ldx 8,s      ; buf
 		ldy 10,s      ; buflen
-		os9 I_ReadLn
+		os9 I_READLN
 		lbcs Os9Err
 		sty [12,s]   ; bytes_read
 		ldd #0
@@ -212,7 +214,7 @@ asm int Os9Write(int path, const char* buf, int max, int* bytes_written) {
 		lda 7,s      ; path
 		ldx 8,s      ; buf
 		ldy 10,s      ; max
-		os9 0x8A
+		os9 I_WRITE
 		lbcs Os9Err
 		sty [12,s]   ; bytes_written
 		ldd #0
@@ -226,7 +228,7 @@ asm int Os9WritLn(int path, const char* buf, int max, int* bytes_written) {
 		lda 7,s      ; path
 		ldx 8,s      ; buf
 		ldy 10,s      ; max
-		os9 I_WritLn
+		os9 I_WRITLN
 		lbcs Os9Err
 		sty [12,s]   ; bytes_written
 		ldd #0
@@ -238,7 +240,7 @@ asm int Os9Dup(int path, int* new_path) {
 	asm {
 		pshs y,u
 		lda 7,s  ; old path.
-		os9 0x82 ; I$Dup
+		os9 I_DUP ; I$Dup
 		lbcs Os9Err
 		tfr a,b  ; new path.
 		sex
@@ -252,7 +254,7 @@ asm int Os9Close(int path) {
 	asm {
 		pshs y,u
 		lda 7,s  ; path.
-		os9 0x8F ; I$Close
+		os9 I_CLOSE ; I$Close
 		jmp ZeroOrErr,pcr
 	}
 }
@@ -261,7 +263,7 @@ asm int Os9Sleep(int secs) {
 	asm {
 		pshs y,u
 		ldx 6,s  ; ticks
-		os9 0x0A ; I$Sleep
+		os9 F_SLEEP ; I$Sleep
 ZeroOrErr	lbcs Os9Err
 		ldd #0
 		puls y,u,pc
@@ -282,7 +284,7 @@ OUTPUT: (A) = Deceased child process’ process ID
 asm int Os9Wait(int* child_id_and_exit_status) {
 	asm {
 		pshs y,u
-		os9 0x04 ; F$Wait
+		os9 F_WAIT ; F$Wait
 		lbcs Os9Err
 		std [6,s]      ; return Child Id in hi byte; Exit Status in low byte.
 		ldd #0
@@ -311,7 +313,7 @@ asm int Os9Fork(const char* program, const char* params, int paramlen, int lang_
 		ldy 10,s ; paramlen
 		lda 13,s  ; lang_type
 		ldb 15,s  ; mem_size
-		os9 0x03  ; F$Fork
+		os9 F_FORK  ; F$Fork
 		lbcs Os9Err
 		tfr a,b    ; move child id to D
 		clra
@@ -329,7 +331,7 @@ asm int Os9Chain(const char* program, const char* params, int paramlen, int lang
 		ldy 10,s ; paramlen
 		lda 13,s  ; lang_type
 		ldb 15,s  ; mem_size
-		os9 0x05  ; F$Chain -- if returns, then it is an error.
+		os9 F_CHAIN  ; F$Chain -- if returns, then it is an error.
 		clra      ; extend unsigned error B to D
 		puls y,u,pc
 	}
@@ -340,7 +342,7 @@ asm int Os9Send(int process_id, int signal_code) {
 		pshs y,u
 		lda 7,s      ; process_id
 		ldb 9,s      ; signal_code
-		os9 0x08     ; F$Send
+		os9 F_SEND     ; F$Send
 		jmp ZeroOrErr,pcr
 	}
 }
@@ -351,7 +353,7 @@ asm char* gets(char* buf) {
 		clra         ; path 0
 		ldy #200
 		ldx 6,s
-		os9 I_ReadLn
+		os9 I_READLN
 		bcs returnNULL
 		ldd 6,s      ; return buf
 		puls y,u,pc
@@ -372,7 +374,7 @@ asm void puts(const char* s) {
 		ldx 6,s      ; arg1: string to write.
 		clra         ; a = path ...
 		inca         ; a = path 1
-		os9 I_WritLn
+		os9 I_WRITLN
 		puls y,u,pc
 	}
 	// TODO: error checking.

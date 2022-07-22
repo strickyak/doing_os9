@@ -180,6 +180,7 @@ char *strdup_upper(const char *s) {
   return z;
 }
 
+#if 0
 char *Format(const char *fmt, ...) {
   char buf[BUF_SIZE];
   int *a = (int *) &fmt;
@@ -189,3 +190,4 @@ char *Format(const char *fmt, ...) {
   printf_d("  arg3: %s\r", a[3]);
   return NULL;
 }
+#endif

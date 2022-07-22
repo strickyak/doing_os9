@@ -1,8 +1,8 @@
-DISK=$$HOME/go/src/github.com/strickyak/doing_os9/disk2
-CMOC=/opt/yak/cmoc
+DISK=$$HOME/go/src/github.com/strickyak/doing_os9/drive/disk2
+CMOC=cmoc
 
 all:
-	$(CMOC)/bin/cmoc --os9 -S ncl.c
+	$(CMOC) --os9 -S ncl.c
 	python  wrap.py  < ncl.s > ncl.asm
 	lwasm -f"os9" --pragma=forwardrefmax --output=ncl.bin --list="ncl.list" --map="ncl.map" ncl.asm
 	:

@@ -29,7 +29,7 @@ def Slurp(r):
 
 d, imps = Slurp(sys.stdin)
 
-print '''*** Generated Code (by wrap_ncl.py)
+print ( '''*** Generated Code (by wrap_ncl.py)
     nam NCL
     ttl NCL
 
@@ -93,7 +93,7 @@ ClearLoop stb ,u+
 __unused__   RMB 2   ; Never put things at address 0.
 
 * ;;;;;;;;;;;;;;; bss
-'''
+''')
 
 for section in ['bss', 'code', 'rodata']:
     for e in d[section]:
@@ -104,10 +104,10 @@ for section in ['bss', 'code', 'rodata']:
             if len(e) > 1 and e.endswith('*'):
                 # Change final `*` to `.`
                 e = e[:-1] + '.'
-        print e
+        print ( e )
 
 # MUL/DIV SUPPORT
-print '''
+print ( '''
 
 * Multiply D by X, unsigned; return result in D; preserve X.
 MUL16   PSHS    U,X,B,A         U pushed to create 2 temp bytes at 4,S
@@ -438,10 +438,10 @@ shiftLeft_end
         tfr     x,pc    return from routine (with result in D)
 
 
-'''
+''' )
 
 # Finish the module.
-print '''
+print ( '''
     emod
 eom equ *
-'''
+''' )
