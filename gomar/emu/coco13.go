@@ -122,6 +122,12 @@ func GetIOByte(a Word) byte {
 	case 0xFF83: /* emudsk */
 		return EmudskGetIOByte(a)
 
+	case 0xFF68,
+	     0xFF69,
+	     0xFF6a,
+	     0xFF6b:
+        return GetCocoIO(a)
+
 	default:
 		Ld("UNKNOWN GetIOByte: 0x%04x\n", a)
 		return 0
@@ -504,6 +510,12 @@ func PutIOByte(a Word, b byte) {
 		0xFF85,
 		0xFF86:
 		EmudskPutIOByte(a, b)
+
+	case 0xFF68,
+	     0xFF69,
+	     0xFF6a,
+	     0xFF6b:
+        PutCocoIO(a , b)
 	}
 }
 
