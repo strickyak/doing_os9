@@ -17,14 +17,13 @@ lwasm --obj --6809 --list=octet.list -o octet.o octet.s
 import (
 	"flag"
 	"log"
-	"strings"
 
 	. "github.com/strickyak/doing_os9/gomar/cmocly/lib"
 )
 
 var flag_linker_map = flag.String("linker_map", "", "filename of linker map")
 var flag_asm_listing = flag.String("asm_listing", "", "filename of asm listing")
-var flag_asm_listing_path = flag.String("asm_listing_path", "/home/strick/COCO/build/cmoc-rebuild/src/stdlib/", "where to look for listings")
+var flag_asm_listing_path = flag.String("asm_listing_path", ".:/opt/build/cmoc/src/stdlib", "where to look for listings")
 
 var flag_lwasm = flag.String("lwasm", "/opt/yak/bin-os9/lwasm", "lwasm command")
 var flag_lwlink = flag.String("lwlink", "/opt/yak/bin-os9/lwlink", "lwlink command")
@@ -34,13 +33,16 @@ var flag_linker_map_in = flag.String("linker_map_in", "", "read linker map for d
 
 var flag_o = flag.String("o", "", "output binary name")
 
+var flag_incr = flag.Int("incr", 0, "increase RAM size")
+
 func main() {
 	flag.Parse()
 	log.SetFlags(0)
 	log.SetPrefix("## ")
 
 	if *flag_o == "" {
-		demo()
+        log.Fatalf("You must provide the -o option")
+		// demo()
 	} else {
 		RunSpec{
 			AsmListingPath: *flag_asm_listing_path,
@@ -50,10 +52,12 @@ func main() {
 			OutputBinary:   *flag_o,
 			Args:           flag.Args(),
 			BorgesDir:      *flag_borges_dir,
+            Incr:           *flag_incr,
 		}.RunAll()
 	}
 }
 
+/*
 func demo() {
 	var lmap []*LinkerMapRecord
 	if *flag_linker_map != "" {
@@ -79,3 +83,4 @@ func demo() {
 		SearchForNeededListings(alists, lmap, dirs)
 	}
 }
+*/

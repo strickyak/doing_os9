@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+    "strings"
 )
 
 type LinkerMapRecord struct {
@@ -20,7 +21,9 @@ func BasenamesOfLinkerMap(lmap []*LinkerMapRecord) []string {
 	names := make(map[string]bool)
 	for _, rec := range lmap {
 		if rec.Section != "" {
-			names[Basename(rec.Filename)] = true
+			// names[Basename(rec.Filename)] = true
+			names[rec.Filename] = true
+            log.Printf("LMAP REC SECTION: %q %q", rec.Filename, rec.Section)
 		}
 	}
 	// Convert to a slice.
@@ -31,8 +34,39 @@ func BasenamesOfLinkerMap(lmap []*LinkerMapRecord) []string {
 	return vec
 }
 
+func FixMapName(mapname string) {
+    log.Printf("FixMapName: considering %q", mapname);
+    trimmed := strings.TrimSuffix(mapname, ".map")
+    if strings.Contains(trimmed, ".") {
+        // Rename the .map, as from "f.map" to "f.dig.map"
+        front := strings.Split(trimmed, ".")[0]
+        front_mapname := front + ".map"
+        log.Printf("RENAME %q -> %q", front_mapname, mapname);
+        err := os.Rename(front_mapname, mapname)
+        if err != nil {
+            log.Printf("RENAME ERROR: %v", err);
+        }
+        // Rename the .link, as from "f.link" to "f.dig.link"
+        linkname := trimmed + ".link"
+        front_linkname := front + ".link"
+        log.Printf("RENAME %q -> %q", front_linkname, linkname);
+        err = os.Rename(front_linkname, linkname)
+        if err != nil {
+            log.Printf("RENAME ERROR: %v", err);
+        }
+    }
+}
+
 func ReadLinkerMap(filename string) []*LinkerMapRecord {
 	log.Printf("ENTER ReadLinkerMap %q", filename)
+
+    /*
+      Here we might do an ugly hack:
+      With -o x.sprintf the map gets created at x.map
+      instead of at x.sprintf.map.
+    */
+    FixMapName(filename)
+
 	fd, err := os.Open(filename)
 	if err != nil {
 		log.Fatalf("ReadLinkerMap: Cannot open %q: %v", filename, err)

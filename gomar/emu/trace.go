@@ -54,18 +54,16 @@ func Trace() {
 
 	module, offset := MemoryModuleOf(pcreg_prev)
 
+    text := ""
 	if module != "" {
 		moduleLower := strings.ToLower(module)
-		text := listings.Lookup(moduleLower, uint(offset), func() {
+		text = listings.Lookup(moduleLower, uint(offset), func() {
 			*FlagTraceAfter = 1
 		})
-		if text != "" {
-			log.Printf("          {{ %s }}", text)
-		}
 	}
 
 	Z(&buf, " {%-5s %-17s}  ", dinst.String(), dops.String())
-	log.Printf("%s%s", buf.String(), Regs())
+	log.Printf("%s%s {{%s}}", buf.String(), Regs(), text)
 	log.Printf("")
 	dis_length = 0
 

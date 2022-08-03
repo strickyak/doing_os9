@@ -2,9 +2,7 @@ set -eux
 
 # Initial flags (as one long word) passed to gomar.
 FLAGS=
-DONT=
 case "$1" in
-  DONT ) DONT=1 ; shift ;;
   -* ) FLAGS="$1" ; shift ;;
 esac
 
@@ -41,6 +39,7 @@ os9 attr -per "drive/disk2,CMDS/$C2"
 
 os9 copy -r -l "$INPUT" "drive/disk2,input"
 
+DONT=${DONT:-}
 if test -z "$DONT"
 then
     BC=
@@ -81,7 +80,7 @@ else
 go run -x --tags=coco3,level2,trace \
   gomar.go \
   --borges ../borges/ \
-  --trigger_os9='(?i:fork.*file=.zz)' \
+  --trigger_os9="(?i:fork.*file=.${TRACE})" \
   -ttl "$TTL" \
   -boot drive/boot2coco3 \
   -disk drive/disk2 \

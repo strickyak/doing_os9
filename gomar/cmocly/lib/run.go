@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+    "github.com/strickyak/doing_os9/change_data_size/change"
 )
 
 var PRE = flag.String("cmoc_pre", "", "prefix these flags to cmoc")
@@ -24,6 +26,7 @@ type RunSpec struct {
 	OutputBinary   string
 	Args           []string
 	BorgesDir      string
+    Incr           int  // extra RAM increment.
 }
 
 func (rs RunSpec) RunCompiler(filename string) {
@@ -163,11 +166,15 @@ func (rs RunSpec) RunAll() {
 			rs.RunAssembler(filebase)
 			if phase == 2 {
 				alist := ReadAsmListing(filebase + ".o.list")
-				alists[Basename(filename)] = alist
+				// alists[Basename(filename)] = alist
+				alists[filename] = alist
 			}
 			ofiles = append(ofiles, filebase+".o")
 		}
 		rs.RunLinker(ofiles, rs.OutputBinary)
+        if rs.Incr != 0 {
+            change.ChangeDataSize(rs.Incr, rs.OutputBinary)
+        }
 
 		// Read the linker map.
 		// The first time is for the `directs` set of potential direct page variables.
@@ -255,7 +262,8 @@ func OutputFinalListing(
 			continue
 		}
 		/////###### f := Basename(rec.Filename)
-		f := rec.Filename[:len(rec.Filename)-2] // Trim off ".o"
+		//## f := strings.TrimSuffix(rec.Filename, ".o")
+		f := rec.Filename
 		alist, ok := alists[f]
 		if !ok {
 			log.Printf("Missing alist file: %q -> %q", rec.Filename, f)
@@ -312,28 +320,39 @@ func GetOs9ModuleName(mod []byte) string {
 	return string(z)
 }
 
+/*
 func Basename(s string) string {
-	return s[:len(s)-2] // Trim off ".o"
+	return strings.TrimSuffix(s, ".o")
 
-	/*
+	/-
 		// base name (directory removed)
 		base := filepath.Base(s)
 		// only what is before the first '.'
 		return strings.Split(base, ".")[0]
-	*/
+	-/
 }
+*/
 
-func UseBasenames(
-	alists map[string]map[string][]*AsmListingRecord) {
+type alistsType map[string]map[string][]*AsmListingRecord
+func FixAlistNames(alists alistsType) alistsType {
 	// save keys
 	var keys []string
 	for k := range alists {
 		keys = append(keys, k)
+        log.Printf("OLD ALIST: %q", k)
 	}
 	// now mutate map
+    newAlists := make(alistsType)
 	for _, key := range keys {
-		alists[Basename(key)] = alists[key]
+        k2 := filepath.Base(key)
+        if strings.HasSuffix(k2, ".c") {
+            k2 = strings.TrimSuffix(k2, ".c")
+            k2 += ".o"
+        }
+		newAlists[k2] = alists[key]
+        log.Printf("NEW ALIST: %q -> %q", key, k2)
 	}
+    return newAlists
 }
 
 func SearchForNeededListings(
@@ -341,20 +360,23 @@ func SearchForNeededListings(
 	lmap []*LinkerMapRecord,
 	dirs []string) {
 	// Use basenames in alists.
-	UseBasenames(alists)
+	//ddt alists = FixAlistNames(alists)
 
 	for _, base := range BasenamesOfLinkerMap(lmap) {
 		log.Printf("LINKER NAME %q", base)
 		for _, dir := range dirs {
-			filename := filepath.Join(dir, base+".os9_o.list")
-			println("CHECK", filename)
-			fd, err := os.Open(filename)
+			asm_filename := filepath.Join(dir, base+".list")
+			//< asm_filename := filepath.Join(dir, base+".os9_o.list")
+			//< asm_filename = strings.Replace(asm_filename, ".os9.os9", ".os9", 1)
+
+			println("CHECK", asm_filename)
+			fd, err := os.Open(asm_filename)
 			println(fd, err)
 			if err == nil {
-				alist := ReadAsmListing(filename)
+				alist := ReadAsmListing(asm_filename)
 				for section, records := range alist {
 					for _, rec := range records {
-						log.Printf("%q... %q ... %#v", filename, section, *rec)
+						log.Printf("%q... %q ... %#v", asm_filename, section, *rec)
 					}
 				}
 				alists[base] = alist
