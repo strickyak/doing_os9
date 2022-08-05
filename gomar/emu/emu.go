@@ -1113,7 +1113,7 @@ func Regs() string {
 
 // Returns a string and whether this operation typically returns to caller.
 func DecodeOs9Opcode(b byte) (string, bool) {
-	MemoryModules()
+	// MemoryModules()
 	s, p := "", ""
 	returns := true
 	switch b {
@@ -3242,8 +3242,8 @@ func Main() {
 			*FlagTraceAfter = 1
 			SetVerbosityBits(*FlagTraceVerbosity)
 			log.Printf("TRIGGERED")
-			MemoryModules()
-			DoDumpAllMemory()
+			// MemoryModules()
+			// DoDumpAllMemory()
 		}
 		pcreg++
 
@@ -3286,10 +3286,10 @@ func ParanoidAsserts() {
 }
 func DoMemoryDumps() {
 	log.Printf("# pre timer interrupt #")
-	DoDumpAllMemory()
-	log.Printf("# pre timer interrupt #")
-	DoDumpAllMemoryPhys()
-	log.Printf("# pre timer interrupt #")
+	// DoDumpAllMemory()
+	// log.Printf("# pre timer interrupt #")
+	// DoDumpAllMemoryPhys()
+	// log.Printf("# pre timer interrupt #")
 }
 
 func B0(addr Word) byte {
