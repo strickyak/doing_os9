@@ -17,6 +17,7 @@ lwasm --obj --6809 --list=octet.list -o octet.o octet.s
 import (
 	"flag"
 	"log"
+    "strings"
 
 	. "github.com/strickyak/doing_os9/gomar/cmocly/lib"
 )
@@ -32,8 +33,11 @@ var flag_borges_dir = flag.String("borges_dir", "/home/strick/go/src/github.com/
 var flag_linker_map_in = flag.String("linker_map_in", "", "read linker map for direct page vars")
 
 var flag_o = flag.String("o", "", "output binary name")
+var flag_I = flag.String("I", "", "Include Dirs (comma sep)")
+var flag_L = flag.String("L", "", "Library Dirs (comma sep)")
+var flag_l = flag.String("l", "", "Libraries (comma sep)")
 
-var flag_incr = flag.Int("incr", 0, "increase RAM size")
+var _ = flag.Bool("os9", true, "always in --os9 mode, for now")
 
 func main() {
 	flag.Parse()
@@ -42,45 +46,17 @@ func main() {
 
 	if *flag_o == "" {
         log.Fatalf("You must provide the -o option")
-		// demo()
-	} else {
-		RunSpec{
-			AsmListingPath: *flag_asm_listing_path,
-			LwAsm:          *flag_lwasm,
-			LwLink:         *flag_lwlink,
-			Cmoc:           *flag_cmoc,
-			OutputBinary:   *flag_o,
-			Args:           flag.Args(),
-			BorgesDir:      *flag_borges_dir,
-            Incr:           *flag_incr,
-		}.RunAll()
 	}
+    RunSpec{
+        AsmListingPath: *flag_asm_listing_path,
+        LwAsm:          *flag_lwasm,
+        LwLink:         *flag_lwlink,
+        Cmoc:           *flag_cmoc,
+        OutputBinary:   *flag_o,
+        Args:           flag.Args(),
+        BorgesDir:      *flag_borges_dir,
+        IncludeDirs:     strings.Split(*flag_I, ","),
+        LibDirs:     strings.Split(*flag_L, ","),
+        LibFiles:     strings.Split(*flag_l, ","),
+    }.RunAll()
 }
-
-/*
-func demo() {
-	var lmap []*LinkerMapRecord
-	if *flag_linker_map != "" {
-		lmap = ReadLinkerMap(*flag_linker_map)
-		for _, e := range lmap {
-			log.Printf("... %#v", *e)
-		}
-	}
-	alists := make(map[string]map[string][]*AsmListingRecord)
-	if *flag_asm_listing != "" {
-		for _, filename := range strings.Split(*flag_asm_listing, ":") {
-			alist := ReadAsmListing(filename)
-			for section, records := range alist {
-				for _, rec := range records {
-					log.Printf("%q... %q ... %#v", filename, section, *rec)
-				}
-			}
-			alists[filename] = alist
-		}
-	}
-	if *flag_asm_listing_path != "" {
-		dirs := strings.Split(*flag_asm_listing_path, ":")
-		SearchForNeededListings(alists, lmap, dirs)
-	}
-}
-*/

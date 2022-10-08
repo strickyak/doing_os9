@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-    "github.com/strickyak/doing_os9/change_data_size/change"
 )
 
 var PRE = flag.String("cmoc_pre", "", "prefix these flags to cmoc")
@@ -26,16 +24,22 @@ type RunSpec struct {
 	OutputBinary   string
 	Args           []string
 	BorgesDir      string
-    Incr           int  // extra RAM increment.
+
+	IncludeDirs      []string
+	LibDirs      []string
+	LibFiles      []string
 }
 
-func (rs RunSpec) RunCompiler(filename string) {
+func (rs RunSpec) RunCompiler(filename string, includeDirs []string) {
 	args := []string{"--os9", "-S"}
 	for _, a := range strings.Split(*PRE, " ") {
 		if a != "" {
 			args = append(args, a)
 		}
 	}
+    for _, e := range includeDirs {
+        args = append(args, "-I" + e)
+    }
 	args = append(args, filename)
 	cmd := exec.Command(rs.Cmoc, args...)
 	cmd.Stdout = os.Stderr
@@ -130,9 +134,15 @@ func (rs RunSpec) RunAssembler(filename string) {
 		log.Fatalf("lwasm assembler failed: %v: %v", cmd, err)
 	}
 }
-func (rs RunSpec) RunLinker(ofiles []string, outbin string) {
+func (rs RunSpec) RunLinker(ofiles []string, outbin string, libDirs []string, libFiles []string) {
 	cmdargs := []string{"--os9", "-i", "--lwlink=" + rs.LwLink, "-o", outbin}
 	cmdargs = append(cmdargs, ofiles...)
+    for _, e := range libDirs {
+        cmdargs = append(cmdargs, "-L" + e)
+    }
+    for _, e := range libFiles {
+        cmdargs = append(cmdargs, "-l" + e)
+    }
 	cmd := exec.Command(rs.Cmoc, cmdargs...)
 	log.Printf("RUNNING: %v", cmd)
 	log.Printf("")
@@ -146,7 +156,7 @@ func (rs RunSpec) RunLinker(ofiles []string, outbin string) {
 }
 func (rs RunSpec) RunAll() {
 	if len(rs.Args) == 0 {
-		log.Fatalf("no filanames to compile")
+		log.Fatalf("no filenames to compile")
 	}
 
 	directs := make(map[string]bool)
@@ -155,27 +165,53 @@ func (rs RunSpec) RunAll() {
 	for phase := 1; phase <= 2; phase++ {
 		var ofiles []string
 		for _, filename := range rs.Args {
-			if !strings.HasSuffix(filename, ".c") {
-				log.Fatalf("filename should end in .c: %q", filename)
-			}
-			rs.RunCompiler(filename)
-			filebase := strings.TrimSuffix(filename, ".c")
-            filebase = filepath.Base(filebase)  // in case .c file was in another directory.
+            // TODO: handle ".asm" files.
+            
+			if strings.HasSuffix(filename, ".c") {
+                // CASE *.c
 
-			rs.TweakAssembler(filebase, directs)
-			rs.RunAssembler(filebase)
-			if phase == 2 {
-				alist := ReadAsmListing(filebase + ".o.list")
-				// alists[Basename(filename)] = alist
-				alists[filename] = alist
-			}
-			ofiles = append(ofiles, filebase+".o")
+                if !strings.HasSuffix(filename, ".c") {
+                    log.Fatalf("filename should end in .c: %q", filename)
+                }
+                rs.RunCompiler(filename, rs.IncludeDirs)
+                filebase := strings.TrimSuffix(filename, ".c")
+                filebase = filepath.Base(filebase)  // in case .c file was in another directory.
+
+                rs.TweakAssembler(filebase, directs)
+                rs.RunAssembler(filebase)
+                if phase == 2 {
+                    alist := ReadAsmListing(filebase + ".o.list")
+                    alists[filename] = alist
+                }
+                ofiles = append(ofiles, filebase+".o")
+
+			}else if strings.HasSuffix(filename, ".asm") {
+
+
+                contents, err := ioutil.ReadFile(filename);
+                if err != nil { log.Fatalf("cannot read file %q: %v", filename, err) }
+
+                filebase := strings.TrimSuffix(filename, ".c")
+                filebase = filepath.Base(filebase)  // in case .c file was in another directory.
+
+                err = ioutil.WriteFile(filebase + ".s", contents, 0777)
+                if err != nil { log.Fatalf("cannot write file %q: %v", filebase + ".s", err) }
+
+                rs.RunAssembler(filebase)
+                if phase == 2 {
+                    alist := ReadAsmListing(filebase + ".o.list")
+                    alists[filename] = alist
+                }
+                ofiles = append(ofiles, filebase+".o")
+
+            } else {
+
+                log.Fatalf("Cannot compile %q (not *.c and not *.asm)", filename);
+
+
+            }
 		}
-		rs.RunLinker(ofiles, rs.OutputBinary)
-        if rs.Incr != 0 {
-            change.ChangeDataSize(rs.Incr, rs.OutputBinary)
-        }
-
+		rs.RunLinker(ofiles, rs.OutputBinary, rs.LibDirs, rs.LibFiles)
 		// Read the linker map.
 		// The first time is for the `directs` set of potential direct page variables.
 		// The second time is for finding all the linked object files and output the final listing.
@@ -185,18 +221,10 @@ func (rs RunSpec) RunAll() {
 				directs[e.Symbol] = true
 			}
 		}
-	}
+	} // next phase
 
 	listing_dirs := strings.Split(rs.AsmListingPath, ":")
 	SearchForNeededListings(alists, lmap, listing_dirs)
-
-	//for filename, alist := range alists {
-	//for section, records := range alist {
-	//for _, rec := range records {
-	//log.Printf("%q ... %q ... %#v", filename, section, *rec)
-	//}
-	//}
-	//}
 
 	mod, err := ioutil.ReadFile(rs.OutputBinary)
 	if err != nil {
@@ -236,6 +264,7 @@ func OutputFinalListing(
 	mod []byte,
 	w io.Writer) {
 
+    // just verbose:
 	for _k, _v := range alists {
 		log.Printf("ALIST: %q ...", _k)
 		for _s, _e := range _v {
@@ -252,17 +281,11 @@ func OutputFinalListing(
 			// BSS have no instructions.
 			continue
 		}
-		if false && rec.Section != "code" {
-			// REALLY WE WANT TO SEE code.
-			continue
-		}
 		start := rec.Start
 		n := rec.Length
 		if n == 0 {
 			continue
 		}
-		/////###### f := Basename(rec.Filename)
-		//## f := strings.TrimSuffix(rec.Filename, ".o")
 		f := rec.Filename
 		alist, ok := alists[f]
 		if !ok {
@@ -276,26 +299,8 @@ func OutputFinalListing(
 		}
 		fmt.Fprintf(w, "\n")
 		for _, line := range seclist {
-			/*
-				if line.Location >= n {
-					log.Printf("Line location too big (>= %d): %#v", n, line)
-					continue
-				}
-			*/
-
 			hex := line.Bytes
-			/*
-			   if len(hex) > 16 {
-			       hex = hex[:16]
-			   }
-			*/
 			name := line.Filename
-			/*
-			   if len(name) > 17 {
-			       name = name[:17]
-			   }
-			*/
-
 			inst := fmt.Sprintf("%s:%05d | %s", strings.Trim(name, " "), line.LineNum, line.Instruction)
 			fmt.Fprintf(w, "%04X %-16s (%s):%05d         %s\n", line.Location+start, hex, name, line.LineNum, inst)
 		}
@@ -319,19 +324,6 @@ func GetOs9ModuleName(mod []byte) string {
 	z = append(z, mod[i]&0x7F)
 	return string(z)
 }
-
-/*
-func Basename(s string) string {
-	return strings.TrimSuffix(s, ".o")
-
-	/-
-		// base name (directory removed)
-		base := filepath.Base(s)
-		// only what is before the first '.'
-		return strings.Split(base, ".")[0]
-	-/
-}
-*/
 
 type alistsType map[string]map[string][]*AsmListingRecord
 func FixAlistNames(alists alistsType) alistsType {
@@ -359,24 +351,20 @@ func SearchForNeededListings(
 	alists map[string]map[string][]*AsmListingRecord,
 	lmap []*LinkerMapRecord,
 	dirs []string) {
-	// Use basenames in alists.
-	//ddt alists = FixAlistNames(alists)
 
 	for _, base := range BasenamesOfLinkerMap(lmap) {
-		log.Printf("LINKER NAME %q", base)
+		log.Printf("[Search] LINKER NAME %q", base)
 		for _, dir := range dirs {
 			asm_filename := filepath.Join(dir, base+".list")
-			//< asm_filename := filepath.Join(dir, base+".os9_o.list")
-			//< asm_filename = strings.Replace(asm_filename, ".os9.os9", ".os9", 1)
 
-			println("CHECK", asm_filename)
+			println("[Search] CHECK", asm_filename)
 			fd, err := os.Open(asm_filename)
 			println(fd, err)
 			if err == nil {
 				alist := ReadAsmListing(asm_filename)
 				for section, records := range alist {
 					for _, rec := range records {
-						log.Printf("%q... %q ... %#v", asm_filename, section, *rec)
+						log.Printf("[Search ReadAsm] %q... %q ... %#v", asm_filename, section, *rec)
 					}
 				}
 				alists[base] = alist
