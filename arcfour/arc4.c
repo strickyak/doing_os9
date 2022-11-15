@@ -15,7 +15,7 @@ unsigned char arc4_byte(unsigned char* state_ptr) {
     leay 128,x
 
 * Input: `x` points 128 bytes into a 256-byte state.
-*        `y` points to the beginning of a 4-byte state.         
+*        `y` points to the beginning of a 4-byte state. # TODO: 2-byte state?
 * Returns the byte in `b`.
 *
 * Does not change U, the CMOC frame pointer.
@@ -26,32 +26,32 @@ unsigned char arc4_byte(unsigned char* state_ptr) {
 VX equ 0
 VY equ 1
 
-	inc VX,y  ; x = x + 1
-	ldb VX,y
+    inc VX,y  ; x = x + 1
+    ldb VX,y
 
     eorb #$80    ; Correction
-	lda b,x      ; tempSx = s[x]
-	sta tempSx
+    lda b,x      ; tempSx = s[x]
+    sta tempSx
 
-	adda VY,y    ; y = tempSx + y
-	sta VY,y
+    adda VY,y    ; y = tempSx + y
+    sta VY,y
 
     eora #$80    ; Correction
     lda a,x      ; tempSy = s[y]
-	sta tempSy
+    sta tempSy
 
-	ldb VX,y     ; s[x] = tempSy
+    ldb VX,y     ; s[x] = tempSy
     eorb #$80    ; Correction
-	sta b,x
+    sta b,x
 
-	lda tempSx    ; s[y] = tempSx
-	ldb VY,y
+    lda tempSx    ; s[y] = tempSx
+    ldb VY,y
     eorb #$80    ; Correction
-	sta b,x
+    sta b,x
 
-	adda tempSy ; return s[tempSx+tempSy]
+    adda tempSy ; return s[tempSx+tempSy]
     eora #$80    ; Correction
-	ldb a,x    ; return byte is in b
+    ldb a,x    ; return byte is in b
     stb retval
 
     puls y

@@ -9,8 +9,11 @@ of RSA Data Security)
 */
 
 /*
- * $Id: ssh-arcfour.c,v 1.2 2022/02/09 21:09:13 strick Exp $
+ * $Id: ssh-arcfour.c,v 1.1 2022/11/06 03:20:41 strick Exp $
  * $Log: ssh-arcfour.c,v $
+ * Revision 1.1  2022/11/06 03:20:41  strick
+ * /dev/null
+ *
  * Revision 1.2  2022/02/09 21:09:13  strick
  * /dev/null
  *
@@ -26,8 +29,12 @@ of RSA Data Security)
  * $Endlog$
  */
 
-// #include "includes.h"
-#include <cmoc.h>
+#ifdef unix
+#  include <stdio.h>
+#else
+#  include <cmoc.h>
+#endif
+
 #include <assert.h>
 #include "ssh-arcfour.h"
 

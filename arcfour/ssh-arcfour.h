@@ -9,8 +9,11 @@ of RSA Data Security)
 */
 
 /*
- * $Id: ssh-arcfour.h,v 1.1 2022/02/09 18:03:37 strick Exp $
+ * $Id: ssh-arcfour.h,v 1.1 2022/11/06 03:20:41 strick Exp $
  * $Log: ssh-arcfour.h,v $
+ * Revision 1.1  2022/11/06 03:20:41  strick
+ * /dev/null
+ *
  * Revision 1.1  2022/02/09 18:03:37  strick
  * /dev/null
  *
