@@ -148,7 +148,7 @@ func PutCocoIO(a Word, b byte) {
 	}
 }
 func wizPutStatus(a Word, b byte) {
-    log.Panicf("Socket Status is a RO register: %x %x", a, b)
+	log.Panicf("Socket Status is a RO register: %x %x", a, b)
 }
 func wizPutInterrupt(a Word, b byte) {
     x := wizMem[a]
@@ -164,28 +164,28 @@ func wizPutCommand(a Word, b byte) {
 	rxRing := 0x6000 + 0x800*k
 	switch b {
 	case 0x01:
-    { // open
+		{ // open
 			if wizMem[base] != 2 /*ProtocolModeUDP*/ {
 				log.Panicf("sending on socket %d but not in UDP mode: $%x", k, wizMem[base])
 			}
 
-		if sock[k].conn != nil {
-			sock[k].conn.Close()
-			sock[k].conn = nil
+			if sock[k].conn != nil {
+				sock[k].conn.Close()
+				sock[k].conn = nil
+			}
+			hostport := fmt.Sprintf(":%d", wizWord(base+0x04))
+			sock[k].conn = listenUDP(hostport)
+			wizMem[3+base] = 0x22 // Status is SOCK_UDP.
 		}
-		hostport := fmt.Sprintf(":%d", wizWord(base+0x04))
-		sock[k].conn = listenUDP(hostport)
-        wizMem[3 + base] = 0x22  // Status is SOCK_UDP.
-        }
 
 	case 0x10:
-        {// close
-            if sock[k].conn != nil {
-                sock[k].conn.Close()
-                sock[k].conn = nil
-            }
-            wizMem[3 + base] = 0x00  // Status is SOCK_CLOSED.
-        }
+		{ // close
+			if sock[k].conn != nil {
+				sock[k].conn.Close()
+				sock[k].conn = nil
+			}
+			wizMem[3+base] = 0x00 // Status is SOCK_CLOSED.
+		}
 	case 0x20:
 		{ // send
 			if wizMem[base] != 2 /*ProtocolModeUDP*/ {
@@ -219,9 +219,9 @@ func wizPutCommand(a Word, b byte) {
 			if err != nil {
 				panic(err)
 			}
-			putWizWord(base + TxRd, end)
+			putWizWord(base+TxRd, end)
 			// Set "interrupt" bit for SENDOK
-            wizMem[base+2] |= (1<<4) // SENDOK Interrupt Bit.
+			wizMem[base+2] |= (1 << 4) // SENDOK Interrupt Bit.
 		}
 	case 0x40:
 		{ // recv
@@ -244,12 +244,31 @@ func wizPutCommand(a Word, b byte) {
 			}
 
 			// Set "interrupt" bit for RECV
-            wizMem[base+2] |= (1<<2) // RECV Interrupt Bit.
+			wizMem[base+2] |= (1 << 2) // RECV Interrupt Bit.
 		}
 	}
 }
+func wizReset() {
+	for i := range wizMem {
+		wizMem[i] = 0
+	}
+}
+func wizMode(b byte) {
+	if (b & 0x80) != 0 {
+		wizReset()
+	}
+}
+func wizSocketlessCommand(b byte) {
+	panic("todo")
+}
 func wizPut(a Word, b byte) {
+	wizMem[a] = b
 	switch a {
+	case 0:
+		wizMode(b)
+	case 0x004C:
+		wizSocketlessCommand(b)
+
 	case 0x0401,
 		0x0501,
 		0x0601,
@@ -269,8 +288,29 @@ func wizPut(a Word, b byte) {
 		wizMem[a] = b
 	}
 }
+
+func TimerByte(a) byte {
+	ticks := time.Now().UnixMicro / 100 // 100us ticks.
+	switch a {
+	case 0x0082:
+		return byte(ticks >> 8)
+	case 0x0083:
+		return byte(ticks >> 0)
+	}
+	panic(0)
+}
+func wizSocketlessInterruptReg(b byte) byte {
+	panic("todo")
+}
 func wizGet(a Word) byte {
 	switch a {
+	case 0x005F:
+		wizSocketlessInterruptReg(b)
+
+	case 0x0082,
+		0x0083:
+		return TimerByte(a)
+
 	default:
 		return wizMem[a]
 	}
