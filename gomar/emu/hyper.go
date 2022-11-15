@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
 )
 
 func Nice(ch byte) byte {
@@ -75,6 +76,11 @@ func HyperOp(hop byte) {
 			}
 		}
 		fmt.Printf("}}` ")
+
+	case 107: // Exit
+		log.Printf("*** GOMAR Hyper Exit: %d", dreg)
+		fmt.Printf("*** GOMAR Hyper Exit: %d\n", dreg)
+        os.Exit(int(dreg))
 
 	default:
 		log.Printf("Unknown HyperOp $%x = $d.", hop, hop)

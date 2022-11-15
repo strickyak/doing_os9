@@ -19,13 +19,19 @@ type socket struct {
 		rxEnd   Word
 		rxRead  Word
 		rxWrite Word
+	*/
 		mode    byte
 		status  byte
-	*/
 	conn *net.UDPConn
 }
 
 var sock [4]*socket
+
+func init() {
+    for i:=0; i<4; i++ {
+        sock[i] = new(socket);
+    }
+}
 
 var wizMem [1 << 16]byte
 var wizAddr Word
@@ -51,9 +57,9 @@ func assert_w_lt(a Word, b Word) {
 	}
 }
 
-func putWizWord(reg Word, value word) {
-	wizMem[reg] = byte(word >> 8)
-	wizMem[reg+1] = byte(word)
+func putWizWord(reg Word, value Word) {
+    wizMem[reg] = byte(value >> 8)
+    wizMem[reg+1] = byte(value)
 }
 func wizWord(reg Word) Word {
 	hi := wizMem[reg]
@@ -145,13 +151,14 @@ func wizPutStatus(a Word, b byte) {
 	log.Panicf("Socket Status is a RO register: %x %x", a, b)
 }
 func wizPutInterrupt(a Word, b byte) {
-	x := wizWord[a]
-	x &^= b // clear the bits that are set in b.
-	wizWord[a] = x
+    x := wizMem[a]
+    x &^= b            // clear the bits that are set in b.
+    wizMem[a] = x
 }
 func wizPutCommand(a Word, b byte) {
 	base := a - 1
-	k := a >> 8
+	k := (a >> 8) - 4
+    log.Printf("wizPutCommand a=%x b=%x base=%x k=%x; sock=%#v", a, b, base, k, sock)
 	assert_w_lt(k, 4)
 	txRing := 0x4000 + 0x800*k
 	rxRing := 0x6000 + 0x800*k
@@ -192,7 +199,7 @@ func wizPutCommand(a Word, b byte) {
 			assert_w_lt(size, 700) // reasonable for now
 
 			buf := make([]byte, size)
-			p := begin
+			//? p := begin
 			for i := Word(0); i < size; i++ {
 				p := (begin + i) & 0x7FF
 				buf[i] = wizMem[p+txRing]
@@ -220,17 +227,19 @@ func wizPutCommand(a Word, b byte) {
 		{ // recv
 			buf := make([]byte, 1500)
 			size, addr, err := sock[k].conn.ReadFromUDP(buf)
-			assert_w_gt(size, 2)   // reasonable for now
-			assert_w_lt(size, 700) // reasonable for now
+            if err != nil { panic(err) }
+            _ = addr  // TODO use addr
+			assert_w_gt(Word(size), 2)   // reasonable for now
+			assert_w_lt(Word(size), 700) // reasonable for now
 
 			begin := wizWord(base + TxRd)
 			end := wizWord(base + TxWr)
 			gap := end - begin
 			gap &= 0x7ff // 2K ring buffers.
-			assert_w_gt(gap, size)
+			assert_w_gt(gap, Word(size))
 
 			for i := 0; i < size; i++ {
-				p = 0x7ff & (begin + Word(i))
+				p := 0x7ff & (begin + Word(i))
 				wizMem[rxRing+p] = buf[i]
 			}
 

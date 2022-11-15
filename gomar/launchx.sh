@@ -56,8 +56,9 @@ then
       echo "list startup"
       echo "echo ====== input"
       echo "list input"
-      echo "echo ======"
+      echo "echo ====== $C2"
       echo "$C2 $B2 <input"
+      echo "echo ====== OKAY"
     ) | os9 copy -r -l /dev/stdin 'drive/disk2,startup'
 else
     os9 copy -r /dev/null 'drive/disk2,startup'
@@ -66,10 +67,11 @@ fi
 TRACE=${TRACE:-}
 TTL=${TTL:-180s}
 ERR=${ERR:-/dev/null}
+XTAGS=${XTAGS:-}
 
 if test -z "$TRACE"
 then
-go run -x --tags=coco3,level2 \
+go run -x --tags=coco3,level2,$XTAGS \
   gomar.go \
   -ttl "$TTL" \
   -boot drive/boot2coco3 \
@@ -77,7 +79,7 @@ go run -x --tags=coco3,level2 \
   $FLAGS \
   2>"$ERR"
 else
-go run -x --tags=coco3,level2,trace \
+go run -x --tags=coco3,level2,trace,$XTAGS \
   gomar.go \
   --borges ../borges/ \
   --trigger_os9="(?i:fork.*file=.${TRACE})" \

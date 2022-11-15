@@ -1361,8 +1361,6 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 				q = PeekW(pathDBT + (Word(path) >> 2))
 			}
 
-			//< p = F("ZYX path_num=%x proc=%x path=%x dbt=%x q=%x @%x#%x %q", path_num, proc, path, pathDBT, q, begin, length, p)
-			//< p = F("%q", p)
 			if false {
 				if q != 0 {
 					pd := q + 64*(Word(path)&3)
@@ -1380,8 +1378,8 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 					}
 				}
 			}
-			//< fmt.Printf("proc=%x id=%x XYZ n=%x p=%x {{{%s}}}\n", proc, pid, yreg, xreg, p)
-			fmt.Printf("<%s>", p)
+			//# fmt.Printf("<%s>", p)
+			fmt.Printf("%s", p)
 			_, _, _ = begin, length, pid
 		}
 
