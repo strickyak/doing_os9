@@ -53,18 +53,19 @@ func (rs RunSpec) RunCompiler(filename string, includeDirs []string) {
 	}
 }
 func (rs RunSpec) TweakAssembler(filename string, directs map[string]bool) {
-	err := os.Rename(filename+".s", filename+".s-orig")
+	orig_filename := filename + ".s-orig"
+	new_filename := filename + ".s"
+
+	err := os.Rename(new_filename, orig_filename)
 	if err != nil {
 		log.Fatalf("cannot rename %q to %q: %v",
 			filename+".s", filename+".s-orig", err)
 	}
 
-	orig_filename := filename + ".s-orig"
 	r, err := os.Open(orig_filename)
 	if err != nil {
 		log.Fatalf("cannot open: %q: %v", orig_filename, err)
 	}
-	new_filename := filename + ".s"
 	w, err := os.Create(new_filename)
 	if err != nil {
 		log.Fatalf("cannot create: %q: %v", new_filename, err)
