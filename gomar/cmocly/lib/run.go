@@ -72,25 +72,37 @@ func (rs RunSpec) TweakAssembler(filename string, directs map[string]bool) {
 	}
 
 	skip := 0
+	pushedY := 0
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		s := scanner.Text()
-		m1 := FindCommaYTab(s)
-		m2 := FindCommaYEnd(s)
-		if m1 != nil {
-			s = fmt.Sprintf("%s\t%s", m1[1], m1[2])
-		} else if m2 != nil {
-			s = fmt.Sprintf("%s\t;", m2[1])
+
+		// Sometimes Y is pushed and temporarily changed while an extra reg is needed.
+		if FindPushY(s) != nil {
+			pushedY++
+		} else if FindPullY(s) != nil {
+			pushedY--
 		}
 
-		m3 := FindLeaxVar(s)
-		if m3 != nil {
-			s = fmt.Sprintf("%s\tLDX\t#%s\t%s", m3[1], m3[2], m3[3])
-		}
+		// Only optimize ,Y patterns if Y is not pushed.
+		if pushedY == 0 {
+			m1 := FindCommaYTab(s)
+			m2 := FindCommaYEnd(s)
+			if m1 != nil {
+				s = fmt.Sprintf("%s\t%s", m1[1], m1[2])
+			} else if m2 != nil {
+				s = fmt.Sprintf("%s\t;", m2[1])
+			}
 
-		m4 := FindLbsrStkcheck(s)
-		if m4 != nil {
-			skip = 2
+			m3 := FindLeaxVar(s)
+			if m3 != nil {
+				s = fmt.Sprintf("%s\tLDX\t#%s\t%s", m3[1], m3[2], m3[3])
+			}
+
+			m4 := FindLbsrStkcheck(s)
+			if m4 != nil {
+				skip = 2
+			}
 		}
 
 		m5 := FindPotentiallyDirect(s)
@@ -112,6 +124,9 @@ func (rs RunSpec) TweakAssembler(filename string, directs map[string]bool) {
 	r.Close()
 	w.Close()
 }
+
+var FindPushY = regexp.MustCompile("(.*)\tPSHS\tY(\t.*|$)").FindStringSubmatch
+var FindPullY = regexp.MustCompile("(.*)\tPULS\tY(\t.*|$)").FindStringSubmatch
 
 var FindCommaYTab = regexp.MustCompile("(.*),Y\t(.*)").FindStringSubmatch
 var FindCommaYEnd = regexp.MustCompile("(.*),Y$").FindStringSubmatch
