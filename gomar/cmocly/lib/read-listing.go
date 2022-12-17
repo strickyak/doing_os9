@@ -123,7 +123,8 @@ var matchDirective = regexp.MustCompile(
 	`^ *[(]([^()]+)[)]:([[:digit:]]{5})         [ ]*([[:word:]]+) *([[:word:]]*)`)
 
 // 12345
-//      0399             (          chain.s):00838         _ChainIterMore  EQU     *
+//
+//	0399             (          chain.s):00838         _ChainIterMore  EQU     *
 var matchLabelEquStar = regexp.MustCompile(
 	`^     ([[:xdigit:]]{4}) *[(]([^()]+)[)]:([[:digit:]]{5}) *([[:word:]]+) *EQU *[*] *(.*)`)
 

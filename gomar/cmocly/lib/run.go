@@ -25,9 +25,9 @@ type RunSpec struct {
 	Args           []string
 	BorgesDir      string
 
-	IncludeDirs      []string
-	LibDirs      []string
-	LibFiles      []string
+	IncludeDirs []string
+	LibDirs     []string
+	LibFiles    []string
 }
 
 func (rs RunSpec) RunCompiler(filename string, includeDirs []string) {
@@ -37,9 +37,9 @@ func (rs RunSpec) RunCompiler(filename string, includeDirs []string) {
 			args = append(args, a)
 		}
 	}
-    for _, e := range includeDirs {
-        args = append(args, "-I" + e)
-    }
+	for _, e := range includeDirs {
+		args = append(args, "-I"+e)
+	}
 	args = append(args, filename)
 	cmd := exec.Command(rs.Cmoc, args...)
 	cmd.Stdout = os.Stderr
@@ -137,12 +137,12 @@ func (rs RunSpec) RunAssembler(filename string) {
 func (rs RunSpec) RunLinker(ofiles []string, outbin string, libDirs []string, libFiles []string) {
 	cmdargs := []string{"--os9", "-i", "--lwlink=" + rs.LwLink, "-o", outbin}
 	cmdargs = append(cmdargs, ofiles...)
-    for _, e := range libDirs {
-        cmdargs = append(cmdargs, "-L" + e)
-    }
-    for _, e := range libFiles {
-        cmdargs = append(cmdargs, "-l" + e)
-    }
+	for _, e := range libDirs {
+		cmdargs = append(cmdargs, "-L"+e)
+	}
+	for _, e := range libFiles {
+		cmdargs = append(cmdargs, "-l"+e)
+	}
 	cmd := exec.Command(rs.Cmoc, cmdargs...)
 	log.Printf("RUNNING: %v", cmd)
 	log.Printf("")
@@ -165,51 +165,53 @@ func (rs RunSpec) RunAll() {
 	for phase := 1; phase <= 2; phase++ {
 		var ofiles []string
 		for _, filename := range rs.Args {
-            // TODO: handle ".asm" files.
-            
+			// TODO: handle ".asm" files.
+
 			if strings.HasSuffix(filename, ".c") {
-                // CASE *.c
+				// CASE *.c
 
-                if !strings.HasSuffix(filename, ".c") {
-                    log.Fatalf("filename should end in .c: %q", filename)
-                }
-                rs.RunCompiler(filename, rs.IncludeDirs)
-                filebase := strings.TrimSuffix(filename, ".c")
-                filebase = filepath.Base(filebase)  // in case .c file was in another directory.
+				if !strings.HasSuffix(filename, ".c") {
+					log.Fatalf("filename should end in .c: %q", filename)
+				}
+				rs.RunCompiler(filename, rs.IncludeDirs)
+				filebase := strings.TrimSuffix(filename, ".c")
+				filebase = filepath.Base(filebase) // in case .c file was in another directory.
 
-                rs.TweakAssembler(filebase, directs)
-                rs.RunAssembler(filebase)
-                if phase == 2 {
-                    alist := ReadAsmListing(filebase + ".o.list")
-                    alists[filename] = alist
-                }
-                ofiles = append(ofiles, filebase+".o")
+				rs.TweakAssembler(filebase, directs)
+				rs.RunAssembler(filebase)
+				if phase == 2 {
+					alist := ReadAsmListing(filebase + ".o.list")
+					alists[filename] = alist
+				}
+				ofiles = append(ofiles, filebase+".o")
 
-			}else if strings.HasSuffix(filename, ".asm") {
+			} else if strings.HasSuffix(filename, ".asm") {
 
+				contents, err := ioutil.ReadFile(filename)
+				if err != nil {
+					log.Fatalf("cannot read file %q: %v", filename, err)
+				}
 
-                contents, err := ioutil.ReadFile(filename);
-                if err != nil { log.Fatalf("cannot read file %q: %v", filename, err) }
+				filebase := strings.TrimSuffix(filename, ".c")
+				filebase = filepath.Base(filebase) // in case .c file was in another directory.
 
-                filebase := strings.TrimSuffix(filename, ".c")
-                filebase = filepath.Base(filebase)  // in case .c file was in another directory.
+				err = ioutil.WriteFile(filebase+".s", contents, 0777)
+				if err != nil {
+					log.Fatalf("cannot write file %q: %v", filebase+".s", err)
+				}
 
-                err = ioutil.WriteFile(filebase + ".s", contents, 0777)
-                if err != nil { log.Fatalf("cannot write file %q: %v", filebase + ".s", err) }
+				rs.RunAssembler(filebase)
+				if phase == 2 {
+					alist := ReadAsmListing(filebase + ".o.list")
+					alists[filename] = alist
+				}
+				ofiles = append(ofiles, filebase+".o")
 
-                rs.RunAssembler(filebase)
-                if phase == 2 {
-                    alist := ReadAsmListing(filebase + ".o.list")
-                    alists[filename] = alist
-                }
-                ofiles = append(ofiles, filebase+".o")
+			} else {
 
-            } else {
+				log.Fatalf("Cannot compile %q (not *.c and not *.asm)", filename)
 
-                log.Fatalf("Cannot compile %q (not *.c and not *.asm)", filename);
-
-
-            }
+			}
 		}
 		rs.RunLinker(ofiles, rs.OutputBinary, rs.LibDirs, rs.LibFiles)
 		// Read the linker map.
@@ -264,7 +266,7 @@ func OutputFinalListing(
 	mod []byte,
 	w io.Writer) {
 
-    // just verbose:
+	// just verbose:
 	for _k, _v := range alists {
 		log.Printf("ALIST: %q ...", _k)
 		for _s, _e := range _v {
@@ -326,25 +328,26 @@ func GetOs9ModuleName(mod []byte) string {
 }
 
 type alistsType map[string]map[string][]*AsmListingRecord
+
 func FixAlistNames(alists alistsType) alistsType {
 	// save keys
 	var keys []string
 	for k := range alists {
 		keys = append(keys, k)
-        log.Printf("OLD ALIST: %q", k)
+		log.Printf("OLD ALIST: %q", k)
 	}
 	// now mutate map
-    newAlists := make(alistsType)
+	newAlists := make(alistsType)
 	for _, key := range keys {
-        k2 := filepath.Base(key)
-        if strings.HasSuffix(k2, ".c") {
-            k2 = strings.TrimSuffix(k2, ".c")
-            k2 += ".o"
-        }
+		k2 := filepath.Base(key)
+		if strings.HasSuffix(k2, ".c") {
+			k2 = strings.TrimSuffix(k2, ".c")
+			k2 += ".o"
+		}
 		newAlists[k2] = alists[key]
-        log.Printf("NEW ALIST: %q -> %q", key, k2)
+		log.Printf("NEW ALIST: %q -> %q", key, k2)
 	}
-    return newAlists
+	return newAlists
 }
 
 func SearchForNeededListings(

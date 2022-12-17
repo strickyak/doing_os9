@@ -17,7 +17,7 @@ lwasm --obj --6809 --list=octet.list -o octet.o octet.s
 import (
 	"flag"
 	"log"
-    "strings"
+	"strings"
 
 	. "github.com/strickyak/doing_os9/gomar/cmocly/lib"
 )
@@ -45,18 +45,18 @@ func main() {
 	log.SetPrefix("## ")
 
 	if *flag_o == "" {
-        log.Fatalf("You must provide the -o option")
+		log.Fatalf("You must provide the -o option")
 	}
-    RunSpec{
-        AsmListingPath: *flag_asm_listing_path,
-        LwAsm:          *flag_lwasm,
-        LwLink:         *flag_lwlink,
-        Cmoc:           *flag_cmoc,
-        OutputBinary:   *flag_o,
-        Args:           flag.Args(),
-        BorgesDir:      *flag_borges_dir,
-        IncludeDirs:     strings.Split(*flag_I, ","),
-        LibDirs:     strings.Split(*flag_L, ","),
-        LibFiles:     strings.Split(*flag_l, ","),
-    }.RunAll()
+	RunSpec{
+		AsmListingPath: *flag_asm_listing_path,
+		LwAsm:          *flag_lwasm,
+		LwLink:         *flag_lwlink,
+		Cmoc:           *flag_cmoc,
+		OutputBinary:   *flag_o,
+		Args:           flag.Args(),
+		BorgesDir:      *flag_borges_dir,
+		IncludeDirs:    strings.Split(*flag_I, ","),
+		LibDirs:        strings.Split(*flag_L, ","),
+		LibFiles:       strings.Split(*flag_l, ","),
+	}.RunAll()
 }
