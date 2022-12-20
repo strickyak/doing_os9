@@ -1352,6 +1352,27 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 			path_num := GetAReg()
 			proc := PeekW(sym.D_Proc)
 
+			/*
+
+						TODO: figure out DBT vs DTE, and where is /term
+
+			68SDC/sourcecode/asm/nitros9/scf/cowin_beta3.asm
+
+			* Get ptr to device table
+			* Entry: X=Pointer to process descriptor
+			*        B=Path block # to get
+			* Exit : Y=Pointer to device table entry
+			L0592    leax  P$Path,x       get pointer to path #'s
+			* Added next line to protect regB from os9 F$Find64 error report. RG
+			         pshs  b
+			         lda   b,x            get path block
+			         ldx   <D.PthDBT      get pointer to descriptor block table
+			         os9   F$Find64       get pointer to path descriptor
+			         ldy   PD.DEV,y       get pointer to device table entry
+			         puls  b,pc           return
+
+			*/
+
 			var pathDBT, q Word
 			var pid, path byte
 			if proc != 0 {
@@ -1420,6 +1441,7 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 				proc = PeekW(sym.D_Proc)
 				path = PeekB(proc + P_Path + Word(path_num))
 			})
+			_ = path
 			WithMmuTask(1, func() {
 				str := PrintableStringThruEOS(xreg, yreg)
 				// fmt.Printf("%s", str)
