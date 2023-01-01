@@ -125,7 +125,7 @@ void SendStatus(int ram_fd, error status, word len) {
   *p++ = 0;
 
   int written = 0;
-  Printf("@@@@@@@@  Status Status Status Status\n");
+  Printf("@@@@@@@@  D->C Sending Status e=%d. len=%d.\n", status);
   CHECK(Os9WritLn(ram_fd, (const char*) ssbuf, p - ssbuf, &written));
   assert(written = p - ssbuf);
 }
@@ -163,7 +163,7 @@ int main() {
     int len = 0;
     int eee;
     CHECK((eee = Os9ReadLn(ram_fd, xbuf, sizeof xbuf - 1, &len)));
-    Printf("@@@@@@@@ Daemon command: err=$%x=%d. len=$%x=%d  xbuf = {{{%q}}}\n",
+    Printf("@@@@@@@@ Daemon commanded: err=$%x=%d. len=$%x=%d  xbuf = {{{%q}}}\n",
            eee, eee, len, len, xbuf);
     assert(len > 3);      // sanity.
     xbuf[len + 1] = '\0';  // Ensure NUL-termination.
