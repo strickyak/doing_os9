@@ -518,6 +518,7 @@ void ShowRegs(struct Regs* rp) {
   ShowChar(13);
 }
 
+#if 0
 void ShowDeviceTableEntry(struct DeviceTableEntry* dt) {
   ShowChar('@'); ShowHex(dt); ShowChar(13);
   ShowStr("drive_mod"); ShowHex(dt->dt_device_driver_module); ShowModuleName(dt->dt_device_driver_module); ShowChar(13);
@@ -556,6 +557,7 @@ void ShowPathDesc(struct PathDesc* pd) {
   ShowDeviceTableEntry((struct DeviceTableEntry*)(pd->device_table_entry));
   ShowChar(13);
 }
+#endif
 
 errnum CopyParsedName(word begin, word end, char* dest, word max_len) {
   // max_len counts null termination.
@@ -939,12 +941,12 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
   pd->fuse_ptr->current_task = Os9CurrentProcessTask();
   pd->fuse_ptr->orig_rx = pd->regs->rx;
   ShowStr("\rpd "); ShowHex(pd);
+#if 0
   // ShowStr(" fuse_ptr "); ShowHex(pd->fuse_ptr);
   ShowStr("\rRecent Pid "); ShowHex(pd->fuse_ptr->recent_pid);
   ShowStr("\rCurrent Task "); ShowHex(pd->fuse_ptr->current_task);
   // ShowStr("\rOrig Rx "); ShowHex(pd->fuse_ptr->orig_rx);
 
-#if 0
   ShowStr("\rsizeof Fuse64: "); ShowHex(sizeof(struct Fuse64));
   ShowStr("\rCreateOrOpen: ");
   ShowChar('P'); ShowHex(pd);
@@ -1216,7 +1218,6 @@ errnum SetStatC(struct PathDesc* pd, struct Regs* regs) {
 
 asm CreateOrOpenA() {
   asm {
-    DAA      ; Entering CreateOrOpenA
     PSHS Y,U ; push pathdesc & regs as args to the "C" function.
     LDU #0   ; begin C frames
     LDD #0
