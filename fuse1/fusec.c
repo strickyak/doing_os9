@@ -113,12 +113,34 @@ asm HyperCoreDump() {
   }
 }
 
+void HyperShowRegs() {
+  asm {
+      swi
+      fcb 109
+  }
+}
+
+void HyperShowMMU() {
+  asm {
+      swi
+      fcb 102
+  }
+}
+
 void ShowChar(char ch) {
   asm {
     ldb ch
       clra
       swi
       fcb 104
+  }
+}
+
+void ShowStr(const char* str) {
+  asm {
+    ldd str
+      swi
+      fcb 110
   }
 }
 
@@ -147,13 +169,15 @@ void ShowTaskRam(byte task, word addr) {
   }
 }
 
-void ShowStr(const char* s) {
-  for (; *s; s++) {
-    ShowChar(*s);
+void printh(word format, ...) {
+  asm {
+      swi
+      fcb 108
   }
 }
 
-#define assert(C) { if (!(C)) { ShowStr(" *ASSERT* "); ShowHex(__LINE__); ShowStr(" *FAILED* " #C); HyperCoreDump(); } }
+// #define assert(C) { if (!(C)) { ShowStr(" *ASSERT* "); ShowHex(__LINE__); ShowStr(" *FAILED* " #C); HyperCoreDump(); } }
+#define assert(C) { if (!(C)) { printh(" *ASSERT* %s:%d *FAILED* (%s)\n", __FILE__,  __LINE__, #C); HyperCoreDump(); } }
 
 ////////////////////////////////////////////////
 
@@ -941,6 +965,12 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
   pd->fuse_ptr->current_task = Os9CurrentProcessTask();
   pd->fuse_ptr->orig_rx = pd->regs->rx;
   ShowStr("\rpd "); ShowHex(pd);
+
+  //HyperShowRegs();
+  HyperShowMMU();
+  printh("ABCDEFG zoldseg %x %x %d %d %s %s\n", 0x11, 0x22, 0x33, 0x44, "foo", "\n");
+  // HyperCoreDump();
+
 #if 0
   // ShowStr(" fuse_ptr "); ShowHex(pd->fuse_ptr);
   ShowStr("\rRecent Pid "); ShowHex(pd->fuse_ptr->recent_pid);

@@ -15,6 +15,95 @@ func Nice(ch byte) byte {
 	return '.'
 }
 
+func ShowRegs() {
+	fmt.Printf(" REGS{ cc:%02x dp:%02x d:%04x x:%04x y:%04x u:%04x s:%04x pc:%04x }\n",
+		ccreg, dpreg, dreg, xreg, yreg, ureg, sreg, pcreg)
+}
+
+func ShowRam32(addr Word) {
+	fmt.Printf(" [%04x]{", addr)
+	for i := Word(0); i < 32; i += 2 {
+		fmt.Printf("%04x ", PeekW(addr+i))
+		if (i&7) == 6 && i < 30 {
+			fmt.Printf(" ")
+		}
+	}
+	fmt.Printf("| ")
+	for i := Word(0); i < 32; i += 1 {
+		fmt.Printf("%c", Nice(PeekB(addr+i)))
+		if (i & 7) == 7 {
+			fmt.Printf(" ")
+		}
+	}
+	fmt.Printf("}`\n")
+}
+
+func PrintH() {
+	fmt.Printf("\nkkk: ")
+	/*
+		ShowRam32(ureg)
+		for i := Word(0); i < 8; i += 2 {
+			fmt.Printf("@%2x: ", i)
+			ShowRam32(PeekW(ureg + i))
+		}
+	*/
+
+	var_ptr := ureg + 4
+	p := PeekW(var_ptr)
+	var_ptr += 2
+	bb := bytes.NewBuffer([]byte{'['})
+	for {
+		ch := PeekB(p)
+		// fmt.Printf("<%04x:%02x>", p, ch)
+		if ch < 9 {
+			break
+		}
+		if ch > 126 {
+			break
+		}
+		// bb.WriteRune('+')
+		if ch == '%' {
+			p++
+			ch = PeekB(p)
+			switch ch {
+			case 'x':
+				bb.WriteString(fmt.Sprintf("$%04x", PeekW(var_ptr)))
+			case 'd':
+				bb.WriteString(fmt.Sprintf("%d.", PeekW(var_ptr)))
+			case 's':
+				sptr := PeekW(var_ptr)
+				bb.WriteRune('"')
+				for {
+					ch2 := PeekB(sptr)
+					sptr++
+					if ch2 == 0 {
+						break
+					}
+					if ' ' <= ch2 && ch2 <= '~' {
+						bb.WriteRune(rune(ch2))
+					} else {
+						bb.WriteString(fmt.Sprintf("(%d.)", ch2))
+					}
+					if ch2 > 126 {
+						break
+					}
+				}
+				bb.WriteRune('"')
+			default:
+				bb.WriteRune('%')
+				bb.WriteRune(rune(ch))
+				var_ptr -= 2
+			}
+			var_ptr += 2
+		} else {
+			bb.WriteRune(rune(ch))
+		}
+		p++
+	}
+	bb.WriteRune(']')
+	fmt.Printf("%s", bb.String())
+}
+
 func HyperOp(hop byte) {
 	switch hop {
 	case 100: // Fatal
@@ -43,20 +132,7 @@ func HyperOp(hop byte) {
 		}
 
 	case 105: // Show RAM 32
-		fmt.Printf(" [[%x]]{{", dreg)
-		for i := Word(0); i < 32; i += 2 {
-			fmt.Printf("%04x ", PeekW(dreg+i))
-			if (i&7) == 6 && i < 30 {
-				fmt.Printf(" ")
-			}
-		}
-		for i := Word(0); i < 32; i += 1 {
-			fmt.Printf("%c", Nice(PeekB(dreg+i)))
-			if (i & 7) == 7 {
-				fmt.Printf(" ")
-			}
-		}
-		fmt.Printf("}}` ")
+		ShowRam32(dreg)
 
 	case 106: // Show Task RAM 32
 		task := GetBReg()
@@ -80,7 +156,37 @@ func HyperOp(hop byte) {
 	case 107: // Exit
 		log.Printf("*** GOMAR Hyper Exit: %d", dreg)
 		fmt.Printf("*** GOMAR Hyper Exit: %d\n", dreg)
-        os.Exit(int(dreg))
+		os.Exit(int(dreg))
+
+	case 108: // PrintH
+		PrintH()
+
+	case 109: // ShowRegs
+		ShowRegs()
+
+	case 110: // ShowStr
+		{
+			p := dreg
+			bb := bytes.NewBuffer([]byte{'['})
+			for {
+				ch := PeekB(p)
+				if ch == 0 {
+					break
+				}
+				if ch == 13 {
+					ch = 10
+				}
+				bb.WriteRune(rune(ch))
+				if ch < 10 {
+					break
+				}
+				if ch > 127 {
+					break
+				}
+				p++
+			}
+			fmt.Printf("%s", bb.String())
+		}
 
 	default:
 		log.Printf("Unknown HyperOp $%x = $d.", hop, hop)
