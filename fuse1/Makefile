@@ -58,7 +58,7 @@ disk2: all
 	# cat '$R'/*.* | os9 copy -r /dev/stdin $T,os9boot
 
 ci:
-	ci -l -m/dev/null -t/dev/null -q *.c *.asm Makefile 
+	ci -l -m/dev/null -t/dev/null -q *.c *.h *.asm Makefile
 
 #	(echo load z ; echo link fuse ; echo 'date > /fuse/a/b/c') | os9 copy -r -l /dev/stdin  ../gomar/drive/disk2,startup
 #(echo load z ; echo 'date > /fuse/a/b/c' ; echo dir /d1) | os9 copy -r -l /dev/stdin  ../gomar/drive/disk2,startup
