@@ -40,18 +40,11 @@ func ShowRam32(addr Word) {
 
 func PrintH() {
 	fmt.Printf("\nkkk: ")
-	/*
-		ShowRam32(ureg)
-		for i := Word(0); i < 8; i += 2 {
-			fmt.Printf("@%2x: ", i)
-			ShowRam32(PeekW(ureg + i))
-		}
-	*/
 
 	var_ptr := ureg + 4
 	p := PeekW(var_ptr)
 	var_ptr += 2
-	bb := bytes.NewBuffer([]byte{'['})
+	bb := bytes.NewBuffer(nil)
 	for {
 		ch := PeekB(p)
 		// fmt.Printf("<%04x:%02x>", p, ch)
@@ -100,8 +93,7 @@ func PrintH() {
 		}
 		p++
 	}
-	bb.WriteRune(']')
-	fmt.Printf("%s", bb.String())
+	fmt.Printf("[|[%s]|]", bb.String())
 }
 
 func HyperOp(hop byte) {
@@ -167,7 +159,7 @@ func HyperOp(hop byte) {
 	case 110: // ShowStr
 		{
 			p := dreg
-			bb := bytes.NewBuffer([]byte{'['})
+			bb := bytes.NewBuffer(nil)
 			for {
 				ch := PeekB(p)
 				if ch == 0 {
@@ -185,7 +177,7 @@ func HyperOp(hop byte) {
 				}
 				p++
 			}
-			fmt.Printf("%s", bb.String())
+			fmt.Printf("[~[%s]~]", bb.String())
 		}
 
 	default:
