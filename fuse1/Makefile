@@ -1,4 +1,4 @@
-all: ramd _generated_from_fusec_.a fuseman.os9 fuser.os9 fuse.os9 _run
+all: fuse.twice ramd _generated_from_fusec_.a fuseman.os9 fuser.os9 fuse.os9 _run
 
 XDEFDIR=/home/strick/go/src/github.com/strickyak/doing_os9/gomar/eouBeta610/udisk/sourcecode/asm/nitros9/
 DEFDIR=/dd/asm/nitros9/
@@ -14,6 +14,11 @@ clean:
 
 ramd:
 	cmoc -i --os9 -I.. ramd.c ../os9call/os9call.c
+fuse.twice:
+	cd /sy/frobio/frob2; make -B fuse.twice.os9
+	cp /sy/frobio/frob2/fuse.twice.os9 .
+	cd /sy/frobio/frob2; make -B x.cat.os9
+	cp /sy/frobio/frob2/x.cat.os9 .
 
 _generated_from_fusec_.a :
 	cmoc -i -S fusec.c
@@ -31,7 +36,14 @@ _run:
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && export NITROS9DIR=/home/strick/go/src/github.com/n6il/nitros9 ; ( make clean ; make && make NOS9_6809_L2_v030300_coco3_80d.dsk  )
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && cp -v NOS9_6809_L2_v030300_coco3_80d.dsk ~/sy/doing_os9/gomar/drive/disk2
 	:
-	echo 'ramd #128 & echo SLEEP ; sleep 12 ; echo WAKE; list /fuse/ram/orangutan/monkey ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
+	# echo 'ramd #128 & echo SLEEP ; sleep 12 ; echo WAKE; list /fuse/ram/orangutan/monkey ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
+	:
+	os9 copy -r fuse.twice.os9 $T,CMDS/fuse.twice
+	os9 attr -per $T,CMDS/fuse.twice
+	os9 copy -r x.cat.os9 $T,CMDS/x.cat
+	os9 attr -per $T,CMDS/x.cat
+	echo 'fuse.twice & echo SLEEP_12 ; sleep 12 ; echo WAKE_12; x.cat < /FUSE/twice/orangutan/monkey ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
+	:
 	# echo 'list /fuse/daemon/foo & echo SLEEP ; sleep 60 ; echo WAKE; list /fuse/foo/eleven ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	# echo 'list /fuse/daemon/foo' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	# echo 'ncl < run.tcl' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
