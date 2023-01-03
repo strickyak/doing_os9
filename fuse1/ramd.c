@@ -23,7 +23,7 @@ int contents_len;
 char pbuf[200];
 
 byte HexChar(byte a) {
-  a = a & 15;
+  a &= 15;
   if (a < 10) return '0' + a;
   return 'A' + a - 10;
 }
@@ -127,7 +127,7 @@ void SendStatus(int ram_fd, error status, word len) {
   int written = 0;
   Printf("@@@@@@@@  D->C Sending Status e=%d. len=%d.\n", status);
   CHECK(Os9WritLn(ram_fd, (const char*) ssbuf, p - ssbuf, &written));
-  assert(written = p - ssbuf);
+  assert(written == p - ssbuf);
 }
 
 char* xp;
