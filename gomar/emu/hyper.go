@@ -39,8 +39,6 @@ func ShowRam32(addr Word) {
 }
 
 func PrintH() {
-	fmt.Printf("\nkkk: ")
-
 	var_ptr := ureg + 4
 	p := PeekW(var_ptr)
 	var_ptr += 2
@@ -93,7 +91,12 @@ func PrintH() {
 		}
 		p++
 	}
-	fmt.Printf("[|[%s]|]", bb.String())
+	proc_num := byte(0)
+	proc_ptr := PeekW(0x0050)
+	if proc_ptr != 0x0000 {
+		proc_num = PeekB(proc_ptr)
+	}
+	fmt.Printf("[<%x>%s]", proc_num, bb.String())
 }
 
 func HyperOp(hop byte) {
