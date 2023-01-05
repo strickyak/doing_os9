@@ -611,6 +611,7 @@ errnum OpenDaemon(struct PathDesc* pd, word begin2, word end2) {
 // The Daemon process has called Read to get the next operation
 // being called by a Client process.
 errnum DaemonReadC(struct PathDesc* dae) {
+  assert(dae);
   errnum err = OKAY;
   struct Regs* regs = dae->regs;
 
@@ -646,6 +647,8 @@ errnum DaemonReadC(struct PathDesc* dae) {
     case OP_READ:
     case OP_READLN:
       {
+        assert(cli->buf_start);
+        assert(cli->buf_len);
         // The number of bytes the Daemon will read is just
         // the size of the request headaer.
         regs->ry = sizeof req;
@@ -654,6 +657,8 @@ errnum DaemonReadC(struct PathDesc* dae) {
     case OP_WRITE:
     case OP_WRITLN:
       {
+        assert(cli->buf_start);
+        assert(cli->buf_len);
         // Copy this payload from the client's buffer
         // into the Daemon's buffer, after the header.
         err = Os9Move(req.size,
@@ -788,10 +793,10 @@ errnum OpenClient(
   return cli->result;
 }
 
-errnum ClientReadLnC(struct PathDesc* cli) {
+errnum ClientOperationC(struct PathDesc* cli, byte op) {
   assert(cli);
   struct PathDesc* dae = cli->peer;
-  PrintH("ClientReadLnC cli=%x dae=%x entry\n", cli, dae);
+  PrintH("ClientOperationC op=%x cli=%x dae=%x entry\n", op, cli, dae);
   assert(dae);
   assert(dae->is_daemon);
 
@@ -799,10 +804,22 @@ errnum ClientReadLnC(struct PathDesc* cli) {
   assert(dae->peer == 0);
   dae->peer = cli;
 
-  cli->operation = OP_READLN;
-  cli->buf_start = cli->regs->rx;
-  cli->buf_len = cli->regs->ry;
+  cli->operation = op;
   cli->buf_task = Os9CurrentProcessTask();
+
+  switch (op) {
+    case OP_READ:
+    case OP_READLN:
+    case OP_WRITE:
+    case OP_WRITLN:
+      cli->buf_start = cli->regs->rx;
+      cli->buf_len = cli->regs->ry;
+      break;
+    default:
+      cli->buf_start = 0;
+      cli->buf_len = 0;
+      break;
+  }
 
   // Awaken the Daemon, and go to sleep.
   while (dae->paused_proc_id == 0) {
@@ -890,7 +907,7 @@ errnum ReadLnC(struct PathDesc* pd, struct Regs* regs) {
   if (pd->is_daemon) {
     return 9;
   } else {
-    return ClientReadLnC(pd);
+    return ClientOperationC(pd, OP_READLN);
   }
 }
 
