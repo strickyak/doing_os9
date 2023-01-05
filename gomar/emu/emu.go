@@ -1074,26 +1074,14 @@ func PrintableStringThruEOS(a Word, max Word) string {
 
 func PrintableMemory(a Word, max Word) string {
 	var buf bytes.Buffer
-	//scratch := false
-	//if max > 2000 {
-	//max = 2000
-	//}
 	for i := Word(0); i < yreg && i < max; i++ {
 		ch := PeekB(a + i)
 		if 32 <= ch && ch < 127 {
 			buf.WriteByte(ch)
-			//scratch = false
 		} else if ch == '\n' || ch == '\r' {
 			buf.WriteByte('\n')
-			//scratch = false
 		} else {
-			fmt.Fprintf(&buf, "<%d>", ch)
-			//if !scratch {
-			//buf.WriteByte('<') // <~>
-			//buf.WriteByte('~') // <~>
-			//buf.WriteByte('>') // <~>
-			//}
-			//scratch = true
+			fmt.Fprintf(&buf, "[%d]", ch)
 		}
 	}
 	return buf.String()
@@ -1354,22 +1342,22 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 
 			/*
 
-						TODO: figure out DBT vs DTE, and where is /term
+							TODO: figure out DBT vs DTE, and where is /term
 
-			68SDC/sourcecode/asm/nitros9/scf/cowin_beta3.asm
+				68SDC/sourcecode/asm/nitros9/scf/cowin_beta3.asm
 
-			* Get ptr to device table
-			* Entry: X=Pointer to process descriptor
-			*        B=Path block # to get
-			* Exit : Y=Pointer to device table entry
-			L0592    leax  P$Path,x       get pointer to path #'s
-			* Added next line to protect regB from os9 F$Find64 error report. RG
-			         pshs  b
-			         lda   b,x            get path block
-			         ldx   <D.PthDBT      get pointer to descriptor block table
-			         os9   F$Find64       get pointer to path descriptor
-			         ldy   PD.DEV,y       get pointer to device table entry
-			         puls  b,pc           return
+				* Get ptr to device table
+				* Entry: X=Pointer to process descriptor
+				*        B=Path block # to get
+				* Exit : Y=Pointer to device table entry
+				L0592    leax  P$Path,x       get pointer to path #'s
+				* Added next line to protect regB from os9 F$Find64 error report. RG
+				         pshs  b
+				         lda   b,x            get path block
+				         ldx   <D.PthDBT      get pointer to descriptor block table
+				         os9   F$Find64       get pointer to path descriptor
+				         ldy   PD.DEV,y       get pointer to device table entry
+				         puls  b,pc           return
 
 			*/
 

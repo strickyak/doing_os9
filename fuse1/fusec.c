@@ -893,14 +893,14 @@ asm CreateOrOpenA() {
     LDY #0   ; unneccesary cleanliness
     BSR _CreateOrOpenC  ; Call C function to do the work.
 
-    // Shared by all `asm ...A()` functions:
-XXX XXX TODO, I THINK THIS IS WRONG.
-XXX XXX CAN WE GET result FROM THE pathdesc at Y (after PULS)?
-FinishUp
+; Shared by all `asm ...A()` functions:
+; Returning from the XxxxC() routines,
+; the status is in the B register.
+BackToAssembly
     CLRA     ; clear the carry bit.
     TSTB     ; we want to set carry if B nonzero.
-    BEQ SkipComA  ; skip the COMA, which sets the carry bit.
-    COMA
+    BEQ SkipComA  ; skip the COMA
+    COMA     ; sets the carry bit.
 SkipComA
     PULS PC,U,Y
   }
@@ -913,7 +913,7 @@ asm CloseA() {
     LDX #0
     LDY #0   ; unneccesary cleanliness
     BSR _CloseC  ; Call C function to do the work.
-    LBRA FinishUp
+    LBRA BackToAssembly
   }
 }
 asm ReadLnA() {
@@ -924,7 +924,7 @@ asm ReadLnA() {
     LDX #0
     LDY #0   ; unneccesary cleanliness
     BSR _ReadLnC  ; Call C function to do the work.
-    LBRA FinishUp
+    LBRA BackToAssembly
   }
 }
 asm WritLnA() {
@@ -935,7 +935,7 @@ asm WritLnA() {
     LDX #0
     LDY #0   ; unneccesary cleanliness
     BSR _WritLnC  ; Call C function to do the work.
-    LBRA FinishUp
+    LBRA BackToAssembly
   }
 }
 asm ReadA() {
@@ -946,7 +946,7 @@ asm ReadA() {
     LDX #0
     LDY #0   ; unneccesary cleanliness
     BSR _ReadC  ; Call C function to do the work.
-    LBRA FinishUp
+    LBRA BackToAssembly
   }
 }
 asm WriteA() {
@@ -957,7 +957,7 @@ asm WriteA() {
     LDX #0
     LDY #0   ; unneccesary cleanliness
     BSR _WriteC  ; Call C function to do the work.
-    LBRA FinishUp
+    LBRA BackToAssembly
   }
 }
 asm GetStatA() {
@@ -968,7 +968,7 @@ asm GetStatA() {
     LDX #0
     LDY #0   ; unneccesary cleanliness
     BSR _GetStatC  ; Call C function to do the work.
-    LBRA FinishUp
+    LBRA BackToAssembly
   }
 }
 asm SetStatA() {
@@ -979,6 +979,6 @@ asm SetStatA() {
     LDX #0
     LDY #0   ; unneccesary cleanliness
     BSR _SetStatC  ; Call C function to do the work.
-    LBRA FinishUp
+    LBRA BackToAssembly
   }
 }
