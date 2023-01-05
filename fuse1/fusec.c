@@ -623,6 +623,9 @@ errnum DaemonReadC(struct PathDesc* dae) {
 
   struct PathDesc* cli = dae->peer;
   assert(cli);
+
+  // Assemble the Request object for the deamon process
+  // using the operation requested by the client.
   struct Fuse2Request req;
   req.operation = cli->operation;
   req.path_num = cli->path_num;
@@ -631,6 +634,8 @@ errnum DaemonReadC(struct PathDesc* dae) {
   req.size = cli->buf_len;
   char* req_header = (char*)&req;
 
+  // Store the Request object in the Daemon's memory buffer
+  // one byte at a time.
   for (byte i = 0; i < sizeof req; i++) {
     err = Os9StoreByteToTask(
         dae->buf_task, dae->regs->rx + i, req_header[i]);
@@ -641,18 +646,25 @@ errnum DaemonReadC(struct PathDesc* dae) {
     case OP_READ:
     case OP_READLN:
       {
-        regs->ry = 0;
-        err = 5;
+        // The number of bytes the Daemon will read is just
+        // the size of the request headaer.
+        regs->ry = sizeof req;
       }
       break;
     case OP_WRITE:
     case OP_WRITLN:
       {
+        // Copy this payload from the client's buffer
+        // into the Daemon's buffer, after the header.
         err = Os9Move(req.size,
             cli->buf_start, cli->buf_task,
             dae->buf_start + sizeof(req), dae->buf_task);
         assert(!err);
-        regs->ry = req.size + sizeof(req);
+        // The number of bytes the Daemon will read is
+        // the size of the request header plus the size
+        // of the payload we just copied.
+        regs->ry = req.size + sizeof req;
+        err = 55;
       }
       break;
   }
@@ -730,8 +742,9 @@ errnum DaemonWriteC(struct PathDesc* dae) {
     } // switch
   }
 
-  // Break the bonds between cli & dae.
-  cli->peer = dae->peer = 0;
+  // Allow other clients to use the daemon.
+  // But the client still remembers its daemon.
+  dae->peer = 0;
   // Time for the client to wake up.
   Awaken(cli);
 
@@ -767,6 +780,35 @@ errnum OpenClient(
   cli->buf_task = Os9CurrentProcessTask();
 
   // Awaken the Daemon, and go to sleep.
+  assert(dae->paused_proc_id);
+  Awaken(dae);
+  Os9Pause(cli);
+  // When we wake up, our regs should be modified
+  // by the Daemon if necessary, and our result status.
+  return cli->result;
+}
+
+errnum ClientReadLnC(struct PathDesc* cli) {
+  assert(cli);
+  struct PathDesc* dae = cli->peer;
+  PrintH("ClientReadLnC cli=%x dae=%x entry\n", cli, dae);
+  assert(dae);
+  assert(dae->is_daemon);
+
+  cli->peer = dae;
+  assert(dae->peer == 0);
+  dae->peer = cli;
+
+  cli->operation = OP_READLN;
+  cli->buf_start = cli->regs->rx;
+  cli->buf_len = cli->regs->ry;
+  cli->buf_task = Os9CurrentProcessTask();
+
+  // Awaken the Daemon, and go to sleep.
+  while (dae->paused_proc_id == 0) {
+    PrintH("Client sleeps 1, waiting on dae->paused_proc_id\n");
+    Os9Sleep(1); // Wait for Daemon to call Read() again.
+  }
   assert(dae->paused_proc_id);
   Awaken(dae);
   Os9Pause(cli);
@@ -845,7 +887,11 @@ errnum CloseC(struct PathDesc* pd, struct Regs* regs) {
 
 errnum ReadLnC(struct PathDesc* pd, struct Regs* regs) {
   pd->regs = regs;
-  return 9;
+  if (pd->is_daemon) {
+    return 9;
+  } else {
+    return ClientReadLnC(pd);
+  }
 }
 
 errnum WritLnC(struct PathDesc* pd, struct Regs* regs) {
