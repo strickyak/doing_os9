@@ -67,9 +67,10 @@ struct PathDesc {
   word buf_len;    // 14
   byte buf_task;   // 16
   byte operation;  // 17
-  struct PathDesc* peer;  // 18: Daemon's client or Client's daemon.
-  struct Regs* client_regs; // 20
-  // 22
+  byte result;  // 18
+  struct PathDesc* peer;  // 19: Daemon's client or Client's daemon.
+  struct Regs* client_regs; // 21
+  // 23
 };
 #define DAEMON_NAME_OFFSET_IN_PD 50 // bytes 50 to 63
 #define DAEMON_NAME_MAX 12
@@ -290,7 +291,7 @@ SendBad
   PrintH(" Sent...err=%x\n", err);
   return err;
 }
-errnum Wake(struct PathDesc* pd) {
+errnum Awaken(struct PathDesc* pd) {
   byte to_pid = pd->paused_proc_id;
   assert(to_pid > 0); // TODO: no need to wake, if 0.
   return Os9Send(to_pid, 1);  // Wakeup Signal.
@@ -319,7 +320,9 @@ SleepBad
 void Os9Pause(struct PathDesc* pd) {
   PrintH(" Pausing path=%x\n", pd->path_num);
   pd->paused_proc_id = Os9CurrentProcessId();
-  assert(pd->paused_proc_id == pd->current_process_id);
+  PrintH(" paused_proc_id=%x current_process_id=%x\n", 
+                 pd->paused_proc_id ,  pd->current_process_id);
+  //XXX// assert(pd->paused_proc_id == pd->current_process_id);
   Os9Sleep(0);  // until signalled.
   pd->paused_proc_id = 0;
   PrintH(" Un-Paused path=%x\n", pd->path_num);
@@ -405,7 +408,7 @@ memcpy bra _memcpy
   }
 }
 
-errnum Os9PrsNam(char* ptr, char** eow_out, char**next_name_out) {
+errnum Os9PrsNam(word ptr, word* eow_out, word*next_name_out) {
   errnum err;
   asm {
       LDX ptr
@@ -613,9 +616,9 @@ errnum DaemonReadC(struct PathDesc* dae) {
 
   // PAUSE FOR REQUEST FROM CLIENT.
   dae->paused_proc_id = Os9CurrentProcessId();
-  PrintH("DaemonReadC: Pausing.");
+  PrintH("DaemonReadC: Pausing.\n");
   Os9Sleep(0);
-  PrintH("DaemonReadC: Paused.");
+  PrintH("DaemonReadC: UnPaused.\n");
   dae->paused_proc_id = 0;
 
   struct PathDesc* cli = dae->peer;
@@ -654,34 +657,125 @@ errnum DaemonReadC(struct PathDesc* dae) {
       break;
   }
 
+  cli->result = OKAY; // XXX but we don't awaken Client
+                      // until Daemon writes.
   return err;
+}
+
+// The Daemon process has called Write to return the results
+// of the operation called by the Client process.
+errnum DaemonWriteC(struct PathDesc* dae) {
+  errnum err = OKAY;
+  struct Regs* regs = dae->regs;
+  struct PathDesc* cli = dae->peer;
+  // We should still have a client
+  assert(cli);
+  // And it should be asleep.
+  assert(cli->paused_proc_id);
+  // TODO: check a sequence number between cli & dae,
+  // to make sure neither has died and been recycled,
+  // or else poison the device.
+
+  struct Fuse2Reply reply;
+  char* reply_header = (char*)&reply;
+
+  for (byte i = 0; i < sizeof reply; i++) {
+    byte x;
+    err = Os9LoadByteFromTask(
+        dae->buf_task, dae->regs->rx + i, &x);
+    assert(!err);
+    reply_header[i] = x;
+  }
+
+  // Client will pick up cli->result and
+  // set its own B & CC regs, if nonzero.
+  cli->result = reply.status;
+  if (reply.status) {
+    cli->regs->rb = reply.status;
+    cli->regs->rcc |= 1; // set the Carry bit.
+  } else {
+    cli->regs->rcc &= 0xFE; // clear the Carry bit.
+
+    switch (cli->operation) {
+        case OP_CREATE:
+        case OP_OPEN:
+          // IOMAN will set cli->regs->ra to local path num?
+          break;
+        case OP_CLOSE:
+          HyperCoreDump();
+          break;
+        case OP_READ:
+          HyperCoreDump();
+          break;
+        case OP_WRITE:
+          HyperCoreDump();
+          break;
+        case OP_READLN:
+          {
+            cli->regs->ry = reply.size;
+            errnum e = Os9Move(reply.size,
+                // From the Daemon
+                dae->regs->rx + sizeof(reply), dae->buf_task,
+                // To the Client
+                cli->buf_start, cli->buf_task);
+            assert(!e);
+          }
+          break;
+        case OP_WRITLN:
+          HyperCoreDump();
+          break;
+        default:
+          PrintH("DeamonWriteC: Bad operation: %d", cli->operation);
+          HyperCoreDump();
+    } // switch
+  }
+
+  // Break the bonds between cli & dae.
+  cli->peer = dae->peer = 0;
+  // Time for the client to wake up.
+  Awaken(cli);
+
+  return OKAY;
 }
 
 /////////// CLIENT ////////////////////////
 
 errnum OpenClient(
-    struct PathDesc* pd,
-    char* begin1,
-    char* end1,
-    char* begin2,
-    char* end2) {
-  PrintH("OpenClient pd=%x entry", pd);
+    struct PathDesc* cli,
+    word begin1,
+    word end1,
+    word begin2,
+    word end2,
+    word original_rx) {
+  PrintH("OpenClient cli=%x entry", cli);
   // Daemon must already be open.
-  struct PathDesc *daemon = FindDaemon(pd->device_table_entry, begin1, end1);
-  if (!daemon) {
+  struct PathDesc *dae = FindDaemon(cli->device_table_entry, begin1, end1);
+  if (!dae) {
     PrintH("BAD: daemon not open yet => err %x", E_SHARE);
     return E_SHARE;
   }
+  assert(dae->is_daemon);
 
-  pd->is_daemon = 0;
-  pd->peer = daemon;
+  cli->is_daemon = 0;
+  cli->peer = dae;
+  assert(dae->peer == 0);
+  dae->peer = cli;
 
-  pd->operation = OP_OPEN;
-  pd->paused_proc_id = Os9CurrentProcessId();
-  return 7;
+  cli->operation = OP_OPEN;
+  cli->buf_start = original_rx;
+  cli->buf_len = cli->regs->rx - original_rx;
+  cli->buf_task = Os9CurrentProcessTask();
+
+  // Awaken the Daemon, and go to sleep.
+  assert(dae->paused_proc_id);
+  Awaken(dae);
+  Os9Pause(cli);
+  // When we wake up, our regs should be modified
+  // by the Daemon if necessary, and our result status.
+  return cli->result;
 }
 
-errnum ClientReadC(struct PathDesc* pd) {
+errnum ClientReadC(struct PathDesc* cli) {
   return 12;
 }
 
@@ -689,6 +783,8 @@ errnum ClientReadC(struct PathDesc* pd) {
 
 errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
   pd->regs = regs;
+  word original_rx = regs->rx;
+
   PrintH("CreateOrOpenC: pd=%x regs=%x\n");
   pd->current_process_id = Os9CurrentProcessId();
   pd->buf_start = 0;
@@ -697,13 +793,13 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
 
   // Split the path to find 2nd (begin1/end1) and
   // 3rd (begin2/end2) words.  Ignore the 1st ("FUSE").
-  char *begin1=NULL, *end1=NULL, *begin2=NULL, *end2=NULL;
+  //X char *begin1=NULL, *end1=NULL, *begin2=NULL, *end2=NULL;
+  word begin1=0, end1=0, begin2=0, end2=0;
   byte i = 0;
   errnum err = OKAY;
   for (; i<99; i++) {
-    char *begin = NULL, *end = NULL;
-
-    char* current = (char*) regs->rx;
+    word begin = 0, end = 0;
+    word current = regs->rx;
     err = Os9PrsNam(current, &begin, &end);
     regs->rx = end; // important to update rx
     if (err) break;
@@ -734,7 +830,7 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
   if (i==3 && ParsedNameEquals(begin1, end1, "DAEMON")) {
     return OpenDaemon(pd, begin2, end2);
   } else if (i > 1) {
-    return OpenClient(pd, begin1, end1, begin2, end2);
+    return OpenClient(pd, begin1, end1, begin2, end2, original_rx);
   } else {
     PrintH("\nFATAL: CreateOrOpenC: BAD NAME\n");
     HyperCoreDump();
@@ -768,7 +864,12 @@ errnum ReadC(struct PathDesc* pd, struct Regs* regs) {
 
 errnum WriteC(struct PathDesc* pd, struct Regs* regs) {
   pd->regs = regs;
-  return 13;
+  if (pd->is_daemon) {
+    return DaemonWriteC(pd);
+  } else {
+    return 13;
+    // return ClientWriteC(pd);
+  }
 }
 
 errnum GetStatC(struct PathDesc* pd, struct Regs* regs) {
@@ -794,11 +895,11 @@ asm CreateOrOpenA() {
 
     // Shared by all `asm ...A()` functions:
 FinishUp
-    CLRA     ; clear the carry bit.
-    TSTB     ; we want to set carry if B nonzero.
-    BEQ SkipComA  ; skip the COMA, which sets the carry bit.
-    COMA
-SkipComA
+;   CLRA     ; clear the carry bit.
+;   TSTB     ; we want to set carry if B nonzero.
+;   BEQ SkipComA  ; skip the COMA, which sets the carry bit.
+;   COMA
+;SkipComA
     PULS PC,U,Y
   }
 }

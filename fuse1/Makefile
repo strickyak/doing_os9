@@ -21,7 +21,7 @@ fuse.twice:
 	cp /sy/frobio/frob2/x.cat.os9 .
 
 _generated_from_fusec_.a :
-	cmoc -i -S fusec.c
+	cmoc -i -S --switch=ifelse fusec.c
 	sed -n '/SECTION.code/, /ENDSECTION/ p' < fusec.s | egrep -v 'SECTION|EXPORT' > _generated_from_fusec_.a
 	sed -n '/SECTION.[cr]od[ea]/, /ENDSECTION/ p' < fusec.s | egrep -v 'SECTION|EXPORT' > _generated_from_fusec_.a
 
