@@ -894,12 +894,14 @@ asm CreateOrOpenA() {
     BSR _CreateOrOpenC  ; Call C function to do the work.
 
     // Shared by all `asm ...A()` functions:
+XXX XXX TODO, I THINK THIS IS WRONG.
+XXX XXX CAN WE GET result FROM THE pathdesc at Y (after PULS)?
 FinishUp
-;   CLRA     ; clear the carry bit.
-;   TSTB     ; we want to set carry if B nonzero.
-;   BEQ SkipComA  ; skip the COMA, which sets the carry bit.
-;   COMA
-;SkipComA
+    CLRA     ; clear the carry bit.
+    TSTB     ; we want to set carry if B nonzero.
+    BEQ SkipComA  ; skip the COMA, which sets the carry bit.
+    COMA
+SkipComA
     PULS PC,U,Y
   }
 }
