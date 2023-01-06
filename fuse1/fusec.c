@@ -68,8 +68,9 @@ struct PathDesc {
   byte result;  // 15
   struct PathDesc* peer;  // 16: Daemon's client or Client's daemon.
   struct Regs* client_regs; // 18
-  // 18
-};
+  bool is_poisoned;  // 19
+  // 20
+}; // Must be 32 bytes or under in size.
 #define DAEMON_NAME_OFFSET_IN_PD 50 // bytes 50 to 63
 #define DAEMON_NAME_MAX 12
 
@@ -631,6 +632,8 @@ struct PathDesc* FindDaemon(struct DeviceTableEntry* dte, word begin, word end) 
       addr += 64;
     }
   }
+  PrintH("FindDaemon => NOT FOUND\n");
+  return NULL;
 
 GOT_IT:
   PrintH("FindDaemon => got\n");
@@ -929,11 +932,8 @@ errnum ClientOperationC(struct PathDesc* cli, byte op) {
 errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
   pd->regs = regs;
   word original_rx = regs->rx;
-
-  pd->current_process_id = Os9CurrentProcessId();
   pd->buf_len = 0;
-  PrintH("CreateOrOpenC: pd=%x regs=%x proc=%x\n",
-      pd, regs, pd->current_process_id);
+  PrintH("CreateOrOpenC: pd=%x regs=%x\n", pd, regs);
 
   // Split the path to find 2nd (begin1/end1) and
   // 3rd (begin2/end2) words.  Ignore the 1st ("FUSE").
@@ -984,7 +984,10 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
 errnum CloseC(struct PathDesc* pd, struct Regs* regs) {
   pd->regs = regs;
   if (pd->is_daemon) {
-    return 10; // TODO use Os9SRtMem
+    errnum err = Os9SRtMem(0x100, pd->daemon_buffer);
+    assert(!err);
+    bzero(DAEMON_NAME_OFFSET_IN_PD + (char*)pd, DAEMON_NAME_MAX);  // Wipe the deamon name.
+    return OKAY;
   } else {
     return ClientOperationC(pd, OP_CLOSE);
   }
