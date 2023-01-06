@@ -494,57 +494,29 @@ PrsNamBad
   return err;
 }
 
-word GetHex(word *pp) {
-  byte task = Os9UserTask();
+////////////////////////////////////////////////
 
-  // skip white space.
-  while (1) {
-    byte b;
-    errnum err = Os9LoadByteFromTask(task, *pp, &b);
-    assert(!err);
-    if (b > ' ') break;
-    ++(*pp);
-  }
-  // accumulate result in z.
-  word z = 0;
-  while (1) {
-    byte b;
-    errnum err = Os9LoadByteFromTask(task, *pp, &b);
-    assert(!err);
-    ++(*pp);
+void MoveToKernel(struct PathDesc* dae, word addr, word size) {
+  PrintH("MoveToKernel: addr=%x size=%x", addr, size);
+  assert(dae);
+  assert(dae->is_daemon);
+  assert(addr);
+  assert(size);
+  errnum e = Os9Move(size, addr, Os9UserTask(), dae->daemon_buffer, Os9SystemTask());
+  assert(!e);
+}
 
-    if ('0' <= b && b <= '9') {
-      z = (z << 4) + (b - '0');
-    } else if ('A' <= b && b <= 'Z') {
-      z = (z << 4) + (b - 'A' + 10);
-    } else if ('a' <= b && b <= 'z') {
-      z = (z << 4) + (b - 'a' + 10);
-    } else {
-      return z;
-    }
-  }
+void MoveToUser(struct PathDesc* dae, word addr, word size) {
+  PrintH("MoveToUser: addr=%x size=%x", addr, size);
+  assert(dae);
+  assert(dae->is_daemon);
+  assert(addr);
+  assert(size);
+  errnum e = Os9Move(size, dae->daemon_buffer, Os9SystemTask(), addr, Os9UserTask());
+  assert(!e);
 }
 
 ////////////////////////////////////////////////
-
-void ShowModuleName(word addr) {
-  ShowChar('@'); ShowHex(addr);
-  word magic = *(word*)addr;
-  if (magic != 0x87CD) {
-    ShowStr("BAD MAGIC:");
-    ShowHex(magic);
-    return;
-  }
-  word name_offset = *(2 + (word*)addr);
-  byte ch;
-  ShowChar('\'');
-  do {
-    ch = *(char*)(addr + name_offset);
-    ShowChar(ch);
-    name_offset++;
-  } while ((ch&128) == 0);
-  ShowChar('\'');
-}
 
 errnum CopyParsedName(word begin, word end, char* dest, word max_len) {
   // max_len counts null termination.
@@ -724,12 +696,8 @@ errnum DaemonReadC(struct PathDesc* dae) {
         assert(cli->buf_len);
         // Copy this payload from the client's buffer
         // into the Daemon's buffer, after the header.
-          errnum e = Os9Move(request.size,
-              // From the Daemon PD buffer
-              dae->daemon_buffer, Os9SystemTask(),
-              // To the Daemon process
-              dae->regs->rx + sizeof(request), Os9UserTask());
-          assert(!e);
+        MoveToUser(dae, dae->regs->rx + sizeof request, request.size);
+
         // The number of bytes the Daemon will read is
         // the size of the request header plus the size
         // of the payload we just copied.
@@ -802,16 +770,11 @@ errnum DaemonWriteC(struct PathDesc* dae) {
         break;
       case OP_READ:
       case OP_READLN:
-        {
-          cli->regs->ry = reply.size;
-          errnum e = Os9Move(reply.size,
-              // From the Daemon process
-              dae->regs->rx + sizeof(reply), Os9UserTask(),
-              // To the Daemon PD buffer
-              dae->daemon_buffer, Os9SystemTask());
-          dae->buf_len = reply.size; // where Client will get size.
-          assert(!e);
+        if (reply.size) {
+          MoveToKernel(dae, dae->regs->rx + sizeof(reply), reply.size);
         }
+        dae->buf_len = reply.size; // where Client will get size.
+        cli->regs->ry = reply.size;
         break;
       case OP_WRITLN:
         BOMB();
@@ -857,12 +820,7 @@ errnum OpenClient(
   cli->buf_len = cli->regs->rx - original_rx;
   assert(cli->buf_len <= 256);
 
-  errnum err = Os9Move(cli->buf_len,
-      // From the client process:
-      original_rx, Os9UserTask(),
-      // To the daemon pd's buffer
-      dae->daemon_buffer, Os9SystemTask());
-  assert(!err);
+  MoveToUser(dae, original_rx, cli->buf_len);
 
   // Awaken the Daemon, and go to sleep.
   assert(dae->paused_proc_id);
@@ -913,12 +871,7 @@ errnum ClientOperationC(struct PathDesc* cli, byte op) {
 
   // When we wake up, copy buffer if non-empty.
   if (dae->buf_len) {
-        errnum e = Os9Move(dae->buf_len,
-            // From the Daemon PD Buffer
-            dae->daemon_buffer, Os9SystemTask(),
-            // To the client process
-            cli->regs->rx, Os9UserTask());
-        assert(!e);
+    MoveToUser(dae, cli->regs->rx, dae->buf_len);
   }
   cli->regs->ry = dae->buf_len;
   // Allow other clients to use the daemon.
