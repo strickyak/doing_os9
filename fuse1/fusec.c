@@ -148,6 +148,7 @@ void PrintH(const char* format, ...) {
 }
 
 #define assert(C) { if (!(C)) { PrintH(" *ASSERT* %s:%d *FAILED* (%s)\n", __FILE__,  __LINE__, #C); HyperCoreDump(); } }
+#define BOMB() assert(!"BOMB")
 
 ////////////////////////////////////////////////
 
@@ -186,6 +187,15 @@ byte* Os9PathDescBaseTable() {
     STD base
   }
   return base;
+}
+
+word Os9CurrentProcAddr() {
+  word addr = 0;
+  asm {
+    LDX <D.Proc
+    STX addr
+  }
+  return addr;
 }
 
 byte Os9CurrentProcessId() {
@@ -682,9 +692,21 @@ errnum DaemonReadC(struct PathDesc* dae) {
 // The Daemon process has called Write to return the results
 // of the operation called by the Client process.
 errnum DaemonWriteC(struct PathDesc* dae) {
+  PrintH("DaemonWriteC: dae=%x ", dae);
+  assert(dae);
+  assert(((unsigned)dae & 63) == 0);
+  assert(dae->is_daemon);
+  struct PathDesc* cli = dae->peer;
+  PrintH(":: cli=%x ", cli);
+  PrintH(":: cli->peer=%x\n", cli->peer);
+  assert(cli);
+  assert(((unsigned)cli & 63) == 0);
+  assert(!cli->is_daemon);
+  assert(cli->peer == dae);
+  PrintH("cli->buf: start=%x len=%x task=%x\n", cli->buf_start, cli->buf_len, cli->buf_task);
+
   errnum err = OKAY;
   struct Regs* regs = dae->regs;
-  struct PathDesc* cli = dae->peer;
   // We should still have a client
   assert(cli);
   // And it should be asleep.
@@ -707,45 +729,39 @@ errnum DaemonWriteC(struct PathDesc* dae) {
   // Client will pick up cli->result and
   // set its own B & CC regs, if nonzero.
   cli->result = reply.status;
-  if (reply.status) {
-    cli->regs->rb = reply.status;
-    cli->regs->rcc |= 1; // set the Carry bit.
-  } else {
-    cli->regs->rcc &= 0xFE; // clear the Carry bit.
 
-    switch (cli->operation) {
-        case OP_CREATE:
-        case OP_OPEN:
-          // IOMAN will set cli->regs->ra to local path num?
-          break;
-        case OP_CLOSE:
-          HyperCoreDump();
-          break;
-        case OP_READ:
-          HyperCoreDump();
-          break;
-        case OP_WRITE:
-          HyperCoreDump();
-          break;
-        case OP_READLN:
-          {
-            cli->regs->ry = reply.size;
-            errnum e = Os9Move(reply.size,
-                // From the Daemon
-                dae->regs->rx + sizeof(reply), dae->buf_task,
-                // To the Client
-                cli->buf_start, cli->buf_task);
-            assert(!e);
-          }
-          break;
-        case OP_WRITLN:
-          HyperCoreDump();
-          break;
-        default:
-          PrintH("DeamonWriteC: Bad operation: %d", cli->operation);
-          HyperCoreDump();
-    } // switch
-  }
+  switch (cli->operation) {
+      case OP_CREATE:
+      case OP_OPEN:
+        // IOMAN will set cli->regs->ra to local path num?
+        break;
+      case OP_CLOSE:
+        // Nothing extra to do.
+        break;
+      case OP_WRITE:
+        BOMB();
+        break;
+      case OP_READ:
+      case OP_READLN:
+        {
+          ShowTaskRam(dae->buf_task, dae->regs->rx);
+          cli->regs->ry = reply.size;
+          errnum e = Os9Move(reply.size,
+              // From the Daemon
+              dae->regs->rx + sizeof(reply), dae->buf_task,
+              // To the Client
+              cli->buf_start, cli->buf_task);
+          assert(!e);
+          ShowTaskRam(cli->buf_task, cli->buf_start);
+        }
+        break;
+      case OP_WRITLN:
+        BOMB();
+        break;
+      default:
+        PrintH("DeamonWriteC: Bad operation: %d", cli->operation);
+        BOMB();
+  } // switch
 
   // Allow other clients to use the daemon.
   // But the client still remembers its daemon.
@@ -765,6 +781,10 @@ errnum OpenClient(
     word begin2,
     word end2,
     word original_rx) {
+  word proc_addr = Os9CurrentProcAddr();
+  PrintH("OpenClient proc_addr=%x ", proc_addr);
+  ShowRam(proc_addr);
+
   PrintH("OpenClient cli=%x entry", cli);
   // Daemon must already be open.
   struct PathDesc *dae = FindDaemon(cli->device_table_entry, begin1, end1);
@@ -782,7 +802,8 @@ errnum OpenClient(
   cli->operation = OP_OPEN;
   cli->buf_start = original_rx;
   cli->buf_len = cli->regs->rx - original_rx;
-  cli->buf_task = Os9CurrentProcessTask();
+  // cli->buf_task = Os9CurrentProcessTask();
+  assert( cli->buf_task == Os9CurrentProcessTask() );
 
   // Awaken the Daemon, and go to sleep.
   assert(dae->paused_proc_id);
@@ -794,18 +815,28 @@ errnum OpenClient(
 }
 
 errnum ClientOperationC(struct PathDesc* cli, byte op) {
+  word proc_addr = Os9CurrentProcAddr();
+  PrintH("ClientOperationC proc_addr=%x ", proc_addr);
+  ShowRam(proc_addr);
+
   assert(cli);
+  assert(((word)cli & 63) == 0);
   struct PathDesc* dae = cli->peer;
   PrintH("ClientOperationC op=%x cli=%x dae=%x entry\n", op, cli, dae);
   assert(dae);
+  assert(((word)dae & 63) == 0);
   assert(dae->is_daemon);
+  assert(!cli->is_daemon);
 
   cli->peer = dae;
   assert(dae->peer == 0);
   dae->peer = cli;
 
   cli->operation = op;
-  cli->buf_task = Os9CurrentProcessTask();
+
+  PrintH("ClientOperationC cli->buf_task=%x currentTask=%x\n", 
+     cli->buf_task , Os9CurrentProcessTask());
+  assert( cli->buf_task == Os9CurrentProcessTask() );
 
   switch (op) {
     case OP_READ:
@@ -834,21 +865,22 @@ errnum ClientOperationC(struct PathDesc* cli, byte op) {
   return cli->result;
 }
 
-errnum ClientReadC(struct PathDesc* cli) {
-  return 12;
-}
-
 ////////////////////////////////////////////////
 
 errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
+  word proc_addr = Os9CurrentProcAddr();
+  PrintH("CreateOrOpenC proc_addr=%x ", proc_addr);
+  ShowRam(proc_addr);
+
   pd->regs = regs;
   word original_rx = regs->rx;
 
-  PrintH("CreateOrOpenC: pd=%x regs=%x\n");
   pd->current_process_id = Os9CurrentProcessId();
   pd->buf_start = 0;
   pd->buf_len = 0;
   pd->buf_task = Os9CurrentProcessTask();
+  PrintH("CreateOrOpenC: pd=%x regs=%x proc=%x task=%x\n",
+      pd, regs, pd->current_process_id, pd->buf_task);
 
   // Split the path to find 2nd (begin1/end1) and
   // 3rd (begin2/end2) words.  Ignore the 1st ("FUSE").
@@ -892,20 +924,24 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
     return OpenClient(pd, begin1, end1, begin2, end2, original_rx);
   } else {
     PrintH("\nFATAL: CreateOrOpenC: BAD NAME\n");
-    HyperCoreDump();
+    BOMB();
     return E_BNAM;
   }
 }
 
 errnum CloseC(struct PathDesc* pd, struct Regs* regs) {
   pd->regs = regs;
-  return 10;
+  if (pd->is_daemon) {
+    return 10;
+  } else {
+    return ClientOperationC(pd, OP_CLOSE);
+  }
 }
 
 errnum ReadLnC(struct PathDesc* pd, struct Regs* regs) {
   pd->regs = regs;
   if (pd->is_daemon) {
-    return 9;
+    return E_BMODE;  // Daemon must use Read not ReadLn.
   } else {
     return ClientOperationC(pd, OP_READLN);
   }
@@ -913,7 +949,11 @@ errnum ReadLnC(struct PathDesc* pd, struct Regs* regs) {
 
 errnum WritLnC(struct PathDesc* pd, struct Regs* regs) {
   pd->regs = regs;
-  return 11;
+  if (pd->is_daemon) {
+    return E_BMODE; // Daemon must use Write not WritLn.
+  } else {
+    return ClientOperationC(pd, OP_WRITLN);
+  }
 }
 
 errnum ReadC(struct PathDesc* pd, struct Regs* regs) {
@@ -921,7 +961,7 @@ errnum ReadC(struct PathDesc* pd, struct Regs* regs) {
   if (pd->is_daemon) {
     return DaemonReadC(pd);
   } else {
-    return ClientReadC(pd);
+    return ClientOperationC(pd, OP_READ);
   }
 }
 
@@ -930,8 +970,7 @@ errnum WriteC(struct PathDesc* pd, struct Regs* regs) {
   if (pd->is_daemon) {
     return DaemonWriteC(pd);
   } else {
-    return 13;
-    // return ClientWriteC(pd);
+    return ClientOperationC(pd, OP_WRITE);
   }
 }
 

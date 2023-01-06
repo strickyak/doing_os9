@@ -21,7 +21,7 @@ func ShowRegs() {
 }
 
 func ShowRam32(addr Word) {
-	fmt.Printf(" [%04x]{", addr)
+	fmt.Printf("RAM [%04x]{", addr)
 	for i := Word(0); i < 32; i += 2 {
 		fmt.Printf("%04x ", PeekW(addr+i))
 		if (i&7) == 6 && i < 30 {
@@ -132,7 +132,7 @@ func HyperOp(hop byte) {
 	case 106: // Show Task RAM 32
 		task := GetBReg()
 		addr := xreg
-		fmt.Printf(" [[%x t%x]]{{", addr, task)
+		fmt.Printf("TaskRam [[%x t%x]]{{", addr, task)
 
 		for i := Word(0); i < 32; i += 2 {
 			fmt.Printf("%04x ", PeekWWithTask(addr+i, task))
@@ -146,7 +146,7 @@ func HyperOp(hop byte) {
 				fmt.Printf(" ")
 			}
 		}
-		fmt.Printf("}}` ")
+		fmt.Printf("}}`\n")
 
 	case 107: // Exit
 		log.Printf("*** GOMAR Hyper Exit: %d", dreg)
