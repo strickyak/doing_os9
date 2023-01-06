@@ -59,18 +59,16 @@ struct PathDesc {
         device_table_entry;   // PD.DEV = 3
   byte current_process_id;    // PD.CPR = 5
   struct Regs *regs;          // PD.RGS = 6
-  word unused_buffer_addr;    // PD.BUF = 8
+  word daemon_buffer;         // PD.BUF = 8
   // offset 10 = PD.FST
   bool is_daemon;  // 10
   bool paused_proc_id;  // 11: 0 if not paused.
-  word buf_start;  // 12
-  word buf_len;    // 14
-  byte buf_task;   // 16
-  byte operation;  // 17
-  byte result;  // 18
-  struct PathDesc* peer;  // 19: Daemon's client or Client's daemon.
-  struct Regs* client_regs; // 21
-  // 23
+  word buf_len;    // 12
+  byte operation;  // 14
+  byte result;  // 15
+  struct PathDesc* peer;  // 16: Daemon's client or Client's daemon.
+  struct Regs* client_regs; // 18
+  // 18
 };
 #define DAEMON_NAME_OFFSET_IN_PD 50 // bytes 50 to 63
 #define DAEMON_NAME_MAX 12
@@ -208,10 +206,20 @@ byte Os9CurrentProcessId() {
   return id;
 }
 
-byte Os9CurrentProcessTask() {
+byte Os9UserTask() {
   byte task = 0;
   asm {
     LDX D.Proc
+    LDA P$Task,X
+    STA task
+  }
+  return task;
+}
+
+byte Os9SystemTask() {
+  byte task = 0;
+  asm {
+    LDX D.SysPrc
     LDA P$Task,X
     STA task
   }
@@ -338,6 +346,45 @@ void Os9Pause(struct PathDesc* pd) {
   PrintH(" Un-Paused path=%x\n", pd->path_num);
 }
 
+errnum Os9SRqMem(word size, word* size_out, word* addr_out) {
+  errnum err = OKAY;
+  asm {
+      pshs y,u
+      ldd size
+      swi2
+      fcb F_SRQMEM
+      tfr u,x
+      puls y,u
+      bcs SRQMEM_BAD
+      stx [addr_out]
+      std [size_out]
+      bra SRQMEM_OK
+
+SRQMEM_BAD
+        stb err
+SRQMEM_OK
+  }
+  return err;
+}
+
+errnum Os9SRtMem(word size, word addr) {
+  errnum err = OKAY;
+  asm {
+      ldd size
+      ldx addr
+      pshs y,u
+      tfr x,u
+      swi2
+      puls y,u
+      fcb F_SRTMEM
+      bcc SRTMEM_OK
+
+      stb err
+SRTMEM_OK
+  }
+  return err;
+}
+
 // 64-byte block routines.
 errnum Os9All64(word base, word* base_out, word* block_addr, byte* block_num) {
     errnum err = OKAY;
@@ -447,7 +494,7 @@ PrsNamBad
 }
 
 word GetHex(word *pp) {
-  byte task = Os9CurrentProcessTask();
+  byte task = Os9UserTask();
 
   // skip white space.
   while (1) {
@@ -501,7 +548,7 @@ void ShowModuleName(word addr) {
 errnum CopyParsedName(word begin, word end, char* dest, word max_len) {
   // max_len counts null termination.
   assert (end-begin < max_len-1);
-  byte task = Os9CurrentProcessTask();
+  byte task = Os9UserTask();
   byte i = 0;
   for (word p = begin; p < end; p++) {
     byte ch = 0;
@@ -514,7 +561,7 @@ errnum CopyParsedName(word begin, word end, char* dest, word max_len) {
 }
 
 void ShowParsedName(word current, word begin, word end) {
-  byte task = Os9CurrentProcessTask();
+  byte task = Os9UserTask();
   ShowChar('{');
   for (word p = current; p <= end; p++ ) {
     byte ch = 0;
@@ -534,7 +581,7 @@ void ShowParsedName(word current, word begin, word end) {
 // C string, in normal memory, with no high bits.
 bool ParsedNameEquals(word begin, word end, const char*s) {
   PrintH("\nParsedNameEquals(b=%x, e=%x, s=%x)\n", begin, end, s);
-  byte task = Os9CurrentProcessTask();
+  byte task = Os9UserTask();
   word p = begin;
   for (; *s && p < end; p++, s++) {
     byte ch = 0;
@@ -612,6 +659,11 @@ errnum OpenDaemon(struct PathDesc* pd, word begin2, word end2) {
   pd->is_daemon = 1;
   pd->peer = NULL;
 
+  pd->daemon_buffer = 0;
+  word size_out = 0;
+  errnum err = Os9SRqMem(0x100, &size_out, &pd->daemon_buffer);
+  assert(!err);
+
   CopyParsedName(begin2, end2, (char*)pd + DAEMON_NAME_OFFSET_IN_PD, DAEMON_NAME_MAX);
 
   PrintH("OpenDaemon OK: pd=%x %q\n", pd, (char*)pd + DAEMON_NAME_OFFSET_IN_PD);
@@ -637,48 +689,48 @@ errnum DaemonReadC(struct PathDesc* dae) {
 
   // Assemble the Request object for the deamon process
   // using the operation requested by the client.
-  struct Fuse2Request req;
-  req.operation = cli->operation;
-  req.path_num = cli->path_num;
-  req.a_reg = cli->regs->ra;
-  req.b_reg = cli->regs->rb;
-  req.size = cli->buf_len;
-  char* req_header = (char*)&req;
+  struct Fuse2Request request;
+  request.operation = cli->operation;
+  request.path_num = cli->path_num;
+  request.a_reg = cli->regs->ra;
+  request.b_reg = cli->regs->rb;
+  request.size = cli->buf_len;
+  char* req_header = (char*)&request;
 
   // Store the Request object in the Daemon's memory buffer
   // one byte at a time.
-  for (byte i = 0; i < sizeof req; i++) {
+  for (byte i = 0; i < sizeof request; i++) {
     err = Os9StoreByteToTask(
-        dae->buf_task, dae->regs->rx + i, req_header[i]);
+        Os9UserTask(), dae->regs->rx + i, req_header[i]);
     assert(!err);
   }
 
-  switch (req.operation) {
+  switch (request.operation) {
     case OP_READ:
     case OP_READLN:
       {
-        assert(cli->buf_start);
         assert(cli->buf_len);
         // The number of bytes the Daemon will read is just
         // the size of the request headaer.
-        regs->ry = sizeof req;
+        regs->ry = sizeof request;
       }
       break;
     case OP_WRITE:
     case OP_WRITLN:
       {
-        assert(cli->buf_start);
         assert(cli->buf_len);
         // Copy this payload from the client's buffer
         // into the Daemon's buffer, after the header.
-        err = Os9Move(req.size,
-            cli->buf_start, cli->buf_task,
-            dae->buf_start + sizeof(req), dae->buf_task);
-        assert(!err);
+          errnum e = Os9Move(request.size,
+              // From the Daemon PD buffer
+              dae->daemon_buffer, Os9SystemTask(),
+              // To the Daemon process
+              dae->regs->rx + sizeof(request), Os9UserTask());
+          assert(!e);
         // The number of bytes the Daemon will read is
         // the size of the request header plus the size
         // of the payload we just copied.
-        regs->ry = req.size + sizeof req;
+        regs->ry = request.size + sizeof request;
         err = 55;
       }
       break;
@@ -686,6 +738,7 @@ errnum DaemonReadC(struct PathDesc* dae) {
 
   cli->result = OKAY; // XXX but we don't awaken Client
                       // until Daemon writes.
+  PrintH("DaemonReadC: cli->result <- %x", cli->result);
   return err;
 }
 
@@ -703,7 +756,7 @@ errnum DaemonWriteC(struct PathDesc* dae) {
   assert(((unsigned)cli & 63) == 0);
   assert(!cli->is_daemon);
   assert(cli->peer == dae);
-  PrintH("cli->buf: start=%x len=%x task=%x\n", cli->buf_start, cli->buf_len, cli->buf_task);
+  PrintH("cli->buf: len=%x\n", cli->buf_len);
 
   errnum err = OKAY;
   struct Regs* regs = dae->regs;
@@ -721,22 +774,25 @@ errnum DaemonWriteC(struct PathDesc* dae) {
   for (byte i = 0; i < sizeof reply; i++) {
     byte x;
     err = Os9LoadByteFromTask(
-        dae->buf_task, dae->regs->rx + i, &x);
+        Os9UserTask(), dae->regs->rx + i, &x);
     assert(!err);
     reply_header[i] = x;
+    PrintH("[%x] <- %x", i, x);
   }
 
   // Client will pick up cli->result and
   // set its own B & CC regs, if nonzero.
   cli->result = reply.status;
+  PrintH("DaemonWriteC: cli->result <- %x", cli->result);
 
+  dae->buf_len = 0; // where Client will get size.
   switch (cli->operation) {
       case OP_CREATE:
       case OP_OPEN:
-        // IOMAN will set cli->regs->ra to local path num?
+        // Nothing extra to do for Create or Open.
         break;
       case OP_CLOSE:
-        // Nothing extra to do.
+        // Nothing extra to do for Close.
         break;
       case OP_WRITE:
         BOMB();
@@ -744,15 +800,14 @@ errnum DaemonWriteC(struct PathDesc* dae) {
       case OP_READ:
       case OP_READLN:
         {
-          ShowTaskRam(dae->buf_task, dae->regs->rx);
           cli->regs->ry = reply.size;
           errnum e = Os9Move(reply.size,
-              // From the Daemon
-              dae->regs->rx + sizeof(reply), dae->buf_task,
-              // To the Client
-              cli->buf_start, cli->buf_task);
+              // From the Daemon process
+              dae->regs->rx + sizeof(reply), Os9UserTask(),
+              // To the Daemon PD buffer
+              dae->daemon_buffer, Os9SystemTask());
+          dae->buf_len = reply.size; // where Client will get size.
           assert(!e);
-          ShowTaskRam(cli->buf_task, cli->buf_start);
         }
         break;
       case OP_WRITLN:
@@ -781,10 +836,6 @@ errnum OpenClient(
     word begin2,
     word end2,
     word original_rx) {
-  word proc_addr = Os9CurrentProcAddr();
-  PrintH("OpenClient proc_addr=%x ", proc_addr);
-  ShowRam(proc_addr);
-
   PrintH("OpenClient cli=%x entry", cli);
   // Daemon must already be open.
   struct PathDesc *dae = FindDaemon(cli->device_table_entry, begin1, end1);
@@ -796,14 +847,19 @@ errnum OpenClient(
 
   cli->is_daemon = 0;
   cli->peer = dae;
-  assert(dae->peer == 0);
-  dae->peer = cli;
+  assert(dae->peer == 0); // TODO wait our turn.
+  dae->peer = cli;  // Claim daemon as ours for now,
 
   cli->operation = OP_OPEN;
-  cli->buf_start = original_rx;
   cli->buf_len = cli->regs->rx - original_rx;
-  // cli->buf_task = Os9CurrentProcessTask();
-  assert( cli->buf_task == Os9CurrentProcessTask() );
+  assert(cli->buf_len <= 256);
+
+  errnum err = Os9Move(cli->buf_len,
+      // From the client process:
+      original_rx, Os9UserTask(),
+      // To the daemon pd's buffer
+      dae->daemon_buffer, Os9SystemTask());
+  assert(!err);
 
   // Awaken the Daemon, and go to sleep.
   assert(dae->paused_proc_id);
@@ -811,14 +867,11 @@ errnum OpenClient(
   Os9Pause(cli);
   // When we wake up, our regs should be modified
   // by the Daemon if necessary, and our result status.
+  PrintH("OpenClient: cli->result : %x", cli->result);
   return cli->result;
 }
 
 errnum ClientOperationC(struct PathDesc* cli, byte op) {
-  word proc_addr = Os9CurrentProcAddr();
-  PrintH("ClientOperationC proc_addr=%x ", proc_addr);
-  ShowRam(proc_addr);
-
   assert(cli);
   assert(((word)cli & 63) == 0);
   struct PathDesc* dae = cli->peer;
@@ -829,25 +882,19 @@ errnum ClientOperationC(struct PathDesc* cli, byte op) {
   assert(!cli->is_daemon);
 
   cli->peer = dae;
-  assert(dae->peer == 0);
-  dae->peer = cli;
+  assert(dae->peer == 0); // TODO wait our turn
+  dae->peer = cli;  // Claim the daemon for now.
 
   cli->operation = op;
-
-  PrintH("ClientOperationC cli->buf_task=%x currentTask=%x\n", 
-     cli->buf_task , Os9CurrentProcessTask());
-  assert( cli->buf_task == Os9CurrentProcessTask() );
 
   switch (op) {
     case OP_READ:
     case OP_READLN:
     case OP_WRITE:
     case OP_WRITLN:
-      cli->buf_start = cli->regs->rx;
       cli->buf_len = cli->regs->ry;
       break;
     default:
-      cli->buf_start = 0;
       cli->buf_len = 0;
       break;
   }
@@ -860,27 +907,33 @@ errnum ClientOperationC(struct PathDesc* cli, byte op) {
   assert(dae->paused_proc_id);
   Awaken(dae);
   Os9Pause(cli);
-  // When we wake up, our regs should be modified
-  // by the Daemon if necessary, and our result status.
+
+  // When we wake up, copy buffer if non-empty.
+  if (dae->buf_len) {
+        errnum e = Os9Move(dae->buf_len,
+            // From the Daemon PD Buffer
+            dae->daemon_buffer, Os9SystemTask(),
+            // To the client process
+            cli->regs->rx, Os9UserTask());
+        assert(!e);
+  }
+  cli->regs->ry = dae->buf_len;
+  // Allow other clients to use the daemon.
+  // But the client still remembers its daemon.
+  dae->peer = 0;
   return cli->result;
 }
 
 ////////////////////////////////////////////////
 
 errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
-  word proc_addr = Os9CurrentProcAddr();
-  PrintH("CreateOrOpenC proc_addr=%x ", proc_addr);
-  ShowRam(proc_addr);
-
   pd->regs = regs;
   word original_rx = regs->rx;
 
   pd->current_process_id = Os9CurrentProcessId();
-  pd->buf_start = 0;
   pd->buf_len = 0;
-  pd->buf_task = Os9CurrentProcessTask();
-  PrintH("CreateOrOpenC: pd=%x regs=%x proc=%x task=%x\n",
-      pd, regs, pd->current_process_id, pd->buf_task);
+  PrintH("CreateOrOpenC: pd=%x regs=%x proc=%x\n",
+      pd, regs, pd->current_process_id);
 
   // Split the path to find 2nd (begin1/end1) and
   // 3rd (begin2/end2) words.  Ignore the 1st ("FUSE").
@@ -910,8 +963,7 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
         // TODO:  more than one name.
         begin2 = begin;
         end2 = end;
-        pd->buf_start = begin2;
-        pd->buf_len = (end2 - begin2);
+        pd->buf_len = (end2 - begin2);  // TODO -- redundant?
         break;
       default:
         {}// Ignore extra names for now.
@@ -932,7 +984,7 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
 errnum CloseC(struct PathDesc* pd, struct Regs* regs) {
   pd->regs = regs;
   if (pd->is_daemon) {
-    return 10;
+    return 10; // TODO use Os9SRtMem
   } else {
     return ClientOperationC(pd, OP_CLOSE);
   }
