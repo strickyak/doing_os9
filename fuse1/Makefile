@@ -43,6 +43,7 @@ _run:
 	os9 copy -r x.cat.os9 $T,CMDS/x.cat
 	os9 attr -per $T,CMDS/x.cat
 	echo 'fuse.twice & echo SLEEP_12 ; sleep 12 ; echo WAKE_12; x.cat /FUSE/twice/orangutan/monkey ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
+	echo 'fuse.twice & sleep 20 ; x.cat startup > /fuse/twice/boo ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	# echo 'date -t' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	:
 	# echo 'list /fuse/daemon/foo & echo SLEEP ; sleep 60 ; echo WAKE; list /fuse/foo/eleven ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup

@@ -612,36 +612,44 @@ GOT_IT:
   return got; // NULL;
 }
 
-#if 0
-byte HiNyb(byte x) { return x>>4; }
-byte LoNyb(byte x) { return 15 & x; }
-byte HiByt(word x) { return *(byte*)&x; }
-byte LoByt(word x) { return (byte)x; }
-#endif
+void SwitchProcess(struct PathDesc* from, struct PathDesc* to) {
+  byte timeout = 50;
+  while (to->paused_proc_id == 0) {
+    PrintH("SwitchProcess: sleeping 1 tick: try %x", timeout);
+    Os9Sleep(1);
+    --timeout;
+    assert(timeout > 0);
+  }
+  // Awaken the "to" process.
+  Awaken(to);
+  // Now go to sleep.
+  Os9Pause(from);
+}
 
 ///////////  DAEMON  ///////////////////////////
 
-errnum OpenDaemon(struct PathDesc* pd, word begin2, word end2) {
-  PrintH("OpenDeamon pd=%x entry\n", pd);
+errnum OpenDaemon(struct PathDesc* dae, word begin2, word end2) {
+  PrintH("OpenDeamon dae=%x entry\n", dae);
 
   // Must not already be a daemon on this name.
-  struct PathDesc *already = FindDaemon(pd->device_table_entry, begin2, end2);
+  struct PathDesc *already = FindDaemon(dae->device_table_entry, begin2, end2);
   if (already) {
     PrintH("\nBAD: OpenDeamon already open => err %x\n", E_SHARE);
     return E_SHARE;
   }
 
-  pd->is_daemon = 1;
-  pd->peer = NULL;
+  dae->is_daemon = 1;
+  dae->peer = NULL;
 
-  pd->daemon_buffer = 0;
+  dae->daemon_buffer = 0;
   word size_out = 0;
-  errnum err = Os9SRqMem(0x100, &size_out, &pd->daemon_buffer);
+  errnum err = Os9SRqMem(0x100, &size_out, &dae->daemon_buffer);
   assert(!err);
 
-  CopyParsedName(begin2, end2, (char*)pd + DAEMON_NAME_OFFSET_IN_PD, DAEMON_NAME_MAX);
+  CopyParsedName(begin2, end2, (char*)dae + DAEMON_NAME_OFFSET_IN_PD, DAEMON_NAME_MAX);
 
-  PrintH("OpenDaemon OK: pd=%x %q\n", pd, (char*)pd + DAEMON_NAME_OFFSET_IN_PD);
+  PrintH("OpenDaemon OK: dae=%x %q\n", dae, (char*)dae + DAEMON_NAME_OFFSET_IN_PD);
+  dae->current_process_id = 0; // PD.CPR: Nobody owns me.
   return OKAY;
 }
 
@@ -694,8 +702,8 @@ errnum DaemonReadC(struct PathDesc* dae) {
     case OP_WRITLN:
       {
         assert(cli->buf_len);
-        // Copy this payload from the client's buffer
-        // into the Daemon's buffer, after the header.
+        // Copy this payload from the internal daemon_buffer
+        // into the Daemon's process, after the header.
         MoveToUser(dae, dae->regs->rx + sizeof request, request.size);
 
         // The number of bytes the Daemon will read is
@@ -710,6 +718,7 @@ errnum DaemonReadC(struct PathDesc* dae) {
   cli->result = OKAY; // XXX but we don't awaken Client
                       // until Daemon writes.
   PrintH("DaemonReadC: cli->result <- %x", cli->result);
+  dae->current_process_id = 0; // PD.CPR: Nobody owns me.
   return err;
 }
 
@@ -721,13 +730,13 @@ errnum DaemonWriteC(struct PathDesc* dae) {
   assert(((unsigned)dae & 63) == 0);
   assert(dae->is_daemon);
   struct PathDesc* cli = dae->peer;
-  PrintH(":: cli=%x ", cli);
-  PrintH(":: cli->peer=%x\n", cli->peer);
+  //PrintH(":: cli=%x ", cli);
+  //PrintH(":: cli->peer=%x\n", cli->peer);
   assert(cli);
   assert(((unsigned)cli & 63) == 0);
   assert(!cli->is_daemon);
   assert(cli->peer == dae);
-  PrintH("cli->buf: len=%x\n", cli->buf_len);
+  //PrintH("cli->buf: len=%x\n", cli->buf_len);
 
   errnum err = OKAY;
   struct Regs* regs = dae->regs;
@@ -766,7 +775,7 @@ errnum DaemonWriteC(struct PathDesc* dae) {
         // Nothing extra to do for Close.
         break;
       case OP_WRITE:
-        BOMB();
+        cli->regs->ry = reply.size;
         break;
       case OP_READ:
       case OP_READLN:
@@ -777,7 +786,7 @@ errnum DaemonWriteC(struct PathDesc* dae) {
         cli->regs->ry = reply.size;
         break;
       case OP_WRITLN:
-        BOMB();
+        cli->regs->ry = reply.size;
         break;
       default:
         PrintH("DeamonWriteC: Bad operation: %d", cli->operation);
@@ -787,6 +796,7 @@ errnum DaemonWriteC(struct PathDesc* dae) {
   // Allow other clients to use the daemon.
   // But the client still remembers its daemon.
   dae->peer = 0;
+  dae->current_process_id = 0; // PD.CPR: Nobody owns me.
   // Time for the client to wake up.
   Awaken(cli);
 
@@ -823,12 +833,12 @@ errnum OpenClient(
   MoveToUser(dae, original_rx, cli->buf_len);
 
   // Awaken the Daemon, and go to sleep.
-  assert(dae->paused_proc_id);
-  Awaken(dae);
-  Os9Pause(cli);
+  SwitchProcess(cli, dae);
+
   // When we wake up, our regs should be modified
   // by the Daemon if necessary, and our result status.
   PrintH("OpenClient: cli->result : %x", cli->result);
+  cli->current_process_id = 0;
   return cli->result;
 }
 
@@ -851,32 +861,45 @@ errnum ClientOperationC(struct PathDesc* cli, byte op) {
   switch (op) {
     case OP_READ:
     case OP_READLN:
+      cli->buf_len = cli->regs->ry;
+      break;
     case OP_WRITE:
     case OP_WRITLN:
       cli->buf_len = cli->regs->ry;
+      if (cli->buf_len) {
+        MoveToKernel(dae, cli->regs->rx, cli->buf_len);
+      }
       break;
     default:
       cli->buf_len = 0;
       break;
   }
 
-  // Awaken the Daemon, and go to sleep.
-  while (dae->paused_proc_id == 0) {
-    PrintH("Client sleeps 1, waiting on dae->paused_proc_id\n");
-    Os9Sleep(1); // Wait for Daemon to call Read() again.
-  }
-  assert(dae->paused_proc_id);
-  Awaken(dae);
-  Os9Pause(cli);
+  SwitchProcess(cli, dae);
 
-  // When we wake up, copy buffer if non-empty.
-  if (dae->buf_len) {
-    MoveToUser(dae, cli->regs->rx, dae->buf_len);
+  // When we wake up:
+  switch (op) {
+    case OP_READ:
+    case OP_READLN:
+      // Copy buffer if non-empty.
+      if (dae->buf_len) {
+        MoveToUser(dae, cli->regs->rx, dae->buf_len);
+      }
+      cli->regs->ry = dae->buf_len;
+
+      break;
+    case OP_WRITE:
+    case OP_WRITLN:
+      cli->regs->ry = dae->buf_len;
+      break;
+    default:
+      cli->buf_len = 0;
+      break;
   }
-  cli->regs->ry = dae->buf_len;
   // Allow other clients to use the daemon.
   // But the client still remembers its daemon.
   dae->peer = 0;
+  cli->current_process_id = 0;
   return cli->result;
 }
 

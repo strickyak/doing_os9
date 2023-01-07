@@ -31,17 +31,17 @@ start    equ   *
 * Dispatch Relays
 Init     bra FuserInit
          nop
-Read     daa
-         clrb
+Read     clrb  ; never called.
+         comb
          rts
-Write    daa
-         clrb
+Write    clrb  ; never called.
+         comb
          rts
-GetStat  daa
-         clrb
+GetStat  clrb  ; never called.
+         comb
          rts
-SetStat  daa
-         clrb
+SetStat  clrb  ; never called.
+         comb
          rts
 Term     bra FuserTerm
 
