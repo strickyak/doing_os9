@@ -36,27 +36,15 @@ _run:
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && export NITROS9DIR=/home/strick/go/src/github.com/n6il/nitros9 ; ( make clean ; make && make NOS9_6809_L2_v030300_coco3_80d.dsk  )
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && cp -v NOS9_6809_L2_v030300_coco3_80d.dsk ~/sy/doing_os9/gomar/drive/disk2
 	:
-	# echo 'ramd #128 & echo SLEEP ; sleep 12 ; echo WAKE; list /fuse/ram/orangutan/monkey ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	:
 	os9 copy -r fuse.twice.os9 $T,CMDS/fuse.twice
 	os9 attr -per $T,CMDS/fuse.twice
 	os9 copy -r x.cat.os9 $T,CMDS/x.cat
 	os9 attr -per $T,CMDS/x.cat
-	echo 'fuse.twice & echo SLEEP_12 ; sleep 12 ; echo WAKE_12; x.cat /FUSE/twice/orangutan/monkey ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
-	echo 'fuse.twice & sleep 5 ; x.cat -o /fuse/twice/boo startup ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
-	# echo 'date -t' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	:
-	# echo 'list /fuse/daemon/foo & echo SLEEP ; sleep 60 ; echo WAKE; list /fuse/foo/eleven ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
-	# echo 'list /fuse/daemon/foo' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
-	# echo 'ncl < run.tcl' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	:
-	os9 copy -r ramd $T,CMDS/ramd
-	os9 attr -per $T,CMDS/ramd
-	## os9 attr -per $T,CMDS/z
-	os9 copy -r ../picol/ncl.bin $T,CMDS/ncl
-	os9 attr -per $T,CMDS/ncl
-	os9 copy -r -l ../picol/nclrc.tcl $T,SYS/nclrc.tcl
-	os9 copy -r -l run.tcl $T,run.tcl
+	echo 'fuse.twice & sleep 5 ; x.cat -o /fuse/twice/boo startup ; dir ; x.cat /fuse/twice > z9 ; dump z9; list z9; proc; echo EXCELLENT ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
+	:
 	:
 	cd ~/sy/doing_os9/gomar &&  sh run2disk2.sh
 
