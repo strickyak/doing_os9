@@ -273,6 +273,9 @@ func PutB(addr Word, x byte) {
 	if TraceMem {
 		Ld("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
 	}
+	if addr == 0x5d45 { // XXX
+		L("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
+	}
 	if AddressInDeviceSpace(addr) {
 		PutIOByte(addr, x)
 		Ld("PutIO (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)

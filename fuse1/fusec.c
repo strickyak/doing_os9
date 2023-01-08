@@ -13,13 +13,13 @@ typedef unsigned int word;
 #define NULL ((void*)0)
 
 struct DeviceTableEntry {
-  word dt_device_driver_module;
-  struct DeviceVars *dt_device_vars;
-  word dt_device_desc;
-  word dt_fileman;
-  byte dt_num_users;
-  word dt_drivex;
-  word dt_fmgrex;
+  word dt_device_driver_module;       // F$DRIV
+  struct DeviceVars *dt_device_vars;  // F$STAT
+  word dt_device_desc;                // F$DESC
+  word dt_fileman;   // V$FMGR
+  byte dt_num_users; // V$USRS
+  word dt_drivex;    // V$DRIVX
+  word dt_fmgrex;    // V$FMGREX
 };
 
 struct DeviceVars {
@@ -497,22 +497,30 @@ PrsNamBad
 ////////////////////////////////////////////////
 
 void MoveToKernel(struct PathDesc* dae, word addr, word size) {
-  PrintH("MoveToKernel: addr=%x size=%x", addr, size);
+  PrintH("MoveToKernel: addr=%x size=%x @@", addr, size);
   assert(dae);
   assert(dae->is_daemon);
   assert(addr);
   assert(size);
   errnum e = Os9Move(size, addr, Os9UserTask(), dae->daemon_buffer, Os9SystemTask());
+  for (word i  = 0; i < size; i++) {
+    PrintH(" %x^ (%x)  ", i, ((byte*)dae->daemon_buffer)[i]);
+  }
+  PrintH("\n");
   assert(!e);
 }
 
 void MoveToUser(struct PathDesc* dae, word addr, word size) {
-  PrintH("MoveToUser: addr=%x size=%x", addr, size);
+  PrintH("MoveToUser: addr=%x size=%x @@", addr, size);
   assert(dae);
   assert(dae->is_daemon);
   assert(addr);
   assert(size);
   errnum e = Os9Move(size, dae->daemon_buffer, Os9SystemTask(), addr, Os9UserTask());
+  for (word i  = 0; i < size; i++) {
+    PrintH(" %x^ (%x)  ", i, ((byte*)dae->daemon_buffer)[i]);
+  }
+  PrintH("\n");
   assert(!e);
 }
 
@@ -678,24 +686,38 @@ errnum DaemonReadC(struct PathDesc* dae) {
   request.a_reg = cli->regs->ra;
   request.b_reg = cli->regs->rb;
   request.size = cli->buf_len;
-  char* req_header = (char*)&request;
+
+  PrintH("DeamonReadC: REQUEST op=%x path=%x a=%x b=%x size=%x",
+      request.operation,
+      request.path_num,
+      request.a_reg,
+      request.b_reg,
+      request.size);
 
   // Store the Request object in the Daemon's memory buffer
   // one byte at a time.
   for (byte i = 0; i < sizeof request; i++) {
     err = Os9StoreByteToTask(
-        Os9UserTask(), dae->regs->rx + i, req_header[i]);
+        Os9UserTask(), dae->regs->rx + i, ((char*)&request)[i]);
     assert(!err);
   }
 
+  word n = sizeof request; // how many bytes to copy to Daemon.
   switch (request.operation) {
+    case OP_CREATE:
+    case OP_OPEN:
+      {
+        assert(request.size);
+        MoveToUser(dae, dae->regs->rx + sizeof request, request.size);
+        n += request.size;
+      }
+      break;
     case OP_READ:
     case OP_READLN:
       {
         assert(cli->buf_len);
         // The number of bytes the Daemon will read is just
-        // the size of the request headaer.
-        regs->ry = sizeof request;
+        // the size of the request headaer.  Don't change n.
       }
       break;
     case OP_WRITE:
@@ -709,11 +731,11 @@ errnum DaemonReadC(struct PathDesc* dae) {
         // The number of bytes the Daemon will read is
         // the size of the request header plus the size
         // of the payload we just copied.
-        regs->ry = request.size + sizeof request;
-        err = 55;
+        n += request.size;
       }
       break;
   }
+  regs->ry = n;
 
   cli->result = OKAY; // XXX but we don't awaken Client
                       // until Daemon writes.
@@ -763,35 +785,34 @@ errnum DaemonWriteC(struct PathDesc* dae) {
   // Client will pick up cli->result and
   // set its own B & CC regs, if nonzero.
   cli->result = reply.status;
-  PrintH("DaemonWriteC: cli->result <- %x", cli->result);
+  PrintH("DaemonWriteC: cli->result <- %x\n", cli->result);
 
-  dae->buf_len = 0; // where Client will get size.
+  word n = sizeof reply;
   switch (cli->operation) {
       case OP_CREATE:
       case OP_OPEN:
-        // Nothing extra to do for Create or Open.
+        {} // Nothing extra to do for Create or Open.
         break;
       case OP_CLOSE:
-        // Nothing extra to do for Close.
+        {} // Nothing extra to do for Close.
         break;
       case OP_WRITE:
-        cli->regs->ry = reply.size;
+      case OP_WRITLN:
+        {} // Nothing extra for Write.  Notice reply.size is probably nonzero.
         break;
       case OP_READ:
       case OP_READLN:
         if (reply.size) {
           MoveToKernel(dae, dae->regs->rx + sizeof(reply), reply.size);
+          n += reply.size;
         }
-        dae->buf_len = reply.size; // where Client will get size.
-        cli->regs->ry = reply.size;
-        break;
-      case OP_WRITLN:
-        cli->regs->ry = reply.size;
         break;
       default:
         PrintH("DeamonWriteC: Bad operation: %d", cli->operation);
         BOMB();
   } // switch
+  cli->regs->ry = n;
+  dae->buf_len = n;
 
   // Allow other clients to use the daemon.
   // But the client still remembers its daemon.
@@ -826,11 +847,11 @@ errnum OpenClient(
   assert(dae->peer == 0); // TODO wait our turn.
   dae->peer = cli;  // Claim daemon as ours for now,
 
+  // Set the op to OPEN and copy the path into the buffer.
   cli->operation = OP_OPEN;
   cli->buf_len = cli->regs->rx - original_rx;
   assert(cli->buf_len <= 256);
-
-  MoveToUser(dae, original_rx, cli->buf_len);
+  MoveToKernel(dae, original_rx, cli->buf_len);
 
   // Awaken the Daemon, and go to sleep.
   SwitchProcess(cli, dae);
@@ -904,12 +925,17 @@ errnum ClientOperationC(struct PathDesc* cli, byte op) {
 }
 
 ////////////////////////////////////////////////
+///
+///  GENERIC "C" FUNCTIONS: could be Daemon or Client.
 
 errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
+  pd->device_table_entry->dt_num_users = 16; // ARTIFICIALLY KEEP THIS OPEN.
+  errnum z;
   pd->regs = regs;
   word original_rx = regs->rx;
   pd->buf_len = 0;
   PrintH("CreateOrOpenC: pd=%x regs=%x\n", pd, regs);
+  PrintH("PD.CPR: CreateOrOpenC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
 
   // Split the path to find 2nd (begin1/end1) and
   // 3rd (begin2/end2) words.  Ignore the 1st ("FUSE").
@@ -947,72 +973,102 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
   }
 
   if (i==3 && ParsedNameEquals(begin1, end1, "DAEMON")) {
-    return OpenDaemon(pd, begin2, end2);
+    z = OpenDaemon(pd, begin2, end2);
   } else if (i > 1) {
-    return OpenClient(pd, begin1, end1, begin2, end2, original_rx);
+    z = OpenClient(pd, begin1, end1, begin2, end2, original_rx);
   } else {
     PrintH("\nFATAL: CreateOrOpenC: BAD NAME\n");
     BOMB();
-    return E_BNAM;
+    z = E_BNAM;
   }
+  PrintH("PD.CPR: CreateOrOpenC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->open_count, pd->current_process_id, z);
+  return z;
 }
 
 errnum CloseC(struct PathDesc* pd, struct Regs* regs) {
+  errnum z;
+  PrintH("PD.CPR: CloseC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
   pd->regs = regs;
   if (pd->is_daemon) {
     errnum err = Os9SRtMem(0x100, pd->daemon_buffer);
     assert(!err);
     bzero(DAEMON_NAME_OFFSET_IN_PD + (char*)pd, DAEMON_NAME_MAX);  // Wipe the deamon name.
-    return OKAY;
+    z = OKAY;
   } else {
-    return ClientOperationC(pd, OP_CLOSE);
+    z = ClientOperationC(pd, OP_CLOSE);
   }
+  PrintH("PD.CPR: CloseC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->open_count, pd->current_process_id, z);
+  return z;
 }
 
 errnum ReadLnC(struct PathDesc* pd, struct Regs* regs) {
+  errnum z;
+  PrintH("PD.CPR: ReadLnC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
   pd->regs = regs;
   if (pd->is_daemon) {
-    return E_BMODE;  // Daemon must use Read not ReadLn.
+    z = E_BMODE;  // Daemon must use Read not ReadLn.
   } else {
-    return ClientOperationC(pd, OP_READLN);
+    z = ClientOperationC(pd, OP_READLN);
   }
+  PrintH("PD.CPR: ReadLnC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->open_count, pd->current_process_id, z);
+  return z;
 }
 
 errnum WritLnC(struct PathDesc* pd, struct Regs* regs) {
+  errnum z;
+  PrintH("PD.CPR: WritLnC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
   pd->regs = regs;
   if (pd->is_daemon) {
-    return E_BMODE; // Daemon must use Write not WritLn.
+    z = E_BMODE; // Daemon must use Write not WritLn.
   } else {
-    return ClientOperationC(pd, OP_WRITLN);
+    z = ClientOperationC(pd, OP_WRITLN);
   }
+  PrintH("PD.CPR: WritLnC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->open_count, pd->current_process_id, z);
+  return z;
 }
 
 errnum ReadC(struct PathDesc* pd, struct Regs* regs) {
+  errnum z;
+  PrintH("PD.CPR: ReadC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
   pd->regs = regs;
   if (pd->is_daemon) {
-    return DaemonReadC(pd);
+    z = DaemonReadC(pd);
   } else {
-    return ClientOperationC(pd, OP_READ);
+    z = ClientOperationC(pd, OP_READ);
   }
+  PrintH("PD.CPR: ReadC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->open_count, pd->current_process_id, z);
+  return z;
 }
 
 errnum WriteC(struct PathDesc* pd, struct Regs* regs) {
+  errnum z;
+  PrintH("PD.CPR: WriteC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
   pd->regs = regs;
   if (pd->is_daemon) {
-    return DaemonWriteC(pd);
+    z = DaemonWriteC(pd);
   } else {
-    return ClientOperationC(pd, OP_WRITE);
+    z = ClientOperationC(pd, OP_WRITE);
   }
+  PrintH("PD.CPR: WriteC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->open_count, pd->current_process_id, z);
+  return z;
 }
 
 errnum GetStatC(struct PathDesc* pd, struct Regs* regs) {
+  errnum z;
+  PrintH("PD.CPR: GetStatC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
   pd->regs = regs;
-  return 14;
+  z = 14;
+  PrintH("PD.CPR: GetStatC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->open_count, pd->current_process_id, z);
+  return z;
 }
 
 errnum SetStatC(struct PathDesc* pd, struct Regs* regs) {
+  errnum z;
+  PrintH("PD.CPR: SetStatC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
   pd->regs = regs;
-  return 15;
+  z = 15;
+  PrintH("PD.CPR: SetStatC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->open_count, pd->current_process_id, z);
+  return z;
 }
 
 /////////////// Assembly-to-C Relays

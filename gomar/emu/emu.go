@@ -343,7 +343,9 @@ func (addr EA) GetB() byte {
 			return 0
 		}
 	} else {
-		return B(Word(addr))
+		x := B(Word(addr))
+		TraceByte(addr, x)
+		return x
 	}
 }
 
@@ -362,6 +364,7 @@ func (addr EA) PutB(x byte) {
 			log.Panicf("bad PutB_ea EA: 0x%x", addr)
 		}
 	} else {
+		TraceByte(addr, x)
 		PutB(Word(addr), x)
 	}
 }
@@ -391,7 +394,9 @@ func (addr EA) GetW() Word {
 		p := addr.RegPtrW()
 		return *p
 	} else {
-		return W(Word(addr))
+		x := W(Word(addr))
+		TraceWord(addr, x)
+		return x
 	}
 }
 
@@ -400,6 +405,7 @@ func (addr EA) PutW(x Word) {
 		p := addr.RegPtrW()
 		*p = x
 	} else {
+		TraceWord(addr, x)
 		PutW(Word(addr), x)
 	}
 }

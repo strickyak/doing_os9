@@ -2,10 +2,11 @@
 
 package emu
 
-func Dis_len(n Word)      {}
-func Dis_len_incr(n Word) {}
-func InitTrace()          {}
-func Trace()              {}
+func Dis_len(n Word)            {}
+func Dis_len_incr(n Word)       {}
+func TraceByte(addr EA, x byte) {}
+func TraceWord(addr EA, x Word) {}
+func Trace()                    {}
 func Finish() {
 	DoDumpAllMemoryPhys()
 }

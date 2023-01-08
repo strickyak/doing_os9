@@ -8,6 +8,7 @@ import (
 	"github.com/strickyak/doing_os9/gomar/listings"
 
 	"bytes"
+	"fmt"
 	"log"
 	"strings"
 )
@@ -16,9 +17,24 @@ var been_there [0x10000]bool
 
 /* max. bytes of instruction code per trace line */
 const kMaximumBytesPerOpcode = 4
+const kNoEffAddr = 0xFFFFFFFF
 
 /* disassembled instruction len */
 var dis_length Word
+
+var effAddr EA = kNoEffAddr
+var effByte int = -1
+var effWord int = -1
+
+func TraceByte(addr EA, x byte) {
+	effAddr = addr
+	effByte = int(x)
+}
+
+func TraceWord(addr EA, x Word) {
+	effAddr = addr
+	effWord = int(x)
+}
 
 func Dis_len(n Word) {
 	dis_length = n
@@ -54,7 +70,7 @@ func Trace() {
 
 	module, offset := MemoryModuleOf(pcreg_prev)
 
-    text := ""
+	text := ""
 	if module != "" {
 		moduleLower := strings.ToLower(module)
 		text = listings.Lookup(moduleLower, uint(offset), func() {
@@ -62,8 +78,17 @@ func Trace() {
 		})
 	}
 
+	eff := ""
+	if effAddr < 0x10000 {
+		if effByte != -1 {
+			eff = fmt.Sprintf(" %04x:%02x", effAddr, byte(effByte))
+		} else if effWord != -1 {
+			eff = fmt.Sprintf(" %04x:%04x", effAddr, Word(effWord))
+		}
+	}
+
 	Z(&buf, " {%-5s %-17s}  ", dinst.String(), dops.String())
-	log.Printf("%s%s {{%s}}", buf.String(), Regs(), text)
+	log.Printf("%s%s {{%s}} %s", buf.String(), Regs(), text, eff)
 	log.Printf("")
 	dis_length = 0
 
@@ -84,6 +109,9 @@ func Trace() {
 			log.Printf("@WATCH@ %s == %04x == %q", w.Where, val, w.Message)
 		}
 	}
+	effAddr = kNoEffAddr
+	effByte = -1
+	effWord = -1
 }
 
 func Finish() {
