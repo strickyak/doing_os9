@@ -144,8 +144,15 @@ void PrintH(const char* format, ...) {
   }
 }
 
-#define assert(C) { if (!(C)) { PrintH(" *ASSERT* %s:%d *FAILED* (%s)\n", __FILE__,  __LINE__, #C); HyperCoreDump(); } }
-#define BOMB() assert(!"BOMB")
+asm void GameOver() {
+  asm {
+INF_LOOP bra INF_LOOP
+  }
+}
+
+#define assert(C) { if (!(C)) { PrintH(" *ASSERT* %s:%d *FAILED*\n", __FILE__,  __LINE__); HyperCoreDump(); GameOver(); } }
+
+#define XXX /**/
 
 ////////////////////////////////////////////////
 
@@ -558,18 +565,14 @@ bool ParsedNameEquals(word begin, word end, const char*s) {
     byte ch = 0;
     errnum err = Os9LoadByteFromTask(task, p, &ch);
     assert(!err);
-    ShowChar(ch); ShowChar(*s); ShowChar('`');
 
     if (ToUpper(ch) != *s) {
-      ShowChar('^');
       return FALSE;  // does not match.
     }
   }
 
   // If both termination conditions are true,
   // strings are equal.
-  ShowChar( (p==end) ? 'T' : 'F' );
-  ShowChar( ((*s)==0) ? 'T' : 'F' );
   return (p==end) && ((*s)==0);
 }
 
@@ -862,8 +865,7 @@ errnum ClientOperationC(struct PathDesc* cli, byte op) {
 
 errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
   pd->device_table_entry->dt_num_users = 16; // ARTIFICIALLY KEEP THIS OPEN.
-  errnum z;
-  pd->regs = regs;
+  assert(pd->regs == regs);
   word original_rx = regs->rx;
   pd->buf_len = 0;
   PrintH("CreateOrOpenC: pd=%x regs=%x\n", pd, regs);
@@ -871,7 +873,6 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
 
   // Split the path to find 2nd (begin1/end1) and
   // 3rd (begin2/end2) words.  Ignore the 1st ("FUSE").
-  //X char *begin1=NULL, *end1=NULL, *begin2=NULL, *end2=NULL;
   word begin1=0, end1=0, begin2=0, end2=0;
   byte i = 0;
   errnum err = OKAY;
@@ -897,13 +898,13 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
         // TODO:  more than one name.
         begin2 = begin;
         end2 = end;
-        pd->buf_len = (end2 - begin2);  // TODO -- redundant?
         break;
       default:
         {}// Ignore extra names for now.
     }
   }
 
+  errnum z = 0;
   if (i==3 && ParsedNameEquals(begin1, end1, "DAEMON")) {
     z = OpenDaemon(pd, begin2, end2);
   } else if (i > 1) {
@@ -919,7 +920,7 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
 errnum CloseC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
   PrintH("PD.CPR: CloseC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
-  pd->regs = regs;
+  assert(pd->regs == regs);
   if (pd->is_daemon) {
     errnum err = Os9SRtMem(0x100, pd->daemon_buffer);
     assert(!err);
@@ -935,7 +936,7 @@ errnum CloseC(struct PathDesc* pd, struct Regs* regs) {
 errnum ReadLnC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
   PrintH("PD.CPR: ReadLnC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
-  pd->regs = regs;
+  assert(pd->regs == regs);
   if (pd->is_daemon) {
     z = E_BMODE;  // Daemon must use Read not ReadLn.
   } else {
@@ -948,7 +949,7 @@ errnum ReadLnC(struct PathDesc* pd, struct Regs* regs) {
 errnum WritLnC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
   PrintH("PD.CPR: WritLnC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
-  pd->regs = regs;
+  assert(pd->regs == regs);
   if (pd->is_daemon) {
     z = E_BMODE; // Daemon must use Write not WritLn.
   } else {
@@ -961,7 +962,7 @@ errnum WritLnC(struct PathDesc* pd, struct Regs* regs) {
 errnum ReadC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
   PrintH("PD.CPR: ReadC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
-  pd->regs = regs;
+  assert(pd->regs == regs);
   if (pd->is_daemon) {
     z = DaemonReadC(pd);
   } else {
@@ -974,7 +975,7 @@ errnum ReadC(struct PathDesc* pd, struct Regs* regs) {
 errnum WriteC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
   PrintH("PD.CPR: WriteC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
-  pd->regs = regs;
+  assert(pd->regs == regs);
   if (pd->is_daemon) {
     z = DaemonWriteC(pd);
   } else {
@@ -987,7 +988,7 @@ errnum WriteC(struct PathDesc* pd, struct Regs* regs) {
 errnum GetStatC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
   PrintH("PD.CPR: GetStatC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
-  pd->regs = regs;
+  assert(pd->regs == regs);
   z = 14;
   PrintH("PD.CPR: GetStatC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->open_count, pd->current_process_id, z);
   return z;
@@ -996,7 +997,7 @@ errnum GetStatC(struct PathDesc* pd, struct Regs* regs) {
 errnum SetStatC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
   PrintH("PD.CPR: SetStatC/ent pd=%x links=%x cpr=%x\n", pd, pd->open_count, pd->current_process_id);
-  pd->regs = regs;
+  assert(pd->regs == regs);
   z = 15;
   PrintH("PD.CPR: SetStatC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->open_count, pd->current_process_id, z);
   return z;
@@ -1006,11 +1007,8 @@ errnum SetStatC(struct PathDesc* pd, struct Regs* regs) {
 
 asm CreateOrOpenA() {
   asm {
-    PSHS Y,U ; push pathdesc & regs as args to the "C" function.
-    LDU #0   ; begin C frames
-    LDD #0
-    LDX #0
-    LDY #0   ; unneccesary cleanliness
+    PSHS Y,U ; Push U=regs then Y=pathdesc, as args to C fn, and to restore Y and U later.
+    LDU #0   ; Terminate frame pointer chain for CMOC.
     BSR _CreateOrOpenC  ; Call C function to do the work.
 
 ; Shared by all `asm ...A()` functions:
@@ -1027,77 +1025,56 @@ SkipComA
 }
 asm CloseA() {
   asm {
-    PSHS Y,U ; First push Y=pathdesc, then U=regs
-    LDU #0   ; begin C frames
-    LDD #0
-    LDX #0
-    LDY #0   ; unneccesary cleanliness
+    PSHS Y,U ; Push U=regs then Y=pathdesc, as args to C fn, and to restore Y and U later.
+    LDU #0   ; Terminate frame pointer chain for CMOC.
     BSR _CloseC  ; Call C function to do the work.
     LBRA BackToAssembly
   }
 }
 asm ReadLnA() {
   asm {
-    PSHS Y,U ; First push Y=pathdesc, then U=regs
-    LDU #0   ; begin C frames
-    LDD #0
-    LDX #0
-    LDY #0   ; unneccesary cleanliness
+    PSHS Y,U ; Push U=regs then Y=pathdesc, as args to C fn, and to restore Y and U later.
+    LDU #0   ; Terminate frame pointer chain for CMOC.
     BSR _ReadLnC  ; Call C function to do the work.
     LBRA BackToAssembly
   }
 }
 asm WritLnA() {
   asm {
-    PSHS Y,U ; First push Y=pathdesc, then U=regs
-    LDU #0   ; begin C frames
-    LDD #0
-    LDX #0
-    LDY #0   ; unneccesary cleanliness
+    PSHS Y,U ; Push U=regs then Y=pathdesc, as args to C fn, and to restore Y and U later.
+    LDU #0   ; Terminate frame pointer chain for CMOC.
     BSR _WritLnC  ; Call C function to do the work.
     LBRA BackToAssembly
   }
 }
 asm ReadA() {
   asm {
-    PSHS Y,U ; First push Y=pathdesc, then U=regs
-    LDU #0   ; begin C frames
-    LDD #0
-    LDX #0
-    LDY #0   ; unneccesary cleanliness
+    PSHS Y,U ; Push U=regs then Y=pathdesc, as args to C fn, and to restore Y and U later.
+    LDU #0   ; Terminate frame pointer chain for CMOC.
     BSR _ReadC  ; Call C function to do the work.
     LBRA BackToAssembly
   }
 }
 asm WriteA() {
   asm {
-    PSHS Y,U ; First push Y=pathdesc, then U=regs
-    LDU #0   ; begin C frames
-    LDD #0
-    LDX #0
-    LDY #0   ; unneccesary cleanliness
+    PSHS Y,U ; Push U=regs then Y=pathdesc, as args to C fn, and to restore Y and U later.
+    LDU #0   ; Terminate frame pointer chain for CMOC.
     BSR _WriteC  ; Call C function to do the work.
     LBRA BackToAssembly
   }
 }
 asm GetStatA() {
   asm {
-    PSHS Y,U ; First push Y=pathdesc, then U=regs
-    LDU #0   ; begin C frames
-    LDD #0
-    LDX #0
-    LDY #0   ; unneccesary cleanliness
+    PSHS Y,U ; Push U=regs then Y=pathdesc, as args to C fn, and to restore Y and U later.
+    LDU #0   ; Terminate frame pointer chain for CMOC.
     BSR _GetStatC  ; Call C function to do the work.
     LBRA BackToAssembly
   }
 }
 asm SetStatA() {
   asm {
-    PSHS Y,U ; First push Y=pathdesc, then U=regs
-    LDU #0   ; begin C frames
-    LDD #0
-    LDX #0
-    LDY #0   ; unneccesary cleanliness
+    PSHS Y,U ; Push U=regs then Y=pathdesc, as args to C fn, and to restore Y and U later.
+    LDU #0   ; Terminate frame pointer chain for CMOC.
     BSR _SetStatC  ; Call C function to do the work.
     LBRA BackToAssembly
   }
