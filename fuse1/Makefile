@@ -43,7 +43,7 @@ _run:
 	os9 attr -per $T,CMDS/x.cat
 	:
 	:
-	echo 'fuse.twice & sleep 5 ; x.cat -o /fuse/twice/boo startup ; dir ; x.cat /fuse/twice > z9 ; dump z9; list z9; proc; echo EXCELLENT ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
+	echo 'fuse.twice & sleep 5 ; x.cat -o /fuse/twice/boo startup ; dir ; x.cat /fuse/twice > z9 ; list z9; proc; date; date > /fuse/twice; list /fuse/twice > z1; list z1 ; date > /fuse/twice; list /fuse/twice > z1; list z1 ;  ' | os9 copy -r -l /dev/stdin ~/sy/doing_os9/gomar/drive/disk2,/startup
 	:
 	:
 	cd ~/sy/doing_os9/gomar &&  sh run2disk2.sh
