@@ -1,4 +1,4 @@
-all: fuse.twice ramd _generated_from_fusec_.a fuseman.os9 fuser.os9 fuse.os9 _run
+all: fuse.twice.os9 fuse.ramfile.os9 x.cat.os9 ramd _generated_from_fusec_.a fuseman.os9 fuser.os9 fuse.os9 _run
 
 XDEFDIR=/home/strick/go/src/github.com/strickyak/doing_os9/gomar/eouBeta610/udisk/sourcecode/asm/nitros9/
 DEFDIR=/dd/asm/nitros9/
@@ -14,9 +14,13 @@ clean:
 
 ramd:
 	cmoc -i --os9 -I.. ramd.c ../os9call/os9call.c
-fuse.twice:
+fuse.twice.os9:
 	cd /sy/frobio/frob2; make -B fuse.twice.os9
 	cp /sy/frobio/frob2/fuse.twice.os9 .
+fuse.ramfile.os9:
+	cd /sy/frobio/frob2; make -B fuse.ramfile.os9
+	cp /sy/frobio/frob2/fuse.ramfile.os9 .
+x.cat.os9:
 	cd /sy/frobio/frob2; make -B x.cat.os9
 	cp /sy/frobio/frob2/x.cat.os9 .
 
@@ -37,6 +41,8 @@ _run:
 	cd ~/go/src/github.com/n6il/nitros9/level2/coco3 && cp -v NOS9_6809_L2_v030300_coco3_80d.dsk ~/sy/doing_os9/gomar/drive/disk2
 	:
 	:
+	os9 copy -r fuse.ramfile.os9 $T,CMDS/fuse.ramfile
+	os9 attr -per $T,CMDS/fuse.ramfile
 	os9 copy -r fuse.twice.os9 $T,CMDS/fuse.twice
 	os9 attr -per $T,CMDS/fuse.twice
 	os9 copy -r x.cat.os9 $T,CMDS/x.cat

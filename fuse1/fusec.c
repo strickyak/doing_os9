@@ -1,3 +1,49 @@
+// fusec.c -- FUSE file manager.
+//
+// Copyright 2023 Henry Strickland (strickyak).  MIT License.
+//
+// This is CMOC source for a Fuse File Manager for NitrOS9 Level II.
+// This is a Work In Progress, but basic functionaly works as long as
+// things are small (use well under 256 bytes per message) and one
+// thing happens at a time.
+//
+// ( See https://en.wikipedia.org/wiki/Filesystem_in_Userspace )
+//
+// This compiles with CMOC to assembly, and is then included in fuseman.asm
+// as the file _generated_from_fusec_.a
+// There is also fuser.asm (the driver) and fuse.asm (the device descriptor).
+//
+// This won't do much alone.  You need one or more specially-writen daemons,
+// which are user mode processes that function as back-end services to implement
+// virtual devices for Fuse.  The clients use the normal OS9 I$... filesystem
+// operations to communicate with Fuse.
+//
+// cf. https://en.wikipedia.org/wiki/Filesystem_in_Userspace
+
+/*
+   The MIT License (MIT)
+
+Copyright (c) 2023 Henry Strickland
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 typedef unsigned char bool;
 typedef unsigned char byte;
 typedef unsigned char errnum;
@@ -316,28 +362,14 @@ SendBad
   return err;
 }
 
-void Os9WakeUpPathDescCurrentProcess(struct PathDesc* pd) {
-/*
- * Excerpt from level1/modules/pipeman.asm
- *
-L009C    lda   P.CPR,x    get process ID that's reading/writing
-         beq   L00A9      if none
-         ldb   P.SIG,x    get signal code
-         beq   L00A9
-         clr   P.SIG,x
-         os9   F$Send     send a wake-up signal to the process
-L00A9    clrb
-         rts
- *
- */
-  // PrintH(" Send from=%x to=%x signal=%x\n", Os9CurrentProcessId(), to_pid, signal);
+void Os9AwakenIOQN(struct PathDesc* pd) {
   errnum err;
   byte to_pid;
   asm {
     PSHS Y,U       ; save frame
 
-    ldx pd
-    lda PD.CPR,x
+    ldx <D.Proc
+    lda P$IOQN,x
     sta to_pid
     beq NoOneToWake
 
@@ -350,12 +382,13 @@ NoOneToWake
     PULS Y,U       ; restore frame
   }
   if (to_pid) {
-    PrintH("Os9WakeUpPathDescCurrentProcess: Sent wakeup from=%x to=%x\n", Os9CurrentProcessId(), to_pid);
+    PrintH("Os9AwakenIOQN: Sent wakeup from=%x to=%x\n", Os9CurrentProcessId(), to_pid);
   } else {
-    PrintH("Os9WakeUpPathDescCurrentProcess: Zero PD.CPR.");
+    PrintH("Os9AwakenIOQN: Zero PD.CPR.");
   }
 }
-errnum Awaken(struct PathDesc* pd) {
+
+errnum Os9Awaken(struct PathDesc* pd) {
   byte to_pid = pd->paused_proc_id;
   assert(to_pid > 0); // TODO: no need to wake, if 0.
   return Os9Send(to_pid, 1);  // Wakeup Signal.
@@ -662,7 +695,7 @@ void SwitchProcess(struct PathDesc* from, struct PathDesc* to) {
     assert(timeout > 0);
   }
   // Awaken the "to" process.
-  Awaken(to);
+  Os9Awaken(to);
   // Now go to sleep.
   Os9Pause(from);
 }
@@ -777,8 +810,8 @@ errnum DaemonWriteC(struct PathDesc* dae) {
   dae->current_process_id = 0; // PD.CPR: Nobody owns me.
 
   // Time for the client to wake up.
-  Awaken(cli);
-  Os9WakeUpPathDescCurrentProcess(cli);
+  Os9Awaken(cli);
+  Os9AwakenIOQN(cli);
 
   return OKAY;
 }
@@ -865,10 +898,30 @@ errnum ClientOperationC(struct PathDesc* cli, byte op) {
     case OP_READLN:
       break;
     case OP_WRITE:
-    case OP_WRITLN:
       if (cli->buf_len) {
         cli->buf_len += cli->regs->ry;
         MoveToKernel(dae, cli->regs->rx, cli->buf_len, sizeof *request);
+      }
+      break;
+    case OP_WRITLN:
+      if (cli->buf_len) {
+        // We will move the entire user process buffer into the kernel buffer,
+        // because it will be hard to find terminating characters in user space.
+        MoveToKernel(dae, cli->regs->rx, cli->regs->ry + sizeof *request, sizeof *request);
+
+        // WritLn should stop at \r or \n or if we encounter \0.
+        word i;
+        for (i = 0; i < cli->regs->ry; i++) {
+          char ch = payload[i];
+          if (ch=='\0') break;
+          if (ch=='\n' || ch=='\r') {
+            i++;  // Keep the \n or \r
+            break;
+          }
+        }
+        // Now adjust the requested size and buf_len to stop at i.
+        request->size = i;
+        cli->buf_len = i + sizeof *request;
       }
       break;
     default:
@@ -932,7 +985,7 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
   word original_rx = regs->rx;
   pd->buf_len = 0;
   PrintH("CreateOrOpenC: pd=%x regs=%x\n", pd, regs);
-  PrintH("PD.CPR: CreateOrOpenC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
+  PrintH("@ CreateOrOpenC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
 
   // Split the path to find 2nd (begin1/end1) and
   // 3rd (begin2/end2) words.  Ignore the 1st ("FUSE").
@@ -976,14 +1029,21 @@ errnum CreateOrOpenC(struct PathDesc* pd, struct Regs* regs) {
     PrintH("\nFATAL: CreateOrOpenC: BAD NAME\n");
     z = E_BNAM;
   }
-  PrintH("PD.CPR: CreateOrOpenC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
+  PrintH("@ CreateOrOpenC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
   return z;
 }
 
 errnum CloseC(struct PathDesc* pd, struct Regs* regs) {
-  errnum z;
-  PrintH("PD.CPR: CloseC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
+  errnum z = 0;
+  PrintH("@ CloseC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
   assert(pd->regs == regs);
+
+  if (pd->link_count) {
+    Os9AwakenIOQN(pd);
+    PrintH("@ CloseC/retEarly pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
+    return OKAY;
+  }
+
   if (pd->is_daemon) {
     struct PathDesc* dae = pd;
     CheckDaemon(dae);
@@ -997,77 +1057,77 @@ errnum CloseC(struct PathDesc* pd, struct Regs* regs) {
     z = ClientOperationC(cli, OP_CLOSE);
     ClearPeer(cli, cli->peer); // Finally unlink the daemon when client is closed.
   }
-  PrintH("PD.CPR: CloseC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
+  PrintH("@ CloseC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
   return z;
 }
 
 errnum ReadLnC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
-  PrintH("PD.CPR: ReadLnC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
+  PrintH("@ ReadLnC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
   assert(pd->regs == regs);
   if (pd->is_daemon) {
     z = E_BMODE;  // Daemon must use Read not ReadLn.
   } else {
     z = ClientOperationC(pd, OP_READLN);
   }
-  PrintH("PD.CPR: ReadLnC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
+  PrintH("@ ReadLnC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
   return z;
 }
 
 errnum WritLnC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
-  PrintH("PD.CPR: WritLnC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
+  PrintH("@ WritLnC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
   assert(pd->regs == regs);
   if (pd->is_daemon) {
     z = E_BMODE; // Daemon must use Write not WritLn.
   } else {
     z = ClientOperationC(pd, OP_WRITLN);
   }
-  PrintH("PD.CPR: WritLnC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
+  PrintH("@ WritLnC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
   return z;
 }
 
 errnum ReadC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
-  PrintH("PD.CPR: ReadC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
+  PrintH("@ ReadC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
   assert(pd->regs == regs);
   if (pd->is_daemon) {
     z = DaemonReadC(pd);
   } else {
     z = ClientOperationC(pd, OP_READ);
   }
-  PrintH("PD.CPR: ReadC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
+  PrintH("@ ReadC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
   return z;
 }
 
 errnum WriteC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
-  PrintH("PD.CPR: WriteC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
+  PrintH("@ WriteC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
   assert(pd->regs == regs);
   if (pd->is_daemon) {
     z = DaemonWriteC(pd);
   } else {
     z = ClientOperationC(pd, OP_WRITE);
   }
-  PrintH("PD.CPR: WriteC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
+  PrintH("@ WriteC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
   return z;
 }
 
 errnum GetStatC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
-  PrintH("PD.CPR: GetStatC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
+  PrintH("@ GetStatC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
   assert(pd->regs == regs);
   z = 14;
-  PrintH("PD.CPR: GetStatC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
+  PrintH("@ GetStatC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
   return z;
 }
 
 errnum SetStatC(struct PathDesc* pd, struct Regs* regs) {
   errnum z;
-  PrintH("PD.CPR: SetStatC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
+  PrintH("@ SetStatC/ent pd=%x links=%x cpr=%x\n", pd, pd->link_count, pd->current_process_id);
   assert(pd->regs == regs);
   z = 15;
-  PrintH("PD.CPR: SetStatC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
+  PrintH("@ SetStatC/ret pd=%x links=%x cpr=%x z=%x\n", pd, pd->link_count, pd->current_process_id, z);
   return z;
 }
 
