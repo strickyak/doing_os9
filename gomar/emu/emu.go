@@ -141,14 +141,10 @@ func ReadLinkerMap() {
 	sort.Sort(LinkerMap)
 }
 
-func FatalCoreDump() {
-	const NAME = "/tmp/coredump09"
-
-	ReadLinkerMap()
-
-	fd, err := os.Create(NAME)
+func CoreDump(filename string) {
+	fd, err := os.Create(filename)
 	if err != nil {
-		log.Fatalf("cannot create %q: %v", NAME, err)
+		log.Fatalf("cannot create %q: %v", filename, err)
 	}
 	w := bufio.NewWriter(fd)
 	for i := 0; i < 0x10000; i++ {
@@ -164,6 +160,14 @@ func FatalCoreDump() {
 	w.WriteByte(DPRegEA.GetB())
 	w.Flush()
 	fd.Close()
+}
+
+func FatalCoreDump() {
+	const NAME = "/tmp/coredump09"
+
+	ReadLinkerMap()
+	CoreDump(NAME)
+
 	fmt.Printf(" ... Wrote %q ... Begin Frame Chain\n", NAME)
 
 	fp := EA(URegEA.GetW())
