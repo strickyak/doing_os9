@@ -19,6 +19,7 @@ import (
 	"strings"
 )
 
+var FlagTerm = flag.String("term", "Term", "name of terminal device")
 var FlagLinkerMapFilename = flag.String("map", "", "")
 var FlagBootImageFilename = flag.String("boot", "", "")
 var FlagKernelFilename = flag.String("kernel", "", "")
@@ -1408,39 +1409,9 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 	case 0x8C:
 		s = "I$WritLn : Write Line of ASCII Data"
 		{
-			// p = F("%q ", EscapeStringThruCrOrMax(xreg, yreg))
-
-			//			if true || !hyp {
-			//				path_num := GetAReg()
-			//				proc := PeekW(sym.D_Proc)
-			//				path := PeekB(proc + P_Path + Word(path_num))
-			//				pathDBT := PeekW(sym.D_PthDBT)
-			//				q := PeekW(pathDBT + (Word(path) >> 2))
-			//				p += F("path_num=%x proc=%x path=%x dbt=%x q=%x ", path_num, proc, path, pathDBT, q)
-			//				if q != 0 {
-			//					pd := q + 64*(Word(path)&3)
-			//					dev := PeekW(pd + sym.PD_DEV)
-			//					p += F("pd=%x dev=%x ", pd, dev)
-			//					desc := PeekW(dev + sym.V_DESC)
-			//					name := ModuleName(PeekW(dev + sym.V_DESC))
-			//					p += F("desc=%x=%s ", desc, name)
-			//					if name == "Term" {
-			//						//fmt.Printf("%s", PrintableStringThruEOS(xreg, yreg))
-			//						p += F(" Term: %q", PrintableStringThruCrOrMax(xreg, yreg))
-			//					}
-			//				}
-			//			}
-
-			var path_num byte
-			var proc Word
-			var path byte
-			WithMmuTask(0, func() {
-				path_num = GetAReg()
-				proc = PeekW(sym.D_Proc)
-				path = PeekB(proc + P_Path + Word(path_num))
-			})
-			_ = path
-			WithMmuTask(1, func() {
+			path := GetAReg()
+			if IsTermPath(path) {
+				//WithMmuTask(1, func() {
 				str := PrintableStringThruEOS(xreg, yreg)
 				// fmt.Printf("%s", str)
 
@@ -1452,8 +1423,9 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 						Disp.PutChar(ch)
 					}
 				}
-			})
+				//}) // WithMmuTask
 
+			} // if IsTermPath(path)
 		}
 
 	case 0x8D:

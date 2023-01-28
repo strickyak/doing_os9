@@ -1090,3 +1090,43 @@ func HandleBtBug() {
 		}
 	}
 }
+
+func IsTermPath(path byte) bool {
+	isTerm := false
+	kpath := path
+	task := MmuTask & 1
+	WithMmuTask(0, func() {
+		proc := PeekW(sym.D_Proc)
+		procID := PeekB(proc + sym.P_ID)
+		if task == 1 {
+			// User mode: translate path to kernel path.
+			kpath = PeekB(proc + P_Path + Word(path))
+		}
+		pathDBT := PeekW(sym.D_PthDBT)
+		// fmt.Printf(" [dbt:%x] ", pathDBT)
+
+		for i := Word(0); i < 8; i++ {
+			// fmt.Printf(" [%x:%x] ", i, PeekW(pathDBT+2*i))
+		}
+
+		var pdPage Word
+		if kpath > 3 {
+			pdPage = PeekW(pathDBT + 2*(Word(kpath)>>2))
+		} else {
+			pdPage = pathDBT
+		}
+		if pdPage != 0 {
+			pd := pdPage + 64*(Word(kpath)&3)
+			dev := PeekW(pd + sym.PD_DEV)
+			desc := PeekW(dev + sym.V_DESC)
+			name := ModuleName(desc)
+			_ = procID
+			// fmt.Printf("<<< #%d %x.t%x.p%x/kpath=%x/dbt=%x/page=%x/pd=%x/dev=%x/desc=%x/name=%s>>>", Steps, procID, task, path, kpath, pathDBT, pdPage, pd, dev, desc, name)
+			if (pdPage & 255) != 0 {
+				// CoreDump(fmt.Sprintf("/tmp/core#%d", Steps))
+			}
+			isTerm = (name == *FlagTerm)
+		}
+	})
+	return isTerm
+}
