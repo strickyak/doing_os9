@@ -1341,66 +1341,14 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 
 	case 0x8A:
 		s = "I$Write  : Write Data"
-		if true || !hyp {
-			begin, length := xreg, yreg
+		path := GetAReg()
+		if IsTermPath(path) {
 
-			WithMmuTask(1, func() {
-				p = PrintableMemory(xreg, yreg)
-			})
+			// WithMmuTask(1, func() {
+			p = PrintableMemory(xreg, yreg)
+			// })
 
-			path_num := GetAReg()
-			proc := PeekW(sym.D_Proc)
-
-			/*
-
-							TODO: figure out DBT vs DTE, and where is /term
-
-				68SDC/sourcecode/asm/nitros9/scf/cowin_beta3.asm
-
-				* Get ptr to device table
-				* Entry: X=Pointer to process descriptor
-				*        B=Path block # to get
-				* Exit : Y=Pointer to device table entry
-				L0592    leax  P$Path,x       get pointer to path #'s
-				* Added next line to protect regB from os9 F$Find64 error report. RG
-				         pshs  b
-				         lda   b,x            get path block
-				         ldx   <D.PthDBT      get pointer to descriptor block table
-				         os9   F$Find64       get pointer to path descriptor
-				         ldy   PD.DEV,y       get pointer to device table entry
-				         puls  b,pc           return
-
-			*/
-
-			var pathDBT, q Word
-			var pid, path byte
-			if proc != 0 {
-				pid = PeekB(proc + sym.P_ID)
-				path = PeekB(proc + P_Path + Word(path_num))
-				pathDBT = PeekW(sym.D_PthDBT)
-				q = PeekW(pathDBT + (Word(path) >> 2))
-			}
-
-			if false {
-				if q != 0 {
-					pd := q + 64*(Word(path)&3)
-					dev := PeekW(pd + sym.PD_DEV)
-					p += F("pd=%x dev=%x ", pd, dev)
-					desc := PeekW(dev + sym.V_DESC)
-					name := ModuleName(PeekW(dev + sym.V_DESC))
-					p += F("desc=%x=%s ", desc, name)
-					if name == "Term" {
-						addy := MapAddr(xreg, true)
-						sz := int(yreg)
-						//fmt.Printf("%s", string(mem[addy:addy+int(uint(yreg))]))
-						p += F(" Term: %q", string(mem[addy:addy+sz]))
-						fmt.Printf("(%d)<[%s]>", sz, string(mem[addy:addy+sz])) // Bug: if crosses mem block.
-					}
-				}
-			}
-			//# fmt.Printf("<%s>", p)
 			fmt.Printf("%s", p)
-			_, _, _ = begin, length, pid
 		}
 
 	case 0x8B:
