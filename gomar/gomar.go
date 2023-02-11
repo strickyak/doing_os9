@@ -85,7 +85,7 @@ import (
 )
 
 var FlagCpuProfile = flag.String("cpuprofile", "", "write cpu profile to file")
-var FlagMemProfile = flag.String("memprofile", "", "write cpu profile to file")
+var FlagMemProfile = flag.String("memprofile", "", "write memory profile to file")
 var FlagTTL = flag.Duration("ttl", 300*1000*1000*1000*time.Nanosecond, "Max duration to live, or 0 for unlimited")
 
 func main() {
