@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 )
 
 type socket struct {
@@ -20,17 +21,17 @@ type socket struct {
 		rxRead  Word
 		rxWrite Word
 	*/
-		mode    byte
-		status  byte
-	conn *net.UDPConn
+	mode   byte
+	status byte
+	conn   *net.UDPConn
 }
 
 var sock [4]*socket
 
 func init() {
-    for i:=0; i<4; i++ {
-        sock[i] = new(socket);
-    }
+	for i := 0; i < 4; i++ {
+		sock[i] = new(socket)
+	}
 }
 
 var wizMem [1 << 16]byte
@@ -58,8 +59,8 @@ func assert_w_lt(a Word, b Word) {
 }
 
 func putWizWord(reg Word, value Word) {
-    wizMem[reg] = byte(value >> 8)
-    wizMem[reg+1] = byte(value)
+	wizMem[reg] = byte(value >> 8)
+	wizMem[reg+1] = byte(value)
 }
 func wizWord(reg Word) Word {
 	hi := wizMem[reg]
@@ -68,6 +69,9 @@ func wizWord(reg Word) Word {
 }
 
 func wizReset() {
+	for i := range wizMem {
+		wizMem[i] = 0
+	}
 	// tx := Word(0x4000)
 	// rx := Word(0x6000)
 	for _, s := range sock {
@@ -151,14 +155,14 @@ func wizPutStatus(a Word, b byte) {
 	log.Panicf("Socket Status is a RO register: %x %x", a, b)
 }
 func wizPutInterrupt(a Word, b byte) {
-    x := wizMem[a]
-    x &^= b            // clear the bits that are set in b.
-    wizMem[a] = x
+	x := wizMem[a]
+	x &^= b // clear the bits that are set in b.
+	wizMem[a] = x
 }
 func wizPutCommand(a Word, b byte) {
 	base := a - 1
 	k := (a >> 8) - 4
-    log.Printf("wizPutCommand a=%x b=%x base=%x k=%x; sock=%#v", a, b, base, k, sock)
+	log.Printf("wizPutCommand a=%x b=%x base=%x k=%x; sock=%#v", a, b, base, k, sock)
 	assert_w_lt(k, 4)
 	txRing := 0x4000 + 0x800*k
 	rxRing := 0x6000 + 0x800*k
@@ -176,6 +180,7 @@ func wizPutCommand(a Word, b byte) {
 			hostport := fmt.Sprintf(":%d", wizWord(base+0x04))
 			sock[k].conn = listenUDP(hostport)
 			wizMem[3+base] = 0x22 // Status is SOCK_UDP.
+			Ld("WIZ: UDP OPEN socket %d", k)
 		}
 
 	case 0x10:
@@ -185,6 +190,7 @@ func wizPutCommand(a Word, b byte) {
 				sock[k].conn = nil
 			}
 			wizMem[3+base] = 0x00 // Status is SOCK_CLOSED.
+			Ld("WIZ: UDP CLOSE socket %d", k)
 		}
 	case 0x20:
 		{ // send
@@ -199,7 +205,6 @@ func wizPutCommand(a Word, b byte) {
 			assert_w_lt(size, 700) // reasonable for now
 
 			buf := make([]byte, size)
-			//? p := begin
 			for i := Word(0); i < size; i++ {
 				p := (begin + i) & 0x7FF
 				buf[i] = wizMem[p+txRing]
@@ -222,13 +227,18 @@ func wizPutCommand(a Word, b byte) {
 			putWizWord(base+TxRd, end)
 			// Set "interrupt" bit for SENDOK
 			wizMem[base+2] |= (1 << 4) // SENDOK Interrupt Bit.
+			Ld("WIZ: UDP SEND socket %d to %q size $%x", k, hostport, size)
 		}
 	case 0x40:
 		{ // recv
+			Ld("WIZ: UDP RECV socket %d", k)
 			buf := make([]byte, 1500)
 			size, addr, err := sock[k].conn.ReadFromUDP(buf)
-            if err != nil { panic(err) }
-            _ = addr  // TODO use addr
+			Ld("WIZ: UDP RECV socket %d got size $%x addr %v err $%x", k, size, addr, err)
+			if err != nil {
+				panic(err)
+			}
+			_ = addr                     // TODO use addr
 			assert_w_gt(Word(size), 2)   // reasonable for now
 			assert_w_lt(Word(size), 700) // reasonable for now
 
@@ -248,11 +258,6 @@ func wizPutCommand(a Word, b byte) {
 		}
 	}
 }
-func wizReset() {
-	for i := range wizMem {
-		wizMem[i] = 0
-	}
-}
 func wizMode(b byte) {
 	if (b & 0x80) != 0 {
 		wizReset()
@@ -262,6 +267,7 @@ func wizSocketlessCommand(b byte) {
 	panic("todo")
 }
 func wizPut(a Word, b byte) {
+	Ld("WIZ:PUT %04x <- %02x", a, b)
 	wizMem[a] = b
 	switch a {
 	case 0:
@@ -289,8 +295,8 @@ func wizPut(a Word, b byte) {
 	}
 }
 
-func TimerByte(a) byte {
-	ticks := time.Now().UnixMicro / 100 // 100us ticks.
+func TimerByte(a Word) byte {
+	ticks := time.Now().UnixMicro() / 100 // 100us ticks.
 	switch a {
 	case 0x0082:
 		return byte(ticks >> 8)
@@ -299,19 +305,53 @@ func TimerByte(a) byte {
 	}
 	panic(0)
 }
-func wizSocketlessInterruptReg(b byte) byte {
-	panic("todo")
+func wizSocketlessInterruptReg() byte {
+	return 0x04 // just say it timed out. // p38 3.1.40
 }
 func wizGet(a Word) byte {
+	var z byte
 	switch a {
 	case 0x005F:
-		wizSocketlessInterruptReg(b)
+		z = wizSocketlessInterruptReg()
 
 	case 0x0082,
 		0x0083:
-		return TimerByte(a)
+		z = TimerByte(a)
+
+	case 0x0401,
+		0x0501,
+		0x0601,
+		0x0701:
+		z = 0 // Simulate command is finished.
+
+	case 0x0420,
+		0x0520,
+		0x0620,
+		0x0720:
+		z = 0x04 // Simulate 1K Tx free size (MSB)
+
+	case 0x0421,
+		0x0521,
+		0x0621,
+		0x0721:
+		z = 0 // Simulate 1K Tx free size (LSB)
+
+	case 0x0426,
+		0x0526,
+		0x0626,
+		0x0726:
+		z = 0x04 // Simulate 1K Rx free size (MSB)
+
+	case 0x0427,
+		0x0527,
+		0x0627,
+		0x0727:
+		z = 0 // Simulate 1K Rx free size (LSB)
 
 	default:
-		return wizMem[a]
+		z = wizMem[a]
 	}
+
+	Ld("WIZ:GET %04x -> %02x", a, z)
+	return z
 }
