@@ -22,6 +22,8 @@ import (
 var FlagTerm = flag.String("term", "Term", "name of terminal device")
 var FlagLinkerMapFilename = flag.String("map", "", "")
 var FlagBootImageFilename = flag.String("boot", "", "")
+var FlagLoadmFilename = flag.String("loadm", "", "")
+var FlagCartFilename = flag.String("cart", "", "")
 var FlagKernelFilename = flag.String("kernel", "", "")
 var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
@@ -1342,13 +1344,13 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 	case 0x8A:
 		s = "I$Write  : Write Data"
 		path := GetAReg()
-		if IsTermPath(path) {
+		if true || IsTermPath(path) {
 
 			// WithMmuTask(1, func() {
 			p = PrintableMemory(xreg, yreg)
 			// })
 
-			fmt.Printf("%s", p)
+			fmt.Printf("<%s>", p)
 		}
 
 	case 0x8B:
@@ -1358,13 +1360,13 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 		s = "I$WritLn : Write Line of ASCII Data"
 		{
 			path := GetAReg()
-			if IsTermPath(path) {
+			if true || IsTermPath(path) {
 				//WithMmuTask(1, func() {
 				str := PrintableStringThruEOS(xreg, yreg)
 				// fmt.Printf("%s", str)
 
 				// p = fmt.Sprintf("[%d/%d/%d/%q]", proc, path_num, path, str)
-				fmt.Printf("%s", str)
+				fmt.Printf("[%s]", str)
 
 				for _, ch := range []byte(str) {
 					if Disp != nil {
@@ -3051,6 +3053,38 @@ func init() {
 
 const MaxUint64 = 0xFFFFFFFFFFFFFFFF
 
+func Cart(cart []byte) Word {
+	size := Word(len(cart))
+	for i := Word(0); i < size; i++ {
+		PokeB(0xC000+i, cart[i])
+	}
+	if PeekB(0xC000) == 'D' && PeekB(0xC001) == 'K' {
+		return 0xC002
+	}
+	return 0xC000
+}
+
+func Loadm(loadm []byte) Word {
+	size := Word(len(loadm))
+	i := Word(0)
+	for i < size {
+		switch loadm[i] {
+		case 0x00:
+			n := HiLo(loadm[i+1], loadm[i+2])
+			p := HiLo(loadm[i+3], loadm[i+4])
+			for j := Word(0); j < n; j++ {
+				PokeB(p+j, loadm[i+5+j])
+			}
+			i += 5 + n
+		case 0xFF:
+			return HiLo(loadm[i+3], loadm[i+4])
+		default:
+			panic("bad clause  in loadm")
+		}
+	}
+	panic("no end to loadm")
+}
+
 func Main() {
 	CompileWatches()
 	SetVerbosityBits(*FlagInitialVerbosity)
@@ -3061,34 +3095,48 @@ func Main() {
 	CocodChan := make(chan *display.CocoDisplayParams, 50)
 	Disp = display.NewDisplay(mem[:], 80, 25, CocodChan, keystrokes)
 
-	{
-		// Open disk image.
-		fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
-		if err != nil {
-			log.Fatalf("Cannot open disk image: %q: %v", *FlagBootImageFilename, err)
-		}
-		disk_fd = fd
-	}
-
-	{
-		// Read disk_sector_0.
-		n, err := disk_fd.Read(disk_sector_0[:])
-		if err != nil {
-			log.Panicf("Bad disk sector read: err=%v", err)
-		}
-		if n != 256 {
-			log.Panicf("Short disk sector read: n=%d", n)
-		}
-
-		disk_dd_fmt = disk_sector_0[16]
-
-		tracks_per_sector := int(disk_sector_0[17])*256 + int(disk_sector_0[18])
-		if tracks_per_sector != 18 {
-			log.Panicf("Not 18 sectors per track: %d.", tracks_per_sector)
-		}
-	}
-
 	if *FlagBootImageFilename != "" {
+		{
+			// Open disk image.
+			fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
+			if err != nil {
+				log.Fatalf("Cannot open disk image: %q: %v", *FlagBootImageFilename, err)
+			}
+			disk_fd = fd
+		}
+
+		{
+			// Read disk_sector_0.
+			n, err := disk_fd.Read(disk_sector_0[:])
+			if err != nil {
+				log.Panicf("Bad disk sector read: err=%v", err)
+			}
+			if n != 256 {
+				log.Panicf("Short disk sector read: n=%d", n)
+			}
+
+			disk_dd_fmt = disk_sector_0[16]
+
+			tracks_per_sector := int(disk_sector_0[17])*256 + int(disk_sector_0[18])
+			if tracks_per_sector != 18 {
+				log.Panicf("Not 18 sectors per track: %d.", tracks_per_sector)
+			}
+		}
+	}
+
+	if *FlagCartFilename != "" {
+		cart, err := ioutil.ReadFile(*FlagCartFilename)
+		if err != nil {
+			log.Fatalf("Cannot read cart image: %q: %v", *FlagCartFilename, err)
+		}
+		pcreg = Cart(cart)
+	} else if *FlagLoadmFilename != "" {
+		loadm, err := ioutil.ReadFile(*FlagLoadmFilename)
+		if err != nil {
+			log.Fatalf("Cannot read loadm image: %q: %v", *FlagLoadmFilename, err)
+		}
+		pcreg = Loadm(loadm)
+	} else if *FlagBootImageFilename != "" {
 		boot, err := ioutil.ReadFile(*FlagBootImageFilename)
 		if err != nil {
 			log.Fatalf("Cannot read boot image: %q: %v", *FlagDiskImageFilename, err)
@@ -3141,6 +3189,7 @@ func Main() {
 	stepsUntilTimer := *FlagClock
 	early := true
 	for Steps = uint64(0); Steps < max; Steps++ {
+		// log.Printf("t=%09x steps=%09x pc=%x", *FlagTraceAfter, Steps, pcreg)
 		if early {
 			early = EarlyAction()
 		}
