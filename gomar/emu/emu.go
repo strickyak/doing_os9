@@ -3096,6 +3096,7 @@ func Main() {
 
 	if *FlagBootImageFilename != "" {
 		{
+			// TODO: this code is duplicated????? Search for FlagBootImageFilename and find the other one.
 			// Open disk image.
 			fd, err := os.OpenFile(*FlagDiskImageFilename, os.O_RDWR, 0644)
 			if err != nil {
@@ -3136,6 +3137,10 @@ func Main() {
 		}
 		pcreg = Loadm(loadm)
 	} else if *FlagBootImageFilename != "" {
+		// Loading a binary file skipping the first 256 bytes of RAM
+		// and starting pcreg of 0x100 was a convention from the sbc09.c code.
+		// This is probably not the right thing for a coco emulator,
+		// but I started using it in the early days, and haven't switched away yet.
 		boot, err := ioutil.ReadFile(*FlagBootImageFilename)
 		if err != nil {
 			log.Fatalf("Cannot read boot image: %q: %v", *FlagDiskImageFilename, err)
