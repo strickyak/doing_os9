@@ -33,7 +33,6 @@ var FlagWatch = flag.String("watch", "", "Sequence of module:addr:reg:message,..
 var FlagTriggerPc = flag.Uint64("trigger_pc", 0xC00D, "")
 var FlagTriggerOp = flag.Uint64("trigger_op", 0x17, "")
 var FlagTraceOnOS9 = flag.String("trigger_os9", "", "")
-var FlagRom = flag.String("rom", "", "filename of rom; write-protect above 0x8000")
 var RegexpTraceOnOS9 *regexp.Regexp
 
 type Watch struct {
