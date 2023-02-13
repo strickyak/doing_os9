@@ -13,6 +13,12 @@ import (
 	"strings"
 )
 
+var romMode bool
+
+func EnableRomMode(b bool) {
+	romMode = b
+}
+
 // While booting OS9 Level2, the screen seems to be doubleByte
 // at 07c000 to 07d000.  Second line begins at 07c0a0,
 // that is 160 bytes from start, or 80 doubleBytes.
@@ -254,8 +260,12 @@ func B(addr Word) byte {
 }
 
 func PokeB(addr Word, b byte) {
-	mapped := MapAddr(addr, true)
-	mem[mapped] = b
+	if romMode && 0x8000 <= addr && addr < 0xFF00 {
+		L("ROM MODE inhibits write")
+	} else {
+		mapped := MapAddr(addr, true)
+		mem[mapped] = b
+	}
 }
 
 func PeekB(addr Word) byte {
@@ -267,18 +277,22 @@ func PeekB(addr Word) byte {
 
 // PutB is fundamental func to set byte.  Hack register access into here.
 func PutB(addr Word, x byte) {
-	mapped := MapAddr(addr, false)
-	old := mem[mapped]
-	mem[mapped] = x
-	if TraceMem {
-		Ld("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
-	}
-	if addr == 0x5d45 { // XXX
-		L("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
-	}
-	if AddressInDeviceSpace(addr) {
-		PutIOByte(addr, x)
-		Ld("PutIO (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
+	if romMode && 0x8000 <= addr && addr < 0xFF00 {
+		L("ROM MODE inhibits write")
+	} else {
+		mapped := MapAddr(addr, false)
+		old := mem[mapped]
+		mem[mapped] = x
+		if TraceMem {
+			Ld("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
+		}
+		if addr == 0x5d45 { // XXX
+			L("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
+		}
+		if AddressInDeviceSpace(addr) {
+			PutIOByte(addr, x)
+			Ld("PutIO (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
+		}
 	}
 }
 
@@ -734,6 +748,7 @@ func GetCocoDisplayParams() *display.CocoDisplayParams {
 	c := PeekB(0xFF9C)
 	d := PeekB(0xFF9F)
 	z := &display.CocoDisplayParams{
+		BasicText:       *FlagBasicText,
 		Gime:            true,
 		Graphics:        (a>>7)&1 != 0,
 		AttrsIfAlpha:    (a>>6)&1 != 0,
@@ -940,6 +955,9 @@ func PutGimeIOByte(a Word, b byte) {
 	}
 }
 func MemoryModuleOf(addr Word) (name string, offset Word) {
+	if romMode {
+		return "(rom)", addr
+	}
 	// TODO: speed up with caching.
 	if addr >= 0xFF00 {
 		log.Panicf("PC in IO page: $%x", addr)

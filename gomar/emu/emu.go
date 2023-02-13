@@ -24,10 +24,13 @@ var FlagLinkerMapFilename = flag.String("map", "", "")
 var FlagBootImageFilename = flag.String("boot", "", "")
 var FlagLoadmFilename = flag.String("loadm", "", "")
 var FlagCartFilename = flag.String("cart", "", "")
+var FlagRom8000Filename = flag.String("rom_8000", "", "")
+var FlagRomA000Filename = flag.String("rom_a000", "", "")
 var FlagKernelFilename = flag.String("kernel", "", "")
 var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
+var FlagBasicText = flag.Bool("basic_text", false, "")
 
 var FlagWatch = flag.String("watch", "", "Sequence of module:addr:reg:message,...")
 var FlagTriggerPc = flag.Uint64("trigger_pc", 0xC00D, "")
@@ -1343,13 +1346,9 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 	case 0x8A:
 		s = "I$Write  : Write Data"
 		path := GetAReg()
-		if true || IsTermPath(path) {
-
-			// WithMmuTask(1, func() {
+		if IsTermPath(path) {
 			p = PrintableMemory(xreg, yreg)
-			// })
-
-			fmt.Printf("<%s>", p)
+			fmt.Printf("%s", p)
 		}
 
 	case 0x8B:
@@ -1359,22 +1358,16 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 		s = "I$WritLn : Write Line of ASCII Data"
 		{
 			path := GetAReg()
-			if true || IsTermPath(path) {
-				//WithMmuTask(1, func() {
+			if IsTermPath(path) {
 				str := PrintableStringThruEOS(xreg, yreg)
-				// fmt.Printf("%s", str)
-
-				// p = fmt.Sprintf("[%d/%d/%d/%q]", proc, path_num, path, str)
-				fmt.Printf("[%s]", str)
+				fmt.Printf("%s", str)
 
 				for _, ch := range []byte(str) {
 					if Disp != nil {
 						Disp.PutChar(ch)
 					}
 				}
-				//}) // WithMmuTask
-
-			} // if IsTermPath(path)
+			}
 		}
 
 	case 0x8D:
@@ -3052,6 +3045,13 @@ func init() {
 
 const MaxUint64 = 0xFFFFFFFFFFFFFFFF
 
+func Rom(start Word, rom []byte) {
+	size := Word(len(rom))
+	for i := Word(0); i < size; i++ {
+		PokeB(start+i, rom[i])
+	}
+}
+
 func Cart(cart []byte) Word {
 	size := Word(len(cart))
 	for i := Word(0); i < size; i++ {
@@ -3094,6 +3094,7 @@ func Main() {
 	CocodChan := make(chan *display.CocoDisplayParams, 50)
 	Disp = display.NewDisplay(mem[:], 80, 25, CocodChan, keystrokes)
 
+	Ld("(begin roms)")
 	if *FlagBootImageFilename != "" {
 		{
 			// TODO: this code is duplicated????? Search for FlagBootImageFilename and find the other one.
@@ -3124,19 +3125,50 @@ func Main() {
 		}
 	}
 
+	var usedRom bool
+
+	if *FlagRomA000Filename != "" {
+		cart, err := ioutil.ReadFile(*FlagRomA000Filename)
+		if err != nil {
+			log.Fatalf("Cannot read cart image: %q: %v", *FlagRomA000Filename, err)
+		}
+		Ld("Loading Rom %q at %04x", *FlagRomA000Filename, 0xa000)
+		Rom(0xA000, cart)
+		for i := Word(0); i < 16; i++ {
+			PokeB(0xFFF0+i, PeekB(0xbff0+i)) // Install interrupt vectors.
+		}
+		pcreg = PeekW(0xbffe)
+		usedRom = true
+	}
+
+	if *FlagRom8000Filename != "" {
+		cart, err := ioutil.ReadFile(*FlagRom8000Filename)
+		if err != nil {
+			log.Fatalf("Cannot read cart image: %q: %v", *FlagRom8000Filename, err)
+		}
+		Ld("Loading Rom %q at %04x", *FlagRom8000Filename, 0x8000)
+		Rom(0x8000, cart)
+	}
+
 	if *FlagCartFilename != "" {
 		cart, err := ioutil.ReadFile(*FlagCartFilename)
 		if err != nil {
 			log.Fatalf("Cannot read cart image: %q: %v", *FlagCartFilename, err)
 		}
+		Ld("Loading Cart %q", *FlagCartFilename)
 		pcreg = Cart(cart)
-	} else if *FlagLoadmFilename != "" {
+	}
+	Ld("(end roms)")
+
+	if *FlagLoadmFilename != "" {
 		loadm, err := ioutil.ReadFile(*FlagLoadmFilename)
 		if err != nil {
 			log.Fatalf("Cannot read loadm image: %q: %v", *FlagLoadmFilename, err)
 		}
 		pcreg = Loadm(loadm)
-	} else if *FlagBootImageFilename != "" {
+	}
+
+	if *FlagBootImageFilename != "" {
 		// Loading a binary file skipping the first 256 bytes of RAM
 		// and starting pcreg of 0x100 was a convention from the sbc09.c code.
 		// This is probably not the right thing for a coco emulator,
@@ -3171,8 +3203,10 @@ func Main() {
 		PutW(0xFFF6, 0xFEF4) // FIRQ
 		pcreg = 0x2602
 		DumpAllMemory()
-	} else {
-		log.Fatalf("Need either -boot or -kernel")
+	}
+
+	if pcreg == 0 {
+		log.Fatalf("Before run, pcreg is still 0")
 	}
 
 	sreg = 0
@@ -3185,6 +3219,13 @@ func Main() {
 	defer func() {
 		Finish()
 	}()
+
+	if usedRom {
+		EnableRomMode(true)
+	}
+	if *FlagBasicText {
+		CocodChan <- GetCocoDisplayParams()
+	}
 
 	max := uint64(MaxUint64)
 	if *FlagMaxSteps > 0 {
@@ -3222,6 +3263,12 @@ func Main() {
 				irq(keystrokes)
 				CocodChan <- GetCocoDisplayParams()
 				continue
+			}
+		}
+
+		if *FlagBasicText {
+			if (Steps & 255) == 0 {
+				CocodChan <- GetCocoDisplayParams()
 			}
 		}
 

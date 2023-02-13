@@ -18,6 +18,7 @@ var MouseDown bool
 var MouseMutex sync.Mutex
 
 type CocoDisplayParams struct {
+	BasicText           bool // 32x16 at 0x400
 	Gime                bool // else use VDG
 	Graphics            bool // else use Alpha
 	AttrsIfAlpha        bool // if every other byte is attrs

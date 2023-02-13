@@ -190,9 +190,26 @@ func (d *Display) Loop() {
 		switch {
 		case coco == nil:
 			{
-				cv.FillText("(nil)", 10, 10)
+				cv.FillText("(nil coco)", 60, 60)
 			}
 
+		case coco.BasicText:
+			{
+				for y := 0; y < 16; y++ {
+					buf := make([]byte, 32)
+					for x := 0; x < 32; x++ {
+						b := d.Mem[0x400+y*32+x]
+						switch b & 32 {
+						case 0:
+							buf[x] = (b & 31) + 64
+						case 32:
+							buf[x] = (b & 31) + 32
+						}
+					}
+
+					cv.FillText(string(buf), 10, float64((y+2)*30))
+				}
+			}
 		case coco.Graphics:
 			{
 				// Graphics

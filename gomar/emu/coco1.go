@@ -11,6 +11,12 @@ import (
 	"log"
 )
 
+var romMode bool
+
+func EnableRomMode(b bool) {
+	romMode = b
+}
+
 const P_Path = sym.P_PATH
 
 var MmuTask byte // but not used in coco1.
@@ -45,7 +51,11 @@ func B(addr Word) byte {
 }
 
 func PokeB(addr Word, b byte) {
-	mem[addr] = b
+	if romMode && 0x8000 <= addr && addr < 0xFF00 {
+		L("ROM MODE inhibits write")
+	} else {
+		mem[addr] = b
+	}
 }
 
 func PeekB(addr Word) byte {
@@ -55,14 +65,18 @@ func PeekB(addr Word) byte {
 // PutB is fundamental func to set byte.  Hack register access into here.
 func PutB(addr Word, x byte) {
 	old := mem[addr]
-	mem[addr] = x
+	if romMode && 0x8000 <= addr && addr < 0xFF00 {
+		L("ROM MODE inhibits write")
+	} else {
+		mem[addr] = x
 
-	if TraceMem {
-		L("\t\t\t\tPutB %04x <- %02x (was %02x)", addr, x, old)
-	}
-	if AddressInDeviceSpace(addr) {
-		PutIOByte(addr, x)
-		L("PutIO %04x <- %02x (was %02x)", addr, x, old)
+		if TraceMem {
+			L("\t\t\t\tPutB %04x <- %02x (was %02x)", addr, x, old)
+		}
+		if AddressInDeviceSpace(addr) {
+			PutIOByte(addr, x)
+			L("PutIO %04x <- %02x (was %02x)", addr, x, old)
+		}
 	}
 }
 
@@ -146,6 +160,7 @@ func MapAddr(logical Word, quiet bool) int {
 
 func GetCocoDisplayParams() *display.CocoDisplayParams {
 	z := &display.CocoDisplayParams{
+		BasicText:       *FlagBasicText,
 		Gime:            false,
 		Graphics:        false,
 		AttrsIfAlpha:    false,
