@@ -3052,15 +3052,17 @@ func Rom(start Word, rom []byte) {
 	}
 }
 
-func Cart(cart []byte) Word {
+func Cart(cart []byte) {
 	size := Word(len(cart))
 	for i := Word(0); i < size; i++ {
 		PokeB(0xC000+i, cart[i])
 	}
-	if PeekB(0xC000) == 'D' && PeekB(0xC001) == 'K' {
-		return 0xC002
-	}
-	return 0xC000
+	/*
+		if PeekB(0xC000) == 'D' && PeekB(0xC001) == 'K' {
+			return 0xC002
+		}
+		return 0xC000
+	*/
 }
 
 func Loadm(loadm []byte) Word {
@@ -3156,7 +3158,7 @@ func Main() {
 			log.Fatalf("Cannot read cart image: %q: %v", *FlagCartFilename, err)
 		}
 		Ld("Loading Cart %q", *FlagCartFilename)
-		pcreg = Cart(cart)
+		Cart(cart)
 	}
 	Ld("(end roms)")
 
