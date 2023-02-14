@@ -3271,6 +3271,7 @@ func Main() {
 		if *FlagBasicText {
 			if (Steps & 255) == 0 {
 				CocodChan <- GetCocoDisplayParams()
+				ShowBasicText()
 			}
 		}
 
@@ -3366,4 +3367,41 @@ func W1(addr Word) Word {
 	})
 	log.Printf("==== kern word @%x -> %x", addr, w)
 	return w
+}
+
+var PrevBasicText []byte
+
+func EqualBytes(a, b []byte) bool {
+	n := len(a)
+	if n != len(b) {
+		return false
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func ShowBasicText() {
+	if EqualBytes(PrevBasicText, mem[0x400:0x600]) {
+		return
+	}
+
+	Ld("STEP: %d", Steps)
+	for y := 0x400; y < 0x600; y += 32 {
+		text := make([]byte, 32)
+		for x := 0; x < 32; x++ {
+			b := mem[x+y] & 63
+			if b < 32 {
+				b += 64
+			}
+			text[x] = b
+		}
+		Ld("TEXT: %q", text)
+	}
+
+	PrevBasicText = make([]byte, 0x200)
+	copy(PrevBasicText, mem[0x400:0x600])
 }
