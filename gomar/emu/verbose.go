@@ -9,6 +9,7 @@ import (
 // `d` Device
 
 // Verbosity:
+//
 //	'a' all lowercase letters
 //	's' sys calls
 //	'r' RAM dumps at sys calls
@@ -16,6 +17,7 @@ import (
 //	'i' instructions
 //	'm' memory get/put
 //	'p' physical memory get/put
+//	'w' wiznet
 var V [128]bool                                                            // Verbosity bits
 var FlagInitialVerbosity = flag.String("v", "", "Initial verbosity chars") // Initial Verbosity
 var FlagTraceVerbosity = flag.String("vv", "", "Trace verbosity chars")    // Trace Verbosity

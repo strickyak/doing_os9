@@ -298,7 +298,7 @@ func PutIOByteI(a Word, b byte) {
 						log.Panicf("Short disk sector read: n=%d", n)
 					}
 
-					assert(n == 256)
+					AssertEQ(n, 256)
 					disk_i = 0
 					Ld("READ fnord (Track, Sector-1) %d:%d:%d:%d == %d\n", disk_drive, disk_track, disk_side, disk_sector-1, disk_offset>>8)
 				}

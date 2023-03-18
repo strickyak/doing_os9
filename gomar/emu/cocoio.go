@@ -11,18 +11,30 @@ import (
 )
 
 type socket struct {
-	Xmode   byte
-	Xstatus byte
-	uconn   *net.UDPConn
-	tconn   *net.TCPConn
+	k      Word // socket number 0..3
+	base   Word // base of socket registers, e.g. 0x400, 0x500, ...
+	txRing Word
+	rxRing Word
+	uconn  *net.UDPConn
+	tconn  *net.TCPConn
 }
 
-var sock [4]*socket
+var socks [4]*socket
 
 func init() {
-	for i := 0; i < 4; i++ {
-		sock[i] = new(socket)
+	for i := Word(0); i < 4; i++ {
+		socks[i] = &socket{
+			k:      i,
+			base:   0x400 + i*0x100,
+			txRing: 0x4000 + i*0x800,
+			rxRing: 0x6000 + i*0x800,
+		}
 	}
+}
+func sockOf(a Word) *socket {
+	i := (a >> 8) - 4
+	AssertLT(i, 4, a)
+	return socks[i]
 }
 
 var wizMem [1 << 16]byte
@@ -36,18 +48,6 @@ const (
 	RxRd       = 0x28
 	RxWr       = 0x2A
 )
-
-func assert_w_gt(a Word, b Word) {
-	if a <= b {
-		log.Fatalf("WIZ: *** ASSERT FAILED: %d > %d", a, b)
-	}
-}
-
-func assert_w_lt(a Word, b Word) {
-	if a >= b {
-		log.Fatalf("WIZ: *** ASSERT FAILED: %d < %d", a, b)
-	}
-}
 
 func putWizWord(reg Word, value Word) {
 	wizMem[reg] = byte(value >> 8)
@@ -65,7 +65,7 @@ func wizReset() {
 	}
 	// tx := Word(0x4000)
 	// rx := Word(0x6000)
-	for _, s := range sock {
+	for _, s := range socks {
 		if s.uconn != nil {
 			s.uconn.Close()
 			s.uconn = nil
@@ -77,7 +77,7 @@ func wizReset() {
 	}
 }
 
-func dialTCP(localHostPort string, remoteHostPort string) *net.TCPConn {
+func OpenTCP(localHostPort string, remoteHostPort string) *net.TCPConn {
 	laddy, err := net.ResolveTCPAddr("tcp", localHostPort)
 	if err != nil {
 		log.Panicf("WIZ: cannot ResolveTCPAddr: %v", err)
@@ -90,10 +90,11 @@ func dialTCP(localHostPort string, remoteHostPort string) *net.TCPConn {
 	if err != nil {
 		log.Panicf("WIZ: cannot ListenUDP: %v", err)
 	}
+	wizLog("OpenTcp: success: %q %q", localHostPort, remoteHostPort)
 	return tconn
 }
 
-func listenUDP(hostport string) *net.UDPConn {
+func OpenUDP(hostport string) *net.UDPConn {
 	addy, err := net.ResolveUDPAddr("udp", hostport)
 	if err != nil {
 		log.Panicf("WIZ: cannot ResolveUDPAddr: %v", err)
@@ -153,113 +154,160 @@ func wizPutInterrupt(a Word, b byte) {
 	x &^= b // clear the bits that are set in b.
 	wizMem[a] = x
 }
+
+func wizSendUDP(sock *socket) {
+	base := sock.base
+	txRing := sock.txRing
+
+	begin := wizWord(base + TxRd)
+	end := wizWord(base + TxWr)
+
+	size := end - begin
+	size &= 0x7ff       // 2K ring buffers.
+	AssertGT(size, 2)   // reasonable for now
+	AssertLT(size, 700) // reasonable for now
+
+	buf := make([]byte, size)
+	for i := Word(0); i < size; i++ {
+		p := (begin + i) & 0x7FF
+		buf[i] = wizMem[p+txRing]
+	}
+
+	hostport := fmt.Sprintf("%d.%d.%d.%d:%d",
+		wizMem[base+0x0c],
+		wizMem[base+0x0d],
+		wizMem[base+0x0e],
+		wizMem[base+0x0f],
+		wizWord(base+0x10))
+	addy, err := net.ResolveUDPAddr("udp", hostport)
+	if err != nil {
+		log.Panicf("cannot ResolveUDPAddr: %v", err)
+	}
+	cc, err := sock.uconn.WriteToUDP(buf, addy)
+	if err != nil {
+		log.Panicf("Cannot WriteToUDP: len $%x: err %v ", len(buf), err)
+	}
+	if cc != len(buf) {
+		log.Panicf("Short Write: sent $%x wanted $%x bytes", cc, len(buf))
+	}
+	putWizWord(base+TxRd, end)
+	// Set "interrupt" bit for SENDOK
+	wizMem[base+2] |= (1 << 4) // SENDOK Interrupt Bit.
+	wizLog("UDP SEND socket %x to %q size $%x", sock.k, hostport, size)
+}
+
+func wizSendTCP(sock *socket) {
+	base := sock.base
+	txRing := sock.txRing
+
+	begin := wizWord(base + TxRd)
+	end := wizWord(base + TxWr)
+
+	size := end - begin
+	size &= 0x7ff       // 2K ring buffers.
+	AssertGT(size, 2)   // reasonable for now
+	AssertLT(size, 700) // reasonable for now
+
+	buf := make([]byte, size)
+	for i := Word(0); i < size; i++ {
+		p := (begin + i) & 0x7FF
+		buf[i] = wizMem[p+txRing]
+	}
+
+	cc, err := sock.tconn.Write(buf)
+	if err != nil {
+		panic(err)
+	}
+	if cc != len(buf) {
+		log.Panicf("Short Write: sent %x wanted %x bytes", cc, len(buf))
+	}
+	putWizWord(base+TxRd, end)
+	// Set "interrupt" bit for SENDOK
+	wizMem[base+2] |= (1 << 4) // SENDOK Interrupt Bit.
+	wizLog("TCP socket %x size $%x", sock.k, size)
+}
+
 func wizPutCommand(a Word, b byte) {
-	base := a - 1
-	k := (a >> 8) - 4
-	assert_w_lt(k, 4)
-	txRing := 0x4000 + 0x800*k
-	rxRing := 0x6000 + 0x800*k
-	Ld("WIZ: wizPutCommand a=%x b=%x base=%x tx=%x rx=%x k=%x; sock=%#v", a, b, base, txRing, rxRing, k, sock)
+	sock := sockOf(a)
+	base := sock.base
+	txRing := sock.txRing
+	rxRing := sock.rxRing
+	wizLog("wizPutCommand a=%x b=%x base=%x tx=%x rx=%x sock=%#v", a, b, base, txRing, rxRing, sock)
 	switch b {
 	case 0x01:
 		{ // open
-			switch wizMem[base] {
+			switch 15 & wizMem[base] {
 			case 1: /*TCP*/
 				{
-					if sock[k].uconn != nil {
-						sock[k].uconn.Close()
-						sock[k].uconn = nil
-					}
 					wizMem[3+base] = 0x13 // Status is SOCK_INIT.
-					Ld("WIZ: UDP OPEN socket %d", k)
-				}
-			case 4: /* CONNECT */
-				{
-					local := fmt.Sprintf(":%d", wizWord(base+0x04 /*SourcePortRegister*/))
-					remote := fmt.Sprintf("%d.%d.%d.%d:%d",
-						wizMem[base+0x0C],
-						wizMem[base+0x0D],
-						wizMem[base+0x0E],
-						wizMem[base+0x0F],
-						wizWord(base+0x10))
-					sock[k].tconn = dialTCP(local, remote)
-					wizMem[3+base] = 0x15 // Status is SOCK_SYNSENT.
-					wizMem[3+base] = 0x17 // Status is SOCK_ESTABLISHED.
+					wizLog("TCP OPEN socket %x", sock.k)
 				}
 			case 2: /*UDP*/
 				{
-					if sock[k].uconn != nil {
-						sock[k].uconn.Close()
-						sock[k].uconn = nil
-					}
 					hostport := fmt.Sprintf(":%d", wizWord(base+0x04))
-					sock[k].uconn = listenUDP(hostport)
+					sock.uconn = OpenUDP(hostport)
 					wizMem[3+base] = 0x22 // Status is SOCK_UDP.
-					Ld("WIZ: UDP OPEN socket %d", k)
+					wizLog("UDP OPEN socket %x", sock.k)
 				}
 			default:
-				log.Panicf("sending on socket %d but not in UDP mode: $%x", k, wizMem[base])
+				log.Panicf("Command OPEN on socket %x but in wrong mode: $%x", sock.k, wizMem[base])
 			}
 
+		}
+
+	case 4: /* TCP CONNECT */
+		{
+			local := fmt.Sprintf(":%d", wizWord(base+0x04 /*SourcePortRegister*/))
+			remote := fmt.Sprintf("%d.%d.%d.%d:%d",
+				wizMem[base+0x0C],
+				wizMem[base+0x0D],
+				wizMem[base+0x0E],
+				wizMem[base+0x0F],
+				wizWord(base+0x10))
+			wizLog("TCP CONNECT socket %x local %q remote %q", sock.k, local, remote)
+			sock.tconn = OpenTCP(local, remote)
+			wizMem[3+base] = 0x15 // Status is SOCK_SYNSENT.
+			wizMem[3+base] = 0x17 // Status is SOCK_ESTABLISHED.
+			wizLog("TCP socket %x ESTABLISHED", sock.k)
 		}
 
 	case 0x10:
 		{ // close
-			if sock[k].uconn != nil {
-				sock[k].uconn.Close()
-				sock[k].uconn = nil
+			if sock.uconn != nil {
+				sock.uconn.Close()
+				sock.uconn = nil
+			}
+			if sock.tconn != nil {
+				sock.tconn.Close()
+				sock.tconn = nil
 			}
 			wizMem[3+base] = 0x00 // Status is SOCK_CLOSED.
-			Ld("WIZ: UDP CLOSE socket %d", k)
+			wizLog("CLOSE socket %x", sock.k)
 		}
 	case 0x20:
 		{ // send
-			if wizMem[base] != 2 /*ProtocolModeUDP*/ {
-				log.Panicf("sending on socket %d but not in UDP mode: $%x", k, wizMem[base])
-			}
-			begin := wizWord(base + TxRd)
-			end := wizWord(base + TxWr)
-			size := end - begin
-			size &= 0x7ff          // 2K ring buffers.
-			assert_w_gt(size, 2)   // reasonable for now
-			assert_w_lt(size, 700) // reasonable for now
-
-			buf := make([]byte, size)
-			for i := Word(0); i < size; i++ {
-				p := (begin + i) & 0x7FF
-				buf[i] = wizMem[p+txRing]
+			status := wizMem[base+3]
+			switch status {
+			case 0x22 /* status SOCK_UDP */ :
+				wizSendUDP(sock)
+			case 0x17 /* status SOCK_ESTABLISHED */ :
+				wizSendTCP(sock)
+			default:
+				log.Panicf("Command SEND on socket %x with wrong status $%x", sock.k, status)
 			}
 
-			hostport := fmt.Sprintf("%d.%d.%d.%d:%d",
-				wizMem[base+0x0c],
-				wizMem[base+0x0d],
-				wizMem[base+0x0e],
-				wizMem[base+0x0f],
-				wizWord(base+0x10))
-			addy, err := net.ResolveUDPAddr("udp", hostport)
-			if err != nil {
-				log.Panicf("cannot ResolveUDPAddr: %v", err)
-			}
-			_, err = sock[k].uconn.WriteToUDP(buf, addy)
-			if err != nil {
-				panic(err)
-			}
-			putWizWord(base+TxRd, end)
-			// Set "interrupt" bit for SENDOK
-			wizMem[base+2] |= (1 << 4) // SENDOK Interrupt Bit.
-			Ld("WIZ: UDP SEND socket %d to %q size $%x", k, hostport, size)
 		}
 	case 0x40:
 		{ // recv
-			Ld("WIZ: UDP RECV socket %d", k)
+			wizLog("UDP RECV socket %x", sock.k)
 			buf := make([]byte, 1500)
-			size, peer, err := sock[k].uconn.ReadFromUDP(buf)
-			Ld("WIZ: UDP RECV socket %d got size $%x peer %v err %v", k, size, peer, err)
+			size, peer, err := sock.uconn.ReadFromUDP(buf)
+			wizLog("UDP RECV socket %x got size $%x peer %v err %v", sock.k, size, peer, err)
 			if err != nil {
 				panic(err)
 			}
-			assert_w_gt(Word(size), 1)    // reasonable for now
-			assert_w_lt(Word(size), 1500) // reasonable for now
+			AssertGT(Word(size), 1)    // reasonable for now
+			AssertLT(Word(size), 1500) // reasonable for now
 
 			const UDP_RX_HEADER_SIZE = 8
 
@@ -270,8 +318,8 @@ func wizPutCommand(a Word, b byte) {
 			if gap < 1 {
 				gap = 0x7ff
 			}
-			Ld("WIZ: UDP RECV: begin=%x end=%x gap=%x ... rxRing=%x", begin, end, gap, rxRing)
-			assert_w_gt(gap, Word(size+UDP_RX_HEADER_SIZE))
+			wizLog("UDP RECV: begin=%x end=%x gap=%x ... rxRing=%x", begin, end, gap, rxRing)
+			AssertGT(gap, Word(size+UDP_RX_HEADER_SIZE))
 
 			addrPort := peer.AddrPort()
 			port := addrPort.Port()
@@ -310,7 +358,7 @@ func wizSocketlessCommand(b byte) {
 	panic("todo")
 }
 func wizPut(a Word, b byte) {
-	Ld("WIZ:PUT %04x <- %02x", a, b)
+	wizLog("WIZ:PUT %04x <- %02x", a, b)
 	wizMem[a] = b
 	switch a {
 	case 0:
@@ -395,6 +443,12 @@ func wizGet(a Word) byte {
 		z = wizMem[a]
 	}
 
-	Ld("WIZ:GET %04x -> %02x", a, z)
+	wizLog("WIZ:GET %04x -> %02x", a, z)
 	return z
+}
+
+func wizLog(format string, args ...any) {
+	if V['w'] {
+		log.Printf("w| "+format, args...)
+	}
 }

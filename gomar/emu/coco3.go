@@ -557,7 +557,7 @@ func DoDumpAllPathDescs() {
 			L("DoDumpAllPathDescs: D_PthDPT is zero.")
 			return
 		}
-		assert(p&255 == 0)
+		AssertEQ(p&255, 0, p)
 		PrettyDumpHex64(p, 64)
 
 		for i := Word(0); i < 32; i++ {
@@ -677,8 +677,8 @@ func DoDumpProcesses() {
 	}()
 	///////////////////////////////////
 	p := W(sym.D_PrcDBT)
-	assert(p != 0)
-	assert(p&255 == 0)
+	AssertNE(p, 0)
+	AssertEQ(p&255, 0, p)
 	PrettyDumpHex64(p, 64)
 
 	for i := 0; i < 64; i++ {
