@@ -23,7 +23,8 @@ type socket struct {
 	*/
 	mode   byte
 	status byte
-	conn   *net.UDPConn
+	uconn  *net.UDPConn
+	tconn  *net.TCPConn
 }
 
 var sock [4]*socket
@@ -75,9 +76,13 @@ func wizReset() {
 	// tx := Word(0x4000)
 	// rx := Word(0x6000)
 	for _, s := range sock {
-		if s.conn != nil {
-			s.conn.Close()
-			s.conn = nil
+		if s.uconn != nil {
+			s.uconn.Close()
+			s.uconn = nil
+		}
+		if s.tconn != nil {
+			s.tconn.Close()
+			s.tconn = nil
 		}
 
 		s.mode = 0
@@ -99,16 +104,32 @@ func wizReset() {
 	}
 }
 
+func dialTCP(localHostPort string, remoteHostPort string) *net.TCPConn {
+	laddy, err := net.ResolveTCPAddr("tcp", localHostPort)
+	if err != nil {
+		log.Panicf("WIZ: cannot ResolveTCPAddr: %v", err)
+	}
+	raddy, err := net.ResolveTCPAddr("tcp", remoteHostPort)
+	if err != nil {
+		log.Panicf("WIZ: cannot ResolveTCPAddr: %v", err)
+	}
+	tconn, err := net.DialTCP("tcp", laddy, raddy)
+	if err != nil {
+		log.Panicf("WIZ: cannot ListenUDP: %v", err)
+	}
+	return tconn
+}
+
 func listenUDP(hostport string) *net.UDPConn {
 	addy, err := net.ResolveUDPAddr("udp", hostport)
 	if err != nil {
 		log.Panicf("WIZ: cannot ResolveUDPAddr: %v", err)
 	}
-	conn, err := net.ListenUDP("udp", addy)
+	uconn, err := net.ListenUDP("udp", addy)
 	if err != nil {
 		log.Panicf("WIZ: cannot ListenUDP: %v", err)
 	}
-	return conn
+	return uconn
 }
 
 func localIP() string {
@@ -169,25 +190,51 @@ func wizPutCommand(a Word, b byte) {
 	switch b {
 	case 0x01:
 		{ // open
-			if wizMem[base] != 2 /*ProtocolModeUDP*/ {
+			switch wizMem[base] {
+			case 1: /*TCP*/
+				{
+					if sock[k].uconn != nil {
+						sock[k].uconn.Close()
+						sock[k].uconn = nil
+					}
+					wizMem[3+base] = 0x13 // Status is SOCK_INIT.
+					Ld("WIZ: UDP OPEN socket %d", k)
+				}
+			case 4: /* CONNECT */
+				{
+					local := fmt.Sprintf(":%d", wizWord(base+0x04 /*SourcePortRegister*/))
+					remote := fmt.Sprintf("%d.%d.%d.%d:%d",
+						wizMem[base+0x0C],
+						wizMem[base+0x0D],
+						wizMem[base+0x0E],
+						wizMem[base+0x0F],
+						wizWord(base+0x10))
+					sock[k].tconn = dialTCP(local, remote)
+					wizMem[3+base] = 0x15 // Status is SOCK_SYNSENT.
+					wizMem[3+base] = 0x17 // Status is SOCK_ESTABLISHED.
+				}
+			case 2: /*UDP*/
+				{
+					if sock[k].uconn != nil {
+						sock[k].uconn.Close()
+						sock[k].uconn = nil
+					}
+					hostport := fmt.Sprintf(":%d", wizWord(base+0x04))
+					sock[k].uconn = listenUDP(hostport)
+					wizMem[3+base] = 0x22 // Status is SOCK_UDP.
+					Ld("WIZ: UDP OPEN socket %d", k)
+				}
+			default:
 				log.Panicf("sending on socket %d but not in UDP mode: $%x", k, wizMem[base])
 			}
 
-			if sock[k].conn != nil {
-				sock[k].conn.Close()
-				sock[k].conn = nil
-			}
-			hostport := fmt.Sprintf(":%d", wizWord(base+0x04))
-			sock[k].conn = listenUDP(hostport)
-			wizMem[3+base] = 0x22 // Status is SOCK_UDP.
-			Ld("WIZ: UDP OPEN socket %d", k)
 		}
 
 	case 0x10:
 		{ // close
-			if sock[k].conn != nil {
-				sock[k].conn.Close()
-				sock[k].conn = nil
+			if sock[k].uconn != nil {
+				sock[k].uconn.Close()
+				sock[k].uconn = nil
 			}
 			wizMem[3+base] = 0x00 // Status is SOCK_CLOSED.
 			Ld("WIZ: UDP CLOSE socket %d", k)
@@ -220,7 +267,7 @@ func wizPutCommand(a Word, b byte) {
 			if err != nil {
 				log.Panicf("cannot ResolveUDPAddr: %v", err)
 			}
-			_, err = sock[k].conn.WriteToUDP(buf, addy)
+			_, err = sock[k].uconn.WriteToUDP(buf, addy)
 			if err != nil {
 				panic(err)
 			}
@@ -233,7 +280,7 @@ func wizPutCommand(a Word, b byte) {
 		{ // recv
 			Ld("WIZ: UDP RECV socket %d", k)
 			buf := make([]byte, 1500)
-			size, peer, err := sock[k].conn.ReadFromUDP(buf)
+			size, peer, err := sock[k].uconn.ReadFromUDP(buf)
 			Ld("WIZ: UDP RECV socket %d got size $%x peer %v err %v", k, size, peer, err)
 			if err != nil {
 				panic(err)

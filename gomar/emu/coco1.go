@@ -11,12 +11,6 @@ import (
 	"log"
 )
 
-var romMode bool
-
-func EnableRomMode(b bool) {
-	romMode = b
-}
-
 const P_Path = sym.P_PATH
 
 var MmuTask byte // but not used in coco1.
@@ -51,7 +45,7 @@ func B(addr Word) byte {
 }
 
 func PokeB(addr Word, b byte) {
-	if romMode && 0x8000 <= addr && addr < 0xFF00 {
+	if enableRom && 0x8000 <= addr && addr < 0xFF00 {
 		L("ROM MODE inhibits write")
 	} else {
 		mem[addr] = b
@@ -65,7 +59,7 @@ func PeekB(addr Word) byte {
 // PutB is fundamental func to set byte.  Hack register access into here.
 func PutB(addr Word, x byte) {
 	old := mem[addr]
-	if romMode && 0x8000 <= addr && addr < 0xFF00 {
+	if enableRom && 0x8000 <= addr && addr < 0xFF00 {
 		L("ROM MODE inhibits write")
 	} else {
 		mem[addr] = x
@@ -178,4 +172,21 @@ func GetCocoDisplayParams() *display.CocoDisplayParams {
 		z.ColorMap[i] = byte(i) // TODO
 	}
 	return z
+}
+
+// TODO
+
+// TODO -- assume True for now.
+func IsTermPath(path byte) bool {
+	return true
+}
+
+// coco1 has no tasks, so ignore task.
+func PeekWWithTask(addr Word, task byte) Word {
+	return PeekW(addr)
+}
+
+// coco1 has no tasks, so ignore task.
+func PeekBWithTask(addr Word, task byte) byte {
+	return PeekB(addr)
 }

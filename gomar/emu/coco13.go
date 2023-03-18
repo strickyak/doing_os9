@@ -10,6 +10,16 @@ import (
 	"strings"
 )
 
+// 'Assembly Language Programming for the CoCo 3 (1987)(Laurence A Tepolt).pdf'
+// figure 3-5
+
+var usedRom bool
+var romMode byte
+var enableRom bool
+var enableTramp bool
+var internalRom [0x8000]byte // up to 32K
+var cartRom [0x8000]byte     // up to 32K
+
 // Named VDG even if really SAM
 var VdgFx byte
 var VdgMx byte // Memory size for SAM.
@@ -31,11 +41,31 @@ func (m ModuleFound) Id() string {
 	return strings.ToLower(fmt.Sprintf("%s.%04x%06x", m.Name, m.Len, m.CRC))
 }
 
+/*
+func AddressInTrampSpace(addr Word) bool {
+	if BitFixedFExx {
+		return (addr&0xFF00) == 0xFE00 || (addr&0xFFF0) == 0xFFF0
+	} else {
+		return (addr & 0xFFF0) == 0xFFF0
+	}
+}
+*/
+
+func MappedAddressInRomSpace(addr Word, mapped int) bool {
+	physPage := uint(mapped) >> 13
+	return 0x3C <= physPage && physPage <= 0x3F && !AddressInDeviceSpace(addr)
+}
+
 func AddressInDeviceSpace(addr Word) bool {
 	return (addr&0xFF00) == 0xFF00 && (addr&0xFFF0) != 0xFFF0
 }
 
 func GetIOByte(a Word) byte {
+	z := GetIOByteI(a)
+	L("io GetIOByte %x --> %02x", a, z)
+	return z
+}
+func GetIOByteI(a Word) byte {
 	var z byte
 
 	if 0xFF00 <= a && a <= 0xFF40 {
@@ -123,10 +153,10 @@ func GetIOByte(a Word) byte {
 		return EmudskGetIOByte(a)
 
 	case 0xFF68,
-	     0xFF69,
-	     0xFF6a,
-	     0xFF6b:
-        return GetCocoIO(a)
+		0xFF69,
+		0xFF6a,
+		0xFF6b:
+		return GetCocoIO(a)
 
 	default:
 		Ld("UNKNOWN GetIOByte: 0x%04x\n", a)
@@ -172,6 +202,10 @@ func ExplainBits(b byte, meanings []string) string {
 }
 
 func PutIOByte(a Word, b byte) {
+	L("io PutIOByte %x <-- %02x", a, b)
+	PutIOByteI(a, b)
+}
+func PutIOByteI(a Word, b byte) {
 	PokeB(a, b)
 	Ld("#PutIOByte: $%04x <- $%02x", a, b)
 
@@ -512,10 +546,10 @@ func PutIOByte(a Word, b byte) {
 		EmudskPutIOByte(a, b)
 
 	case 0xFF68,
-	     0xFF69,
-	     0xFF6a,
-	     0xFF6b:
-        PutCocoIO(a , b)
+		0xFF69,
+		0xFF6a,
+		0xFF6b:
+		PutCocoIO(a, b)
 	}
 }
 

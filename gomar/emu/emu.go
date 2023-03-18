@@ -31,6 +31,7 @@ var FlagDiskImageFilename = flag.String("disk", "../_disk_", "")
 var FlagMaxSteps = flag.Uint64("max", 0, "")
 var FlagClock = flag.Uint64("clock", 5*1000*1000, "")
 var FlagBasicText = flag.Bool("basic_text", false, "")
+var FlagUserResetVector = flag.Bool("use_reset_vector", false, "")
 
 var FlagWatch = flag.String("watch", "", "Sequence of module:addr:reg:message,...")
 var FlagTriggerPc = flag.Uint64("trigger_pc", 0xC00D, "")
@@ -3045,24 +3046,24 @@ func init() {
 
 const MaxUint64 = 0xFFFFFFFFFFFFFFFF
 
-func Rom(start Word, rom []byte) {
-	size := Word(len(rom))
+func LoadRom(start Word, m []byte) {
+	start = start & 0x7FFF
+	size := Word(len(m))
 	for i := Word(0); i < size; i++ {
-		PokeB(start+i, rom[i])
+		internalRom[start+i] = m[i]
 	}
 }
 
-func Cart(cart []byte) {
-	size := Word(len(cart))
-	for i := Word(0); i < size; i++ {
-		PokeB(0xC000+i, cart[i])
+func LoadCart(m []byte) {
+	size := Word(len(m))
+	offset := Word(0)
+	// If 16K or less, goes in second half of 32K cartRom.
+	if len(m) <= 0x4000 {
+		offset = 0x4000
 	}
-	/*
-		if PeekB(0xC000) == 'D' && PeekB(0xC001) == 'K' {
-			return 0xC002
-		}
-		return 0xC000
-	*/
+	for i := Word(0); i < size; i++ {
+		cartRom[i+offset] = m[i]
+	}
 }
 
 func Loadm(loadm []byte) Word {
@@ -3127,38 +3128,36 @@ func Main() {
 		}
 	}
 
-	var usedRom bool
-
 	if *FlagRomA000Filename != "" {
-		cart, err := ioutil.ReadFile(*FlagRomA000Filename)
+		rom, err := ioutil.ReadFile(*FlagRomA000Filename)
 		if err != nil {
-			log.Fatalf("Cannot read cart image: %q: %v", *FlagRomA000Filename, err)
+			log.Fatalf("Cannot read rom image: %q: %v", *FlagRomA000Filename, err)
 		}
-		Ld("Loading Rom %q at %04x", *FlagRomA000Filename, 0xa000)
-		Rom(0xA000, cart)
-		for i := Word(0); i < 16; i++ {
-			PokeB(0xFFF0+i, PeekB(0xbff0+i)) // Install interrupt vectors.
-		}
-		pcreg = PeekW(0xbffe)
+		Ld("Loading Rom %q at %04x", *FlagRomA000Filename, 0xA000)
+		LoadRom(0xA000, rom)
+		//for i := Word(0); i < 16; i++ {
+		//PokeB(0xFFF0+i, PeekB(0xbff0+i)) // Install interrupt vectors.
+		//}
 		usedRom = true
 	}
 
 	if *FlagRom8000Filename != "" {
-		cart, err := ioutil.ReadFile(*FlagRom8000Filename)
+		rom, err := ioutil.ReadFile(*FlagRom8000Filename)
 		if err != nil {
-			log.Fatalf("Cannot read cart image: %q: %v", *FlagRom8000Filename, err)
+			log.Fatalf("Cannot read rom image: %q: %v", *FlagRom8000Filename, err)
 		}
 		Ld("Loading Rom %q at %04x", *FlagRom8000Filename, 0x8000)
-		Rom(0x8000, cart)
+		LoadRom(0x8000, rom)
+		usedRom = true
 	}
 
 	if *FlagCartFilename != "" {
-		cart, err := ioutil.ReadFile(*FlagCartFilename)
+		rom, err := ioutil.ReadFile(*FlagCartFilename)
 		if err != nil {
-			log.Fatalf("Cannot read cart image: %q: %v", *FlagCartFilename, err)
+			log.Fatalf("Cannot read rom image: %q: %v", *FlagCartFilename, err)
 		}
 		Ld("Loading Cart %q", *FlagCartFilename)
-		Cart(cart)
+		LoadCart(rom)
 	}
 	Ld("(end roms)")
 
@@ -3207,6 +3206,16 @@ func Main() {
 		DumpAllMemory()
 	}
 
+	if *FlagUserResetVector {
+		pcreg = PeekW(0xFFFE)
+	}
+
+	if usedRom {
+		enableRom = true
+		pcreg = PeekW(0xFFFE)
+		pcreg = HiLo(internalRom[0x7Ffe], internalRom[0x7Fff])
+		pcreg = HiLo(internalRom[0x3Ffe], internalRom[0x3Fff])
+	}
 	if pcreg == 0 {
 		log.Fatalf("Before run, pcreg is still 0")
 	}
@@ -3222,9 +3231,6 @@ func Main() {
 		Finish()
 	}()
 
-	if usedRom {
-		EnableRomMode(true)
-	}
 	if *FlagBasicText {
 		CocodChan <- GetCocoDisplayParams()
 	}
@@ -3235,6 +3241,7 @@ func Main() {
 	}
 	stepsUntilTimer := *FlagClock
 	early := true
+
 	for Steps = uint64(0); Steps < max; Steps++ {
 		// log.Printf("t=%09x steps=%09x pc=%x", *FlagTraceAfter, Steps, pcreg)
 		if early {

@@ -13,20 +13,12 @@ import (
 	"strings"
 )
 
-var romMode bool
-
-func EnableRomMode(b bool) {
-	romMode = b
-}
-
 // While booting OS9 Level2, the screen seems to be doubleByte
 // at 07c000 to 07d000.  Second line begins at 07c0a0,
 // that is 160 bytes from start, or 80 doubleBytes.
 // 4096 div 160 is 25.6 lines.
 
 const P_Path = sym.P_Path
-
-const MmuDefaultStartAddr = (0x38 << 13)
 
 const TraceMem = false // TODO: restore this some day.
 
@@ -35,11 +27,15 @@ var MmuEnable bool
 var MmuTask byte
 var MmuMap [2][8]byte
 
-func InitHardware() {
-	Coco3Contract()
-}
+var BitCoCo12Compat bool
+var BitFixedFExx bool
+var BitMC0, BitMC1 bool // Rom Mode: low bits at FF90
 
 var videoEpoch int64
+
+var DisabledMmuMap = []byte{0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f}
+
+////////////////////////////////////////
 
 func FireTimerInterrupt() {
 	if GimeVertIrqEnable {
@@ -55,15 +51,30 @@ func FireTimerInterrupt() {
 // Coco3Contract ensures the contract between Coco3's disk booting mechanism
 // and the OS/9 Level2 kernel, documented at
 // nitros9/level2/modules/kernel/ccbkrn.txt
-func Coco3Contract() {
-
-	// Initialize Memory Map thus: 00 39 3a 3b 3c 3d 3e 3f
+func InitHardware() {
+	if usedRom {
+		Coco3ContractRaw()
+	} else {
+		Coco3ContractForDos()
+	}
+}
+func InitializeMemoryMap() {
 	for task := 0; task < 2; task++ {
-		MmuMap[task][0] = 0x00 // Exception.
-		for page := 1; page < 8; page++ {
-			MmuMap[task][page] = byte(0x38 + page)
+		for block, phys := range DisabledMmuMap {
+			MmuMap[task][block] = phys
 		}
 	}
+}
+
+func Coco3ContractRaw() {
+	DisabledMmuMap = []byte{0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f}
+	InitializeMemoryMap()
+}
+
+func Coco3ContractForDos() {
+	DisabledMmuMap = []byte{0x00, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f}
+	InitializeMemoryMap()
+
 	// Initialize physical block 3b to spaces, except 0x0008 at the beginning.
 	const block3b = 0x3b * 0x2000
 	mem[block3b+0] = 0x00
@@ -71,6 +82,7 @@ func Coco3Contract() {
 	for i := 2; i < 0x2000; i++ {
 		mem[block3b+i] = ' '
 	}
+
 	/*   starting at 0xff90:
 	6c      init0
 	00      init1
@@ -88,7 +100,7 @@ func Coco3Contract() {
 	*/
 	for i, b := range []byte{0x6c, 0, 0, 0, 9, 0, 0, 0, 3, 0x20, 0, 0, 0, 0x3c, 1, 0} {
 		PutIOByte(Word(0xFF90+i), b)
-		mem[0x90+i] = b // Probably don't need to set the mirror, but doing it anyway.
+		// DONT // mem[0x90+i] = b // Probably don't need to set the mirror, but doing it anyway.
 	}
 }
 
@@ -216,42 +228,39 @@ func MapAddrWithMapping(logical Word, m Mapping) int {
 }
 
 func MapAddr(logical Word, quiet bool) int {
-	if logical >= 0xFE00 {
-		return (0x3F << 13) | int(logical)
-	}
-	var z int
-	if MmuEnable {
-		slot := byte(logical >> 13)
-		low := int(logical & 0x1FFF)
-		physicalPage := MmuMap[MmuTask][slot]
-		z = (int(physicalPage) << 13) | low
-		if !quiet && TraceMem {
-			L("\t\t\t\t\t\t MapAddr: %04x -> %06x ... task=%x  slot=%x  page=%x", logical, z, MmuTask, slot, physicalPage)
-		}
-		return z
+	slot := byte(logical >> 13)
+	low := int(logical & 0x1FFF)
+	var physicalPage byte
+
+	if BitFixedFExx && logical >= 0xFE00 {
+		physicalPage = 0x3F
+	} else if logical >= 0xFF00 {
+		physicalPage = 0x3F
+	} else if MmuEnable {
+		physicalPage = MmuMap[MmuTask][slot]
 	} else {
-		if z < 0x2000 {
-			z = int(logical)
-		} else {
-			z = MmuDefaultStartAddr + int(logical)
-		}
-		if !quiet && TraceMem {
-			L("\t\t\t\t\t\t MapAddr: %04x -> %06x ... default map", logical, z)
-		}
-		return z
+		physicalPage = DisabledMmuMap[slot]
 	}
+
+	z := (int(physicalPage) << 13) | low
+
+	if !quiet && TraceMem {
+		L("\t\t\t\t\t\t MapAddr: %04x -> %06x ... task=%x  slot=%x  page=%x", logical, z, MmuTask, slot, physicalPage)
+	}
+	return z
 }
 
 // B is fundamental func to get byte.  Hack register access into here.
 func B(addr Word) byte {
 	var z byte
 	mapped := MapAddr(addr, false)
+
 	if AddressInDeviceSpace(addr) {
 		z = GetIOByte(addr)
 		Ld("GetIO (%06x) %04x -> %02x : %c %c", mapped, addr, z, H(z), T(z))
 		mem[mapped] = z
 	} else {
-		z = mem[mapped]
+		z = PeekB(addr)
 	}
 	if TraceMem {
 		L("\t\t\t\tGetB (%06x) %04x -> %02x : %c %c", mapped, addr, z, H(z), T(z))
@@ -259,40 +268,52 @@ func B(addr Word) byte {
 	return z
 }
 
-func PokeB(addr Word, b byte) {
-	if romMode && 0x8000 <= addr && addr < 0xFF00 {
-		L("ROM MODE inhibits write")
-	} else {
-		mapped := MapAddr(addr, true)
-		mem[mapped] = b
-	}
-}
-
 func PeekB(addr Word) byte {
 	var z byte
 	mapped := MapAddr(addr, true)
-	z = mem[mapped]
+
+	if enableRom && MappedAddressInRomSpace(addr, mapped) {
+		switch BitMC1 {
+		case false:
+			if mapped < (0x3E << 13) {
+				z = internalRom[mapped&0x3FFF]
+			} else {
+				z = cartRom[mapped&0x7FFF]
+			}
+		case true:
+			switch BitMC0 {
+			case false:
+				z = internalRom[mapped&0x7FFF]
+			case true:
+				z = cartRom[addr&0x7FFF]
+			}
+		}
+	} else {
+		z = mem[mapped]
+	}
 	return z
+}
+
+func PokeB(addr Word, x byte) {
+	mapped := MapAddr(addr, true)
+	mem[mapped] = x
 }
 
 // PutB is fundamental func to set byte.  Hack register access into here.
 func PutB(addr Word, x byte) {
-	if romMode && 0x8000 <= addr && addr < 0xFF00 {
-		L("ROM MODE inhibits write")
-	} else {
-		mapped := MapAddr(addr, false)
-		old := mem[mapped]
-		mem[mapped] = x
-		if TraceMem {
-			Ld("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
-		}
-		if addr == 0x5d45 { // XXX
-			L("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
-		}
-		if AddressInDeviceSpace(addr) {
-			PutIOByte(addr, x)
-			Ld("PutIO (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
-		}
+	mapped := MapAddr(addr, false)
+
+	old := mem[mapped]
+	mem[mapped] = x
+	if TraceMem {
+		Ld("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
+	}
+	if addr == 0x5d45 { // XXX
+		L("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
+	}
+	if AddressInDeviceSpace(addr) {
+		PutIOByte(addr, x)
+		Ld("PutIO (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
 	}
 }
 
@@ -821,6 +842,7 @@ func DumpGimeStatus() {
 }
 
 func PutGimeIOByte(a Word, b byte) {
+	L("GIME %x <= %02x", a, b)
 	PokeB(a, b)
 
 	switch a {
@@ -850,7 +872,10 @@ func PutGimeIOByte(a Word, b byte) {
 
 	case 0xFF90:
 		MmuEnable = 0 != (b & 0x40)
-		L("GIME MmuEnable <- %v", MmuEnable)
+		BitFixedFExx = 0 != (b & 0x08)
+		BitMC1 = 0 != (b & 0x02)
+		BitMC0 = 0 != (b & 0x01)
+		L("GIME MmuEnable <- %v; MC=%d", MmuEnable, (b & 3))
 
 	case 0xFF91:
 		MmuTask = b & 0x01
@@ -875,19 +900,14 @@ func PutGimeIOByte(a Word, b byte) {
 		}
 
 	case 0xFF94:
-		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tTimer=$%x Start!", HiLo(PeekB(0xFF94), PeekB(0xFF95)))
 	case 0xFF95:
-		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tTimer=$%x", HiLo(PeekB(0xFF94), PeekB(0xFF95)))
 	case 0xFF96:
-		L("GIME %x <= %02x", a, b)
 		L("GIME\t\treserved")
 	case 0xFF97:
-		L("GIME %x <= %02x", a, b)
 		L("GIME\t\treserved")
 	case 0xFF98:
-		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tGraphicsNotAlpha=%x AttrsIfAlpha=%x Artifacting=%x Monochrome=%x 50Hz=%x LinesPerCharRow=%x=%d.",
 			(b>>7)&1,
 			(b>>6)&1,
@@ -897,7 +917,6 @@ func PutGimeIOByte(a Word, b byte) {
 			(b & 7),
 			GimeLinesPerCharRow[b&7])
 	case 0xFF99:
-		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tLinesPerField=%x=%d. HRES=%x CRES=%x",
 			(b>>5)&3,
 			GimeLinesPerField[(b>>5)&3],
@@ -905,21 +924,16 @@ func PutGimeIOByte(a Word, b byte) {
 			b&3)
 
 	case 0xFF9A:
-		L("GIME %x <= %02x", a, b)
-		L("GIME\t\tBorder: ", ExplainColor(b))
+		L("GIME\t\tBorder: %s", ExplainColor(b))
 	case 0xFF9B:
-		L("GIME %x <= %02x", a, b)
-		L("GIME\t\tNot Used")
+		L("GIME\t\t512K bank selector: %02x", b)
 	case 0xFF9C:
-		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tVirt Scroll (alpha) = %x", b&15)
 	case 0xFF9D,
 		0xFF9E:
-		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tVirtOffsetAddr=$%05x",
 			uint64(HiLo(PeekB(0xFF9D), PeekB(0xFF9E)))<<3)
 	case 0xFF9F:
-		L("GIME %x <= %02x", a, b)
 		L("GIME\t\tHVEN=%x HorzOffsetAddr=%x", (b >> 7), b&127)
 
 	case 0xFFA0,
@@ -955,7 +969,7 @@ func PutGimeIOByte(a Word, b byte) {
 	}
 }
 func MemoryModuleOf(addr Word) (name string, offset Word) {
-	if romMode {
+	if enableRom {
 		return "(rom)", addr
 	}
 	// TODO: speed up with caching.
