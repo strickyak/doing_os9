@@ -11,20 +11,10 @@ import (
 )
 
 type socket struct {
-	/*
-		txBegin Word
-		txEnd   Word
-		txRead  Word
-		txWrite Word
-		rxBegin Word
-		rxEnd   Word
-		rxRead  Word
-		rxWrite Word
-	*/
-	mode   byte
-	status byte
-	uconn  *net.UDPConn
-	tconn  *net.TCPConn
+	Xmode   byte
+	Xstatus byte
+	uconn   *net.UDPConn
+	tconn   *net.TCPConn
 }
 
 var sock [4]*socket
@@ -84,23 +74,6 @@ func wizReset() {
 			s.tconn.Close()
 			s.tconn = nil
 		}
-
-		s.mode = 0
-		s.status = 0
-
-		/*
-			s.txBegin = tx
-			s.txRead = tx
-			s.txWrite = tx
-			tx += 2048 // Only support 2048 bytes/ring
-			s.txEnd = tx
-
-			s.rxBegin = rx
-			s.rxRead = rx
-			s.rxWrite = rx
-			rx += 2048 // Only support 2048 bytes/ring
-			s.rxEnd = rx
-		*/
 	}
 }
 
