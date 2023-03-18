@@ -25,7 +25,7 @@ var VdgFx byte
 var VdgMx byte // Memory size for SAM.
 var VdgRx byte // Clock speed for SAM.
 var VdgVx byte
-var VdgRomMode byte
+var VdgAllRam bool
 var VdgSamPage byte
 
 var InitialModules []*ModuleFound
@@ -529,12 +529,12 @@ func PutIOByteI(a Word, b byte) {
 
 	case 0xFFDE:
 		Ld("VDG PutByte OK: %x <- %x\n", a, b)
-		VdgRomMode = 1
-		Ld("VDG VdgRomMode <- $%x", VdgRomMode)
+		VdgAllRam = false
+		Ld("VDG VdgAllRam <- $%v", VdgAllRam)
 	case 0xFFDF:
 		Ld("VDG PutByte OK: %x <- %x\n", a, b)
-		VdgRomMode = 0
-		Ld("VDG VdgRomMode <- $%x", VdgRomMode)
+		VdgAllRam = true
+		Ld("VDG VdgAllRam <- $%v", VdgAllRam)
 
 	case 0xFF80,
 		0xFF81,
@@ -581,8 +581,8 @@ func DumpHexLine(label string, bb []byte) {
 }
 
 func DoDumpVdgBits() {
-	Ld("VDG/SAM BITS: F=%x M=%x R=%x V=%x RomMode=%x SamPage=%x",
-		VdgFx, VdgMx, VdgRx, VdgVx, VdgRomMode, VdgSamPage)
+	Ld("VDG/SAM BITS: F=%x M=%x R=%x V=%x VdgAllRam=%x SamPage=%x",
+		VdgFx, VdgMx, VdgRx, VdgVx, VdgAllRam, VdgSamPage)
 }
 
 func DoDumpAllMemory() {

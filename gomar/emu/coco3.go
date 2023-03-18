@@ -272,7 +272,7 @@ func PeekB(addr Word) byte {
 	var z byte
 	mapped := MapAddr(addr, true)
 
-	if enableRom && MappedAddressInRomSpace(addr, mapped) {
+	if !VdgAllRam && enableRom && MappedAddressInRomSpace(addr, mapped) {
 		switch BitMC1 {
 		case false:
 			if mapped < (0x3E << 13) {
@@ -296,7 +296,11 @@ func PeekB(addr Word) byte {
 
 func PokeB(addr Word, x byte) {
 	mapped := MapAddr(addr, true)
-	mem[mapped] = x
+	if !VdgAllRam && enableRom && MappedAddressInRomSpace(addr, mapped) {
+		// cannot write ROM
+	} else {
+		mem[mapped] = x
+	}
 }
 
 // PutB is fundamental func to set byte.  Hack register access into here.
