@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-var been_there [0x10000]bool
+var beenThere [0x10000]byte
 
 /* max. bytes of instruction code per trace line */
 const kMaximumBytesPerOpcode = 4
@@ -47,9 +47,16 @@ func Trace() {
 	var buf bytes.Buffer
 	wh := where(pcreg_prev)
 	// oldnew would be improved with Memory Block.
-	oldnew := CondI(been_there[pcreg_prev], 'o', 'N')
+
+	newOp := PeekB(pcreg_prev)
+	oldnew := 'N'
+	if beenThere[pcreg_prev] == newOp {
+		oldnew = 'o'
+	} else {
+		beenThere[pcreg_prev] = newOp
+	}
+
 	Z(&buf, "%s%c %04x:", wh, oldnew, pcreg_prev)
-	been_there[pcreg_prev] = true
 
 	var ilen int
 	if dis_length != 0 {

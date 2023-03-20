@@ -17,6 +17,7 @@ type socket struct {
 	rxRing Word
 	uconn  *net.UDPConn
 	tconn  *net.TCPConn
+	queue  chan []byte
 }
 
 var socks [4]*socket
@@ -224,7 +225,119 @@ func wizSendTCP(sock *socket) {
 	putWizWord(base+TxRd, end)
 	// Set "interrupt" bit for SENDOK
 	wizMem[base+2] |= (1 << 4) // SENDOK Interrupt Bit.
-	wizLog("TCP socket %x size $%x", sock.k, size)
+	wizLog("TCP SENT: socket %x size $%x", sock.k, size)
+}
+
+func wizTryRecvTCP(sock *socket) {
+	base := sock.base
+
+	rx_w := wizWord(base + RxWr)
+	rx_r := wizWord(base + RxRd)
+	avail := (rx_r - rx_w) & 0x7ff
+	if avail == 0 {
+		avail = 0x7ff
+	}
+	wizLog("Trying Recv TCP -- w=%x r=%x avail=%x", rx_w, rx_r, avail)
+	if avail > RECEIVE_CHUNK_SIZE {
+		select {
+		case buf := <-sock.queue:
+			n := Word(len(buf))
+			wizLog("Recv TCP -- GOT %d bytes: %q", n, buf)
+			for i := Word(0); i < n; i++ {
+				wizMem[sock.rxRing+((rx_w+i)&0x7ff)] = buf[i]
+				wizLog("  ( [%x]: saved %02x at wiz addr %04x )", i, buf[i], sock.rxRing+((rx_w+i)&0x7ff))
+			}
+			rx_w += n
+			putWizWord(base+RxWr, rx_w)
+			putWizWord(base+0x26, rx_w-rx_r) // Received Size Register
+			wizLog("Recv TCP -- Received Size = %x", rx_w-rx_r)
+		default:
+			wizLog("Recv TCP -- empty queue.")
+			// fall out
+		}
+	} else {
+		wizLog("Recv TCP -- no room r=%x w=%x a=%x", rx_r, rx_w, avail)
+	}
+}
+
+const RECEIVE_CHUNK_SIZE = 95 // arbitrary
+
+func wizUpdateRecvTCP(sock *socket) {
+	base := sock.base
+	rx_w := wizWord(base + RxWr)
+	rx_r := wizWord(base + RxRd)
+	diff := rx_w - rx_r // how much received, not read yet.
+	AssertLE(diff, 0x800)
+	putWizWord(base+0x26 /*RX_RSR*/, diff) // fix received size register.
+}
+
+func wizReceiveTcpInBackground(sock *socket) {
+	log.Printf("BG Receiver: starting on sock %x", sock.k)
+	for {
+		buf := make([]byte, RECEIVE_CHUNK_SIZE)
+		cc, err := sock.tconn.Read(buf)
+
+		if err != nil {
+			log.Printf("BG Receiver: sock %x EXITING", sock.k)
+			return
+		}
+
+		log.Printf("BG Receiver: enqueue  %x bytes", cc)
+		sock.queue <- buf[:cc]
+	}
+}
+
+func wizRecvUDP(sock *socket) {
+	base := sock.base
+	rxRing := sock.rxRing
+
+	wizLog("UDP RECV socket %x", sock.k)
+	buf := make([]byte, 1500)
+	size, peer, err := sock.uconn.ReadFromUDP(buf)
+	wizLog("UDP RECV socket %x got size $%x peer %v err %v", sock.k, size, peer, err)
+	if err != nil {
+		panic(err)
+	}
+	AssertGT(Word(size), 1)    // reasonable for now
+	AssertLT(Word(size), 1500) // reasonable for now
+
+	const UDP_RX_HEADER_SIZE = 8
+
+	begin := wizWord(base + RxWr)
+	end := wizWord(base + RxRd)
+	gap := end - begin
+	gap &= 0x7ff // 2K ring buffers.
+	if gap < 1 {
+		gap = 0x7ff
+	}
+	wizLog("UDP RECV: begin=%x end=%x gap=%x ... rxRing=%x", begin, end, gap, rxRing)
+	AssertGT(gap, Word(size+UDP_RX_HEADER_SIZE))
+
+	addrPort := peer.AddrPort()
+	port := addrPort.Port()
+	addr := addrPort.Addr()
+	a4 := addr.As4()
+
+	wizMem[rxRing+(0x7ff&(begin+0))] = a4[0]
+	wizMem[rxRing+(0x7ff&(begin+1))] = a4[1]
+	wizMem[rxRing+(0x7ff&(begin+2))] = a4[2]
+	wizMem[rxRing+(0x7ff&(begin+3))] = a4[3]
+
+	wizMem[rxRing+(0x7ff&(begin+4))] = (byte)(port >> 8)
+	wizMem[rxRing+(0x7ff&(begin+5))] = (byte)(port >> 0)
+	wizMem[rxRing+(0x7ff&(begin+6))] = (byte)(size >> 8)
+	wizMem[rxRing+(0x7ff&(begin+7))] = (byte)(size >> 0)
+
+	// Copy bytes into the Rx Ring
+	for i := 0; i < size; i++ {
+		p := 0x7ff & (begin + UDP_RX_HEADER_SIZE + Word(i))
+		wizMem[rxRing+p] = buf[i]
+	}
+	// Update the pointer for writing into the Rx Ring
+	putWizWord(base+RxWr, 0x1ff&(begin+UDP_RX_HEADER_SIZE+Word(size)))
+
+	// Set "interrupt" bit for RECV
+	wizMem[base+2] |= (1 << 2) // RECV Interrupt Bit.
 }
 
 func wizPutCommand(a Word, b byte) {
@@ -266,9 +379,19 @@ func wizPutCommand(a Word, b byte) {
 				wizWord(base+0x10))
 			wizLog("TCP CONNECT socket %x local %q remote %q", sock.k, local, remote)
 			sock.tconn = OpenTCP(local, remote)
+
+			putWizWord(base+0x22 /*tx rd*/, sock.txRing)
+			putWizWord(base+0x24 /*tx wr*/, sock.txRing)
+
+			putWizWord(base+0x28 /*rx rd*/, sock.rxRing)
+			putWizWord(base+0x2A /*rx wr*/, sock.rxRing)
+
 			wizMem[3+base] = 0x15 // Status is SOCK_SYNSENT.
 			wizMem[3+base] = 0x17 // Status is SOCK_ESTABLISHED.
+
 			wizLog("TCP socket %x ESTABLISHED", sock.k)
+			sock.queue = make(chan []byte, 10)
+			go wizReceiveTcpInBackground(sock)
 		}
 
 	case 0x10:
@@ -295,57 +418,19 @@ func wizPutCommand(a Word, b byte) {
 			default:
 				log.Panicf("Command SEND on socket %x with wrong status $%x", sock.k, status)
 			}
-
 		}
 	case 0x40:
 		{ // recv
-			wizLog("UDP RECV socket %x", sock.k)
-			buf := make([]byte, 1500)
-			size, peer, err := sock.uconn.ReadFromUDP(buf)
-			wizLog("UDP RECV socket %x got size $%x peer %v err %v", sock.k, size, peer, err)
-			if err != nil {
-				panic(err)
+			status := wizMem[base+3]
+			switch status {
+			case 0x22 /* status SOCK_UDP */ :
+				wizRecvUDP(sock)
+			case 0x17 /* status SOCK_ESTABLISHED */ :
+				wizUpdateRecvTCP(sock)
+			default:
+				log.Panicf("Command RECV on socket %x with wrong status $%x", sock.k, status)
 			}
-			AssertGT(Word(size), 1)    // reasonable for now
-			AssertLT(Word(size), 1500) // reasonable for now
 
-			const UDP_RX_HEADER_SIZE = 8
-
-			begin := wizWord(base + RxWr)
-			end := wizWord(base + RxRd)
-			gap := end - begin
-			gap &= 0x7ff // 2K ring buffers.
-			if gap < 1 {
-				gap = 0x7ff
-			}
-			wizLog("UDP RECV: begin=%x end=%x gap=%x ... rxRing=%x", begin, end, gap, rxRing)
-			AssertGT(gap, Word(size+UDP_RX_HEADER_SIZE))
-
-			addrPort := peer.AddrPort()
-			port := addrPort.Port()
-			addr := addrPort.Addr()
-			a4 := addr.As4()
-
-			wizMem[rxRing+(0x7ff&(begin+0))] = a4[0]
-			wizMem[rxRing+(0x7ff&(begin+1))] = a4[1]
-			wizMem[rxRing+(0x7ff&(begin+2))] = a4[2]
-			wizMem[rxRing+(0x7ff&(begin+3))] = a4[3]
-
-			wizMem[rxRing+(0x7ff&(begin+4))] = (byte)(port >> 8)
-			wizMem[rxRing+(0x7ff&(begin+5))] = (byte)(port >> 0)
-			wizMem[rxRing+(0x7ff&(begin+6))] = (byte)(size >> 8)
-			wizMem[rxRing+(0x7ff&(begin+7))] = (byte)(size >> 0)
-
-			// Copy bytes into the Rx Ring
-			for i := 0; i < size; i++ {
-				p := 0x7ff & (begin + UDP_RX_HEADER_SIZE + Word(i))
-				wizMem[rxRing+p] = buf[i]
-			}
-			// Update the pointer for writing into the Rx Ring
-			putWizWord(base+RxWr, 0x1ff&(begin+UDP_RX_HEADER_SIZE+Word(size)))
-
-			// Set "interrupt" bit for RECV
-			wizMem[base+2] |= (1 << 2) // RECV Interrupt Bit.
 		}
 	}
 }
@@ -415,29 +500,34 @@ func wizGet(a Word) byte {
 		0x0701:
 		z = 0 // Simulate command is finished.
 
-	case 0x0420,
+	case 0x0420, // TX FSR: Free size Register
 		0x0520,
 		0x0620,
 		0x0720:
-		z = 0x04 // Simulate 1K Tx free size (MSB)
+		{
+			rp := wizWord(a + 2)
+			wp := wizWord(a + 4)
+			diff := (wp - rp)
+			if diff == 0 {
+				diff = 0x7fe
+			}
+			putWizWord(a, diff)
+		}
+		z = wizMem[a]
 
-	case 0x0421,
-		0x0521,
-		0x0621,
-		0x0721:
-		z = 0 // Simulate 1K Tx free size (LSB)
-
-	case 0x0426,
+	case 0x0426, // RX RSR: Received size Register
 		0x0526,
 		0x0626,
 		0x0726:
-		z = 0x04 // Simulate 1K Rx free size (MSB)
+		wizTryRecvTCP(sockOf(a))
+		z = wizMem[a]
 
-	case 0x0427,
-		0x0527,
-		0x0627,
-		0x0727:
-		z = 0 // Simulate 1K Rx free size (LSB)
+	case 0x042A, // RX WR internal write pointer
+		0x052A,
+		0x062A,
+		0x072A:
+		wizTryRecvTCP(sockOf(a))
+		z = wizMem[a]
 
 	default:
 		z = wizMem[a]
