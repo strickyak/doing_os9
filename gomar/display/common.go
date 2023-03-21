@@ -45,6 +45,17 @@ type Display struct {
 	NumCols int
 	Cocod   <-chan *CocoDisplayParams
 	Inkey   chan<- byte
+	Sam     *Sam
+	PeekB   func(addr int) byte
 	x, y    int
 	ctrl    bool
+}
+
+type Sam struct {
+	Fx      byte
+	Mx      byte // Memory size for SAM.
+	Rx      byte // Clock speed for SAM.
+	Vx      byte
+	AllRam  bool
+	SamPage byte
 }

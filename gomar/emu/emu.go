@@ -3087,6 +3087,10 @@ func Loadm(loadm []byte) Word {
 	panic("no end to loadm")
 }
 
+func PeekBWithInt(addr int) byte {
+	return PeekB(Word(addr))
+}
+
 func Main() {
 	CompileWatches()
 	SetVerbosityBits(*FlagInitialVerbosity)
@@ -3095,7 +3099,7 @@ func Main() {
 	go InputRoutine(keystrokes)
 
 	CocodChan := make(chan *display.CocoDisplayParams, 50)
-	Disp = display.NewDisplay(mem[:], 80, 25, CocodChan, keystrokes)
+	Disp = display.NewDisplay(mem[:], 80, 25, CocodChan, keystrokes, &sam, PeekBWithInt)
 
 	Ld("(begin roms)")
 	if *FlagBootImageFilename != "" {
@@ -3392,15 +3396,16 @@ func EqualBytes(a, b []byte) bool {
 }
 
 func ShowBasicText() {
-	if EqualBytes(PrevBasicText, mem[0x400:0x600]) {
-		return
-	}
+	//if EqualBytes(PrevBasicText, mem[0x400:0x600]) {
+	//return
+	//}
 
 	Ld("STEP: %d", Steps)
 	for y := 0x400; y < 0x600; y += 32 {
 		text := make([]byte, 32)
 		for x := 0; x < 32; x++ {
-			b := mem[x+y] & 63
+			// b := mem[x+y] & 63
+			b := PeekB(Word(x+y)) & 63
 			if b < 32 {
 				b += 64
 			}
@@ -3408,7 +3413,8 @@ func ShowBasicText() {
 		}
 		Ld("TEXT: %q", text)
 	}
+	//DumpHexLines("ShowBasicText", mem[0x400:0x600])
 
-	PrevBasicText = make([]byte, 0x200)
-	copy(PrevBasicText, mem[0x400:0x600])
+	//PrevBasicText = make([]byte, 0x200)
+	//copy(PrevBasicText, mem[0x400:0x600])
 }

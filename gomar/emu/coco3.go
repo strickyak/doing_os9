@@ -272,7 +272,7 @@ func PeekB(addr Word) byte {
 	var z byte
 	mapped := MapAddr(addr, true)
 
-	if !VdgAllRam && enableRom && MappedAddressInRomSpace(addr, mapped) {
+	if !sam.AllRam && enableRom && MappedAddressInRomSpace(addr, mapped) {
 		switch BitMC1 {
 		case false:
 			if mapped < (0x3E << 13) {
@@ -296,7 +296,7 @@ func PeekB(addr Word) byte {
 
 func PokeB(addr Word, x byte) {
 	mapped := MapAddr(addr, true)
-	if !VdgAllRam && enableRom && MappedAddressInRomSpace(addr, mapped) {
+	if !sam.AllRam && enableRom && MappedAddressInRomSpace(addr, mapped) {
 		// cannot write ROM
 	} else {
 		mem[mapped] = x

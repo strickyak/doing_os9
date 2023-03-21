@@ -16,14 +16,16 @@ import (
 	"github.com/tfriedel6/canvas/sdlcanvas"
 )
 
-func NewDisplay(mem []byte, numCols, numRows int, cocod <-chan *CocoDisplayParams, inkey chan<- byte) *Display {
+func NewDisplay(mem []byte, numCols, numRows int, cocod <-chan *CocoDisplayParams, inkey chan<- byte, sam *Sam, peekb func(addr int) byte) *Display {
 	d := &Display{
-		Mem:     mem,
+		Mem:     mem, // not used for Basic Text any more
 		Rows:    make([][]byte, numRows),
 		NumRows: numRows,
 		NumCols: numCols,
 		Cocod:   cocod,
 		Inkey:   inkey,
+		Sam:     sam,   // VDG Config.
+		PeekB:   peekb, // used for Basic Text -- should be used for all VDG modes.
 	}
 	for i := 0; i < numRows; i++ {
 		d.Rows[i] = make([]byte, numCols)
@@ -195,10 +197,11 @@ func (d *Display) Loop() {
 
 		case coco.BasicText:
 			{
+				startAddr := int(d.Sam.Fx) << 9
 				for y := 0; y < 16; y++ {
 					buf := make([]byte, 32)
 					for x := 0; x < 32; x++ {
-						b := d.Mem[0x400+y*32+x]
+						b := d.PeekB(startAddr + y*32 + x)
 						switch b & 32 {
 						case 0:
 							buf[x] = (b & 31) + 64

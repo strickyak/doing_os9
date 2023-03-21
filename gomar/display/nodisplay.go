@@ -2,7 +2,7 @@
 
 package display
 
-func NewDisplay(mem []byte, numCols, numRows int, cocod <-chan *CocoDisplayParams, inkey chan<- byte) *Display {
+func NewDisplay(mem []byte, numCols, numRows int, cocod <-chan *CocoDisplayParams, inkey chan<- byte, sam *Sam, peekb func(addr int) byte) *Display {
 	go func() {
 		for {
 			<-cocod
