@@ -3081,7 +3081,7 @@ func Loadm(loadm []byte) Word {
 		case 0xFF:
 			return HiLo(loadm[i+3], loadm[i+4])
 		default:
-			panic("bad clause  in loadm")
+			log.Panicf("bad clause in loadm: [%x]: %02x", i, loadm[i])
 		}
 	}
 	panic("no end to loadm")
@@ -3396,16 +3396,14 @@ func EqualBytes(a, b []byte) bool {
 }
 
 func ShowBasicText() {
-	//if EqualBytes(PrevBasicText, mem[0x400:0x600]) {
-	//return
-	//}
+	start := Word(sam.Fx) << 9
+	limit := start + 0x200
 
-	Ld("STEP: %d", Steps)
-	for y := 0x400; y < 0x600; y += 32 {
+	Ld("STEP: %d .... at $%04x", Steps, start)
+	for y := start; y < limit; y += 32 {
 		text := make([]byte, 32)
-		for x := 0; x < 32; x++ {
-			// b := mem[x+y] & 63
-			b := PeekB(Word(x+y)) & 63
+		for x := Word(0); x < 32; x++ {
+			b := PeekB(x+y) & 63
 			if b < 32 {
 				b += 64
 			}
@@ -3413,8 +3411,4 @@ func ShowBasicText() {
 		}
 		Ld("TEXT: %q", text)
 	}
-	//DumpHexLines("ShowBasicText", mem[0x400:0x600])
-
-	//PrevBasicText = make([]byte, 0x200)
-	//copy(PrevBasicText, mem[0x400:0x600])
 }

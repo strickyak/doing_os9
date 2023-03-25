@@ -249,8 +249,10 @@ func wizTryRecvTCP(sock *socket) {
 			}
 			rx_w += n
 			putWizWord(base+RxWr, rx_w)
-			putWizWord(base+0x26, rx_w-rx_r) // Received Size Register
-			wizLog("Recv TCP -- Received Size = %x", rx_w-rx_r)
+			recvSize := rx_w - rx_r
+			putWizWord(base+0x26, recvSize) // Received Size Register
+			wizLog("Recv TCP -- Received Size = %x", recvSize)
+			AssertLT(recvSize, 0x800)
 		default:
 			wizLog("Recv TCP -- empty queue.")
 			// fall out
