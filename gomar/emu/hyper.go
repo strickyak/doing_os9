@@ -110,7 +110,7 @@ func PrintH() {
 		if proc_ptr != 0x0000 {
 			proc_num = PeekB(proc_ptr)
 		}
-		fmt.Printf("[ #%d <%x>%s]", Steps, proc_num, bb.String())
+		fmt.Printf("[#%d <%x>%s] ", Steps, proc_num, bb.String())
 		fmt.Fprintf(os.Stderr, "\nPrintH: [ #%d <%x>%s] :PrintH\n", Steps, proc_num, bb.String())
 
 		// If enabled, CoreDump causes NMI to occur? and bad things happen?
