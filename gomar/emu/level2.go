@@ -3,6 +3,9 @@
 package emu
 
 import (
+	"bytes"
+	"log"
+
 	"github.com/strickyak/doing_os9/gomar/sym"
 )
 
@@ -167,9 +170,9 @@ func DoDumpProcDesc(a Word, queue string, followQ bool) {
 	// }
 }
 func MemoryModuleOf(addr Word) (name string, offset Word) {
-	if enableRom {
-		return "(rom)", addr
-	}
+	//if enableRom {
+	//return "(rom)", addr
+	//}
 	// TODO: speed up with caching.
 	if addr >= 0xFF00 {
 		log.Panicf("PC in IO page: $%x", addr)
@@ -205,6 +208,7 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 		m := GetMapping(datPtr)
 		magic := PeekWWithMapping(begin, m)
 		if magic != 0x87CD {
+			return "noMods", addr
 			panic(i)
 		}
 		//log.Printf("DDT: TRY i=%x begin=%x %q .....", i, begin, ModuleId(begin, m))
@@ -232,6 +236,7 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 			//log.Printf("DDT: try %x (%x) %x", regionP, addrPhys, regionP+int(regionSize))
 			if regionP <= addrPhys && addrPhys < regionP+int(regionSize) {
 				if links == 0 {
+					return "unlinkedMod", addr
 					log.Panicf("in unlinked module: i=%x addr=%x", i, addr)
 				}
 				id := ModuleId(begin, m)

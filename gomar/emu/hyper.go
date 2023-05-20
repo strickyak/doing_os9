@@ -44,78 +44,143 @@ func ShowRam32(addr Word) {
 	}
 }
 
-func PrintH() {
-	if HyperPrinting {
-		var_ptr := ureg + 4
-		p := PeekW(var_ptr)
-		var_ptr += 2
-		bb := bytes.NewBuffer(nil)
-		for {
-			ch := PeekB(p)
-			if ch < 9 {
-				break
-			}
-			if ch > 126 {
-				break
-			}
-			if ch == '%' {
-				p++
-				ch = PeekB(p)
-				switch ch {
-				case 'c':
-					{
-						x := byte(PeekW(var_ptr))
-						printable := byte('?')
-						if ' ' <= x && x <= '~' {
-							printable = x
-						}
-						bb.WriteString(string([]byte{printable}))
-					}
-				case 'x':
-					bb.WriteString(fmt.Sprintf("$%04x", PeekW(var_ptr)))
-				case 'd':
-					bb.WriteString(fmt.Sprintf("%d.", PeekW(var_ptr)))
-				case 's':
-					sptr := PeekW(var_ptr)
-					bb.WriteRune('"')
-					for {
-						ch2 := PeekB(sptr)
-						sptr++
-						if ch2 == 0 {
-							break
-						}
-						if ' ' <= ch2 && ch2 <= '~' {
-							bb.WriteRune(rune(ch2))
-						} else {
-							bb.WriteString(fmt.Sprintf("(%d.)", ch2))
-						}
-						if ch2 > 126 {
-							break
-						}
-					}
-					bb.WriteRune('"')
-				default:
-					bb.WriteRune('%')
-					bb.WriteRune(rune(ch))
-					var_ptr -= 2
-				}
-				var_ptr += 2
-			} else {
-				bb.WriteRune(rune(ch))
-			}
-			p++
-		}
-		proc_num := byte(0)
-		proc_ptr := PeekW(0x0050)
-		if proc_ptr != 0x0000 {
-			proc_num = PeekB(proc_ptr)
-		}
-		fmt.Printf("[#%d <%x>%s] ", Steps, proc_num, bb.String())
-		fmt.Fprintf(os.Stderr, "\nPrintH: [ #%d <%x>%s] :PrintH\n", Steps, proc_num, bb.String())
+func PrintH2() {
+	var_ptr := xreg // format pointer (char**) is in X register
+	PrintHyper(var_ptr)
+}
 
-		// If enabled, CoreDump causes NMI to occur? and bad things happen?
-		// See #2755703602 at bottom.
-		// CoreDump(fmt.Sprintf("/tmp/core#%d", Steps))
+func PrintH() {
+	var_ptr := ureg + 4 // format (char*) is first arg, above frame pointer & stack pointer.
+	PrintHyper(var_ptr)
+}
+
+var Want string
+var Got bytes.Buffer
+var Logged bytes.Buffer
+var Round int
+
+func SetWant() {
+	Round++
+	Want = string(MachinePointerToString(xreg))
+	log.Printf("START Round #%d. START WANT: %q", Round, Want)
+	if Want == "" {
+		log.Panic("START Round #%d. Don't set empty expectation", Round)
+	}
+}
+
+func CheckWanted() {
+	log.Printf("=== END Round #%d.  LOGGED  {{{{{%s}}}}}\n\n", Round, Logged.String())
+	log.Printf("=== END Round #%d.  GOT: %q", Round, Got.String())
+	log.Printf("=== END Round #%d. WANT: %q", Round, Want)
+	if Want != Got.String() {
+		log.Panicf("=== FAILED: Round #%d. GOT %q WANT %q", Round, Got.String(), Want)
+	}
+	log.Printf("\n=== OKAY: Round #%d. Got what was wanted.", Round)
+	fmt.Printf("\n=== OKAY: Round #%d. Got what was wanted.\n", Round)
+	Want = ""
+	Got.Reset()
+	Logged.Reset()
+}
+
+func Done() {
+	log.Printf("Done: Exiting 0.")
+	os.Exit(0)
+}
+
+func PrintHyper(var_ptr Word) {
+	format := MachinePointerToString(PeekW(var_ptr))
+	i := 0
+	var_ptr += 2
+	bb := bytes.NewBuffer(nil)
+	for i < len(format) {
+		ch := format[i]
+		if ch == '%' {
+			i++
+			kind := format[i]
+			switch kind {
+			case 'c':
+				bb.WriteString(fmt.Sprintf("%c", PeekW(var_ptr)))
+			case 'x':
+				bb.WriteString(fmt.Sprintf("$%04x", PeekW(var_ptr)))
+			case 'd':
+				bb.WriteString(fmt.Sprintf("%d.", PeekW(var_ptr)))
+			case 's':
+				bb.Write(MachinePointerToString(PeekW(var_ptr)))
+			default:
+				log.Panicf("Bad char after % in format string: '%c' in %q", kind, format)
+			}
+			var_ptr += 2
+		} else {
+			bb.WriteByte(ch)
+		}
+		i++
+	}
+	str := bb.String()
+	fmt.Printf("HYPER [#%d %q]\n", Steps, str)
+	log.Printf("HYPER: #%d %q", Steps, str)
+}
+
+func MachinePointerToString(p Word) []byte {
+	p0 := p
+	var bb bytes.Buffer
+	for {
+		ch := PeekB(p)
+		p++
+		if ch == 0 {
+			break
+		} else if '\n' == ch || ch == '\r' {
+			bb.WriteByte(ch)
+		} else if ' ' <= ch && ch <= '~' {
+			bb.WriteByte(ch)
+		} else {
+			log.Panicf("Bad char $%02x at $%04x after string %q starting at $%04x", ch, p-1, bb.String(), p0)
+		}
+	}
+	return bb.Bytes()
+}
+func output_Words(args ...Word) {
+	emit_Words(true, args...)
+}
+func log_Words(args ...Word) {
+	emit_Words(false, args...)
+}
+func emit_Words(forOutput bool, args ...Word) {
+	format := MachinePointerToString(args[0])
+	i := 0
+	args = args[1:]
+	bb := bytes.NewBuffer(nil)
+	for i < len(format) {
+		ch := format[i]
+		if ch == '%' {
+			i++
+			kind := format[i]
+			switch kind {
+			case 'c':
+				bb.WriteString(fmt.Sprintf("%c", args[0]))
+			case 'x':
+				bb.WriteString(fmt.Sprintf("$%04x", args[0]))
+			case 'd':
+				bb.WriteString(fmt.Sprintf("%d.", args[0]))
+			case 's':
+				bb.Write(MachinePointerToString(args[0]))
+			default:
+				log.Panicf("Bad char after % in format string: '%c' in %q", kind, format)
+			}
+			args = args[1:]
+		} else {
+			bb.WriteByte(ch)
+		}
+		i++
+	}
+	str := bb.String()
+	fmt.Printf("EMIT %v [ #%d  %q ]\n", forOutput, Steps, str)
+	log.Printf("EMIT %v [ #%d  %q ]", forOutput, Steps, str)
+
+	if forOutput {
+		Got.WriteString(str)
+		Logged.WriteString(fmt.Sprintf("##%q##", str))
+	} else {
+		Logged.WriteString(str)
 	}
 }
 
@@ -211,9 +276,49 @@ func HyperOp(hop byte) {
 			fmt.Printf("[~[%s]~]", bb.String())
 		}
 
+	case 111: // PrintH2
+		PrintH2()
+
+	case 112:
+		if Want != "" {
+			CheckWanted()
+		}
+		SetWant()
+
+	case 113:
+		if Want != "" {
+			CheckWanted()
+		}
+		Done()
+
+	case 120:
+		output_X()
+
+	case 121:
+		output_X_D()
+
+	case 130:
+		log_X()
+
+	case 131:
+		log_X_D()
+
 	default:
 		log.Printf("Unknown HyperOp $%x = $d.", hop, hop)
 	}
+}
+func log_X() {
+	log_Words(xreg)
+}
+func log_X_D() {
+	log_Words(xreg, dreg)
+}
+
+func output_X() {
+	output_Words(xreg)
+}
+func output_X_D() {
+	output_Words(xreg, dreg)
 }
 
 func HFrame() {

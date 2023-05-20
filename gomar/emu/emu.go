@@ -39,6 +39,8 @@ var FlagTriggerOp = flag.Uint64("trigger_op", 0x17, "")
 var FlagTraceOnOS9 = flag.String("trigger_os9", "", "")
 var RegexpTraceOnOS9 *regexp.Regexp
 
+const nando = false
+
 type Watch struct {
 	Where    string
 	Register string
@@ -1224,6 +1226,7 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 
 	case 0x29:
 		s = "F$SRtMem : System Memory Return"
+		p = F("size=%x start=%x", dreg, ureg)
 
 	case 0x2A:
 		s = "F$IRQ    : Enter IRQ Polling Table"
@@ -1347,9 +1350,13 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 	case 0x8A:
 		s = "I$Write  : Write Data"
 		path := GetAReg()
-		if IsTermPath(path) {
+		if nando || IsTermPath(path) {
 			p = PrintableMemory(xreg, yreg)
-			fmt.Printf("%s", p)
+			if nando {
+				fmt.Printf("[%q]", p)
+			} else {
+				fmt.Printf("%s", p)
+			}
 		}
 
 	case 0x8B:
@@ -1359,9 +1366,13 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 		s = "I$WritLn : Write Line of ASCII Data"
 		{
 			path := GetAReg()
-			if IsTermPath(path) {
+			if nando || IsTermPath(path) {
 				str := PrintableStringThruEOS(xreg, yreg)
-				fmt.Printf("%s", str)
+				if nando {
+					fmt.Printf("%q", str)
+				} else {
+					fmt.Printf("%s", str)
+				}
 
 				for _, ch := range []byte(str) {
 					if Disp != nil {
@@ -1498,8 +1509,20 @@ func inkey(keystrokes <-chan byte) byte {
 	select {
 	case _ch, _ok := <-keystrokes:
 		if _ok {
-			return _ch
+			if Level == 2 {
+				// In Level2, swap case.
+				if 'A' <= _ch && _ch <= 'Z' {
+					return _ch + 32
+				} else if 'a' <= _ch && _ch <= 'z' {
+					return _ch - 32
+				} else {
+					return _ch
+				}
+			} else {
+				return _ch
+			}
 		} else {
+			log.Printf("EXIT: inkey gets end of channel")
 			Finish()
 			os.Exit(0)
 			return 0
@@ -2371,6 +2394,12 @@ func rti() {
 			switch back1 {
 			case 0x82, 0x83, 0x84: // I$Dup, I$Create, I$Open
 				describe += F(" -> path $%x", GetAReg())
+			case 0x28: // F$SRqMem
+				describe += F(" -> size $%x addr $%04x", dreg, ureg)
+			case 0x30:
+				describe += F(" -> base $%x blocknum $%x addr $%x", xreg, GetAReg(), yreg)
+			case 0x00:
+				describe += F(" -> addr $%x entry $%x", ureg, yreg)
 			}
 			L("RETURN OKAY: OS9KERNEL%d %s #%d", MmuTask, describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)
@@ -3171,6 +3200,7 @@ func Main() {
 			log.Fatalf("Cannot read loadm image: %q: %v", *FlagLoadmFilename, err)
 		}
 		pcreg = Loadm(loadm)
+		sreg = 0x8000
 	}
 
 	if *FlagBootImageFilename != "" {
@@ -3224,7 +3254,7 @@ func Main() {
 		log.Fatalf("Before run, pcreg is still 0")
 	}
 
-	sreg = 0
+	sreg = 0x8000
 	dpreg = 0
 	iflag = 0
 
@@ -3312,6 +3342,11 @@ func Main() {
 			ParanoidAsserts()
 		}
 	} /* next step */
+	if *FlagMaxSteps > 0 {
+		if Steps >= max {
+			log.Fatalf("MAX STEPES REACHED: %d", Steps)
+		}
+	}
 }
 
 func ParanoidAsserts() {
