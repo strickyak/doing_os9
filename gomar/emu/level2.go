@@ -204,6 +204,9 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 		if datPtr == 0 {
 			continue
 		}
+		if links == 0 { // ddt Mon May 29 12:59:19 PM PDT 2023
+			// continue
+		}
 
 		m := GetMapping(datPtr)
 		magic := PeekWWithMapping(begin, m)
