@@ -2613,6 +2613,12 @@ func IFLAG() bool {
 }
 
 func bra() {
+	if iflag == 0 && B(pcreg) == 0xFE {
+		// ddt Mon May 29 01:20:26 PM PDT 2023
+		// DoDumpAllMemoryPhys()
+		DumpAllMemory()
+		log.Panic("Panic: SELFi-BRANCH at pc=$%04x", pcreg-1)
+	}
 	Dis_inst(CondS(IFLAG(), "l", ""), "bra", CondI(IFLAG(), 5, 3))
 	br(true)
 }
