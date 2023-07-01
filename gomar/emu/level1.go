@@ -3,7 +3,7 @@
 package emu
 
 import (
-	"log"
+	"bytes"
 
 	"github.com/strickyak/doing_os9/gomar/sym"
 )
@@ -11,6 +11,57 @@ import (
 const Level = 1
 
 const P_Path = sym.P_PATH // vs P_Path in level 2
+
+func VerboseValidateModuleSyscall() string { return "" }
+func DoDumpSysMap() {
+	// Called on rti().
+
+	ScanModDir()
+}
+
+func MemoryModuleOf(addr Word) (string, Word) {
+	start := W(0x26)
+	limit := W(0x28)
+
+	if start != 0x300 || limit != 0x400 {
+		return "NOTYET", addr
+	}
+
+	var buf bytes.Buffer
+	for i := start; i < limit; i += 4 {
+		mod := W(i)
+		if mod != 0 {
+			size := W(mod + 2)
+			if mod < addr && addr < mod+size {
+				cp := mod + W(mod+4)
+				for {
+					b := B(cp)
+					ch := 127 & b
+					if '!' <= ch && ch <= '~' {
+						buf.WriteByte(ch)
+					}
+					if (b & 128) != 0 {
+						h1, h2, h3 := B(mod+size-3), B(mod+size-2), B(mod+size-1)
+						return F("%s.%04x%02x%02x%02x", buf.String(), size, h1, h2, h3), addr - mod
+					}
+					cp++
+				}
+			}
+		}
+	}
+	return "UNFOUND", addr
+}
+
+func ScanModDir() {
+	// In Level1, it is $300 to $400. ( pointed by DP+$26 and DP+$28 end )
+	// That's 64 entries, so 4 bytes per entry.
+
+	L("MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM")
+	L("ScanModDir")
+	PrettyDumpHex64(0x300, 0x100)
+	MemoryModules()
+	L("MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM")
+}
 
 func DoDumpProcDesc(a Word, queue string, followQ bool) {
 	PrettyDumpHex64(a, 0x100)
@@ -83,14 +134,72 @@ func DoDumpProcDesc(a Word, queue string, followQ bool) {
 	// }
 }
 
-// TODO
-func HandleBtBug() {
+func MemoryModules() {
+	modulePointerOffset := Word(0)
+	start := PeekW(sym.D_ModDir)
+	limit := PeekW(sym.D_ModDir + 2)
+	i := start
+
+	DumpAllMemory()
+	DumpPageZero()
+	DumpProcesses()
+	DumpAllPathDescs()
+	L("\n#MemoryModules(")
+	var buf bytes.Buffer
+	for ; i < limit; i += 4 + modulePointerOffset {
+		mod := PeekW(i + modulePointerOffset)
+		if mod == 0 {
+			continue
+		}
+
+		end := mod + PeekW(mod+2)
+		name := mod + PeekW(mod+4)
+		Z(&buf, "%x:%x:<%s> ", mod, end, Os9String(name))
+	}
+	L("%s", buf.String())
+	L("#MemoryModules)")
 }
 
-// TODO
-func MemoryModuleOf(addr Word) (name string, offset Word) {
-	return "L1", addr
+func DoDumpAllMemoryPhys() {}
+func DoDumpPageZero()      {}
+func DoDumpProcesses()     {}
+func DoDumpAllPathDescs()  {}
+func DumpGimeStatus()      {}
+func HandleBtBug()         {}
+
+func MapAddr(logical Word, quiet bool) int {
+	return int(logical)
 }
-func DoDumpPageZero() {
-	log.Printf("Level1 not yet DoDumpPageZero")
+func PrettyDumpHex64(addr Word, size Word) {
+	// MMU stuff deleted for level1.
+	for p := Word(addr); p < addr+size; p += 64 {
+		k := Word(64)
+		for i := 0; i < 32; i++ {
+			w := PeekW(p + k - 2)
+			if w != 0 {
+				break
+			}
+			k -= 2
+		}
+		if k == 32 {
+			continue // don't print all zeros row.
+		}
+		var buf bytes.Buffer
+		Z(&buf, "%04x:", p)
+		for q := Word(0); q < k; q += 2 {
+			if q&7 == 0 {
+				Z(&buf, " ")
+			}
+			if q&15 == 0 {
+				Z(&buf, " ")
+			}
+			w := PeekW(p + q)
+			if w == 0 {
+				Z(&buf, "---- ")
+			} else {
+				Z(&buf, "%04x ", PeekW(p+q))
+			}
+		}
+		L("%s", buf.String())
+	}
 }

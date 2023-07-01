@@ -5,13 +5,9 @@ package emu
 
 import (
 	"github.com/strickyak/doing_os9/gomar/display"
-	"github.com/strickyak/doing_os9/gomar/sym"
 
-	"bytes"
 	"log"
 )
-
-const P_Path = sym.P_PATH
 
 var MmuTask byte // but not used in coco1.
 
@@ -81,75 +77,6 @@ func WithMmuTask(task byte, fn func()) {
 func PutGimeIOByte(a Word, b byte) {
 	// not used on coco1.
 	log.Panicf("UNKNOWN PutGimeIOByte address: 0x%04x <- 0x%02x", a, b)
-}
-
-func MemoryModuleOf(addr Word) (name string, offset Word) {
-	addr32 := uint32(addr)
-
-	for _, m := range InitialModules {
-		if addr32 >= m.Addr && addr32 < (m.Addr+m.Len) {
-			return m.Id(), Word(m.Addr) - Word(addr32)
-		}
-	}
-
-	modulePointerOffset := Word(0)
-	start := PeekW(sym.D_ModDir)
-	limit := PeekW(sym.D_ModDir + 2)
-	i := start
-
-	for ; i < limit; i += 4 + modulePointerOffset {
-		mod := PeekW(i + modulePointerOffset)
-		if mod == 0 {
-			continue
-		}
-
-		end := mod + PeekW(mod+2)
-		if mod <= addr && addr < end {
-			name := mod + PeekW(mod+4)
-			return Os9String(name), addr - mod
-		}
-	}
-	return "", 0 // No module found for the addr.
-}
-
-func MemoryModules() {
-	modulePointerOffset := Word(0)
-	start := PeekW(sym.D_ModDir)
-	limit := PeekW(sym.D_ModDir + 2)
-	i := start
-
-	DumpAllMemory()
-	DumpPageZero()
-	DumpProcesses()
-	DumpAllPathDescs()
-	L("\n#MemoryModules(")
-	var buf bytes.Buffer
-	for ; i < limit; i += 4 + modulePointerOffset {
-		mod := PeekW(i + modulePointerOffset)
-		if mod == 0 {
-			continue
-		}
-
-		end := mod + PeekW(mod+2)
-		name := mod + PeekW(mod+4)
-		Z(&buf, "%x:%x:<%s> ", mod, end, Os9String(name))
-	}
-	L("%s", buf.String())
-	L("#MemoryModules)")
-}
-
-func HandleBtBug() {
-	// None in level1
-}
-
-func DoDumpAllMemoryPhys() {}
-func DoDumpPageZero()      {}
-func DoDumpProcesses()     {}
-func DoDumpAllPathDescs()  {}
-func DumpGimeStatus()      {}
-
-func MapAddr(logical Word, quiet bool) int {
-	return int(logical)
 }
 
 func GetCocoDisplayParams() *display.CocoDisplayParams {

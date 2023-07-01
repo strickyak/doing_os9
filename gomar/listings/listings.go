@@ -61,6 +61,7 @@ func LoadFile(filename string) *ModSrc {
 		fd, err = os.Open(filename)
 		if err != nil {
 			log.Printf("BAD: Cannot open listing %q: %v", filename, err)
+
 			return &ModSrc{
 				Src:      nil,
 				Filename: filename,

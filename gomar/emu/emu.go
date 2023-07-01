@@ -268,15 +268,19 @@ var instructionTable []func()
 
 // For using page 0 for system variables.
 func SysMemW(a Word) Word {
-	if a >= 0x2000 {
-		log.Panicf("SysMemW: addr too big: %x", a)
-	}
+	/*
+		if a >= 0x2000 {
+			log.Panicf("SysMemW: addr too big: %x", a)
+		}
+	*/
 	return HiLo(mem[a], mem[a+1])
 }
 func SysMemB(a Word) byte {
-	if a >= 0x2000 {
-		log.Panicf("SysMemW: addr too big: %x", a)
-	}
+	/*
+		if a >= 0x2000 {
+			log.Panicf("SysMemW: addr too big: %x", a)
+		}
+	*/
 	return mem[a]
 }
 
@@ -1245,7 +1249,7 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 
 	case 0x2E:
 		s = "F$VModul : Validate Module"
-		p = F("addr=%04x=%q", xreg, ModuleName(xreg))
+		p = VerboseValidateModuleSyscall()
 
 	case 0x2F:
 		s = "F$Find64 : Find Process/Path Descriptor"
@@ -2352,6 +2356,8 @@ func rts() {
 }
 
 func rti() {
+	DoDumpSysMap()
+
 	stack := MapAddr(sreg, true /*quiet*/)
 	describe := Os9Description[stack]
 
@@ -2387,7 +2393,16 @@ func rti() {
 	if back3 == 0x10 && back2 == 0x3f && describe != "" {
 		if (ccreg & 1 /* carry bit indicates error */) != 0 {
 			errcode := GetBReg()
-			L("RETURN ERROR: $%x(%v): OS9KERNEL%d %s #%d", errcode, DecodeOs9Error(errcode), MmuTask, describe, Steps)
+
+			luser := 0
+			if Level == 1 && dpreg != 0 {
+				luser = 1
+			}
+			if Level == 2 && MmuTask != 0 {
+				luser = 1
+			}
+
+			L("RETURN ERROR: $%x(%v): OS9KERNEL%d %s #%d", errcode, DecodeOs9Error(errcode), luser, describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)
 			L("\t%s", ExplainMMU())
 		} else {
@@ -2401,7 +2416,16 @@ func rti() {
 			case 0x00:
 				describe += F(" -> addr $%x entry $%x", ureg, yreg)
 			}
-			L("RETURN OKAY: OS9KERNEL%d %s #%d", MmuTask, describe, Steps)
+
+			luser := 0
+			if Level == 1 && dpreg != 0 {
+				luser = 1
+			}
+			if Level == 2 && MmuTask != 0 {
+				luser = 1
+			}
+
+			L("RETURN OKAY: OS9KERNEL%d %s #%d", luser, describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)
 			L("\t%s", ExplainMMU())
 
@@ -2460,7 +2484,16 @@ func swi() {
 		pid := B0(proc + sym.P_ID)
 		pmodul := W0(proc + sym.P_PModul)
 		moduleName := Os9String(pmodul + W(pmodul+4))
-		L("{proc=%x%q} OS9KERNEL%d: %s", pid, moduleName, MmuTask, describe)
+
+		luser := 0
+		if Level == 1 && dpreg != 0 {
+			luser = 1
+		}
+		if Level == 2 && MmuTask != 0 {
+			luser = 1
+		}
+
+		L("{proc=%x%q} OS9KERNEL%d: %s", pid, moduleName, luser, describe)
 		L("\tregs: %s", Regs())
 		L("\t%s", ExplainMMU())
 

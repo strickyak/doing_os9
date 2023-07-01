@@ -133,44 +133,46 @@ func Finish() {
 }
 
 func where(addr Word) string {
-	if Level == 2 {
-		name, offset := MemoryModuleOf(addr)
-		if name != "" {
-			return F("%q+%04x ", name, offset)
-		} else {
-			return "\"\" "
-		}
+	//if Level == 2 {
+	name, offset := MemoryModuleOf(addr)
+	if name != "" {
+		return F("%q+%04x ", name, offset)
+	} else {
+		return "\"\" "
 	}
+	//}
 
-	// if Level == 1 ...
-	// TODO -- did this ever work for Level 1?
-	var buf bytes.Buffer
+	/*
+		// if Level == 1 ...
+		// TODO -- did this ever work for Level 1?
+		var buf bytes.Buffer
 
-	start := W(0x26)
-	limit := W(0x28)
+		start := W(0x26)
+		limit := W(0x28)
 
-	for i := start; i < limit; i += 4 {
-		mod := W(i)
-		if mod != 0 {
-			size := W(mod + 2)
-			if mod < addr && addr < mod+size {
-				cp := mod + W(mod+4)
-				for {
-					b := B(cp)
-					ch := 127 & b
-					if '!' <= ch && ch <= '~' {
-						buf.WriteByte(ch)
+		for i := start; i < limit; i += 4 {
+			mod := W(i)
+			if mod != 0 {
+				size := W(mod + 2)
+				if mod < addr && addr < mod+size {
+					cp := mod + W(mod+4)
+					for {
+						b := B(cp)
+						ch := 127 & b
+						if '!' <= ch && ch <= '~' {
+							buf.WriteByte(ch)
+						}
+						if (b & 128) != 0 {
+							Z(&buf, ",%04x ", addr-mod)
+							return buf.String()
+						}
+						cp++
 					}
-					if (b & 128) != 0 {
-						Z(&buf, ",%04x ", addr-mod)
-						return buf.String()
-					}
-					cp++
 				}
 			}
 		}
-	}
-	return "? "
+		return "? "
+	*/
 }
 
 func Dis_inst(inst string, reg string, cyclecount int) {

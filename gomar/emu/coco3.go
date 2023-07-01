@@ -379,49 +379,6 @@ func DoExplainMmuBlock(i int) {
 	L("[%x -> %02x] %06x", blk, blkPhys, MapAddr(Word(i), true))
 }
 
-func PrettyDumpHex64(addr Word, size Word) {
-	saved_mmut := MmuTask
-	MmuTask = 0
-	saved_map00 := MmuMap[0][0]
-	MmuMap[0][0] = 0
-	defer func() {
-		MmuTask = saved_mmut
-		MmuMap[0][0] = saved_map00
-	}()
-	////////////
-
-	for p := Word(addr); p < addr+size; p += 64 {
-		k := Word(64)
-		for i := 0; i < 32; i++ {
-			w := PeekW(p + k - 2)
-			if w != 0 {
-				break
-			}
-			k -= 2
-		}
-		if k == 32 {
-			continue // don't print all zeros row.
-		}
-		var buf bytes.Buffer
-		Z(&buf, "%04x:", p)
-		for q := Word(0); q < k; q += 2 {
-			if q&7 == 0 {
-				Z(&buf, " ")
-			}
-			if q&15 == 0 {
-				Z(&buf, " ")
-			}
-			w := PeekW(p + q)
-			if w == 0 {
-				Z(&buf, "---- ")
-			} else {
-				Z(&buf, "%04x ", PeekW(p+q))
-			}
-		}
-		L("%s", buf.String())
-	}
-}
-
 func DoDumpBlockZero() {
 	PrettyDumpHex64(0, 0xFF00)
 }

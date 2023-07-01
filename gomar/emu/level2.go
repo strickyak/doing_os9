@@ -18,6 +18,50 @@ const Level = 2
 
 const P_Path = sym.P_Path // vs P_PATH in level 1
 
+func VerboseValidateModuleSyscall() string {
+	mapping := GetMapping(dreg)
+	hdr := PeekWWithMapping(xreg, mapping)
+	mod := "-"
+	if hdr == 0x87CD {
+		nameOffset := PeekWWithMapping(xreg+4, mapping)
+		mod = Os9StringWithMapping(xreg+nameOffset, mapping)
+	}
+	p := F("addr=%04x=%q map=%x", xreg, mod, mapping)
+
+	{
+		temp := V['p']
+		V['p'] = true
+		DoDumpAllMemoryPhys()
+		V['p'] = temp
+	}
+	return p
+}
+func DoDumpSysMap() {
+	L("SMAP")
+	begin := SysMemW(sym.D_SysMem)
+	end := begin + 256
+	for i := begin; i < end; i += 16 {
+		var bb bytes.Buffer
+	J:
+		for j := Word(0); j < 32; j++ {
+			if j == 15 {
+				bb.WriteByte(' ')
+			}
+			bit := byte(0x80)
+			for k := byte(0); k < 8; k++ {
+				x := SysMemB(i + j)
+				if (x & bit) != 0 {
+					bb.WriteByte('8' - k)
+					continue J
+				}
+				bit >>= 1
+			}
+			bb.WriteByte('.')
+		}
+		L("SMAP: %02x: %s", i-begin, bb.String())
+	}
+}
+
 func DoDumpPageZero() {
 	saved_mmut := MmuTask
 	MmuTask = 0
@@ -170,6 +214,8 @@ func DoDumpProcDesc(a Word, queue string, followQ bool) {
 	// }
 }
 func MemoryModuleOf(addr Word) (name string, offset Word) {
+	// TODO -- cache current regions.
+
 	//if enableRom {
 	//return "(rom)", addr
 	//}
@@ -178,10 +224,10 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 		log.Panicf("PC in IO page: $%x", addr)
 	}
 	if addr >= 0xFE00 {
-		return "(FE)", 0 // No module found for the addr.
+		return "(tramp)", addr
 	}
 	if addr < 0x0100 {
-		return "(00)", 0 // No module found for the addr.
+		return "(zero)", addr
 	}
 
 	addrPhys := MapAddr(addr, true)
@@ -194,32 +240,35 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 		}
 	}
 
-	dirStart := SysMemW(sym.D_ModDir)
-	dirLimit := SysMemW(sym.D_ModEnd)
-	for i := dirStart; i < dirLimit; i += 8 {
+	modDirStart := SysMemW(sym.D_ModDir)
+	modDirLimit := SysMemW(sym.D_ModEnd)
+	if modDirStart == 0 || modDirLimit == 0 {
+		return "==", addr
+	}
+	for i := modDirStart; i < modDirLimit; i += 8 {
 		datPtr := SysMemW(i + 0)
-		// usedBytes := SysMemW(i + 2)
-		begin := SysMemW(i + 4)
-		links := SysMemW(i + 6)
 		if datPtr == 0 {
 			continue
 		}
+		links := SysMemW(i + 6)
 		if links == 0 { // ddt Mon May 29 12:59:19 PM PDT 2023
 			// continue
 		}
+		begin := SysMemW(i + 4)
+		//unused// usedBytes := SysMemW(i + 2)
 
 		m := GetMapping(datPtr)
 		magic := PeekWWithMapping(begin, m)
 		if magic != 0x87CD {
-			return "noMods", addr
-			panic(i)
+			return "====", addr
 		}
-		//log.Printf("DDT: TRY i=%x begin=%x %q .....", i, begin, ModuleId(begin, m))
+		// log.Printf("DDT: TRY i=%x begin=%x %q .....", i, begin, ModuleId(begin, m))
 
 		// Module offset 2 is module size.
 		remaining := int(PeekWWithMapping(begin+2, m))
 		// Module offset 4 is offset to name string.
-		// namePtr := begin + PeekWWithMapping(begin+4, m)
+		//unused// namePtr := begin + PeekWWithMapping(begin+4, m)
+		// log.Printf("DDT: len=%x remaining=%x trying=%q", usedBytes, remaining, Os9StringWithMapping(namePtr, m))
 
 		//-------------
 		// beginP := MapAddrWithMapping(begin, m)
@@ -236,25 +285,25 @@ func MemoryModuleOf(addr Word) (name string, offset Word) {
 				regionSize = endOfRegionBlockP - regionP
 			}
 
-			//log.Printf("DDT: try %x (%x) %x", regionP, addrPhys, regionP+int(regionSize))
+			// log.Printf("DDT: try regionP=%x (phys=%x) regionEnds=%x remain=%x", regionP, addrPhys, regionP+int(regionSize), remaining)
 			if regionP <= addrPhys && addrPhys < regionP+int(regionSize) {
 				if links == 0 {
-					return "unlinkedMod", addr
-					log.Panicf("in unlinked module: i=%x addr=%x", i, addr)
+					// return "unlinkedMod", addr
+					// log.Panicf("in unlinked module: i=%x addr=%x", i, addr)
 				}
 				id := ModuleId(begin, m)
 				delta := offset + Word(int(addrPhys)-regionP)
-				//log.Printf("DDT: FOUND %q+%x", id, delta)
+				// log.Printf("DDT: [links=%x] FOUND %q+%x", links, id, delta)
 				return id, delta
 			}
 			remaining -= regionSize
 			regionP += regionSize
 			region += Word(regionSize)
 			offset += Word(regionSize)
-			//log.Printf("DDT: advanced remaining=%x regionSize=%x", remaining, regionSize)
+			// log.Printf("DDT: advanced remaining=%x regionSize=%x", remaining, regionSize)
 		}
 	}
-	//log.Printf("DDT: NOT FOUND")
+	// log.Printf("DDT: NOT FOUND")
 	return "", 0 // No module found for the addr.
 }
 func MemoryModules() {
@@ -275,16 +324,16 @@ func MemoryModules() {
 		var buf bytes.Buffer
 		Z(&buf, "MOD name begin:end(len/blocklen) [addr:dat,blocklen,begin,links] dat\n")
 
-		dirStart := SysMemW(sym.D_ModDir)
-		dirLimit := SysMemW(sym.D_ModEnd)
-		for i := dirStart; i < dirLimit; i += 8 {
+		modDirStart := SysMemW(sym.D_ModDir)
+		modDirLimit := SysMemW(sym.D_ModEnd)
+		for i := modDirStart; i < modDirLimit; i += 8 {
 			datPtr := SysMemW(i + 0)
-			usedBytes := SysMemW(i + 2)
-			begin := SysMemW(i + 4)
-			links := SysMemW(i + 6)
 			if datPtr == 0 {
 				continue
 			}
+			usedBytes := SysMemW(i + 2)
+			begin := SysMemW(i + 4)
+			links := SysMemW(i + 6)
 
 			m := GetMapping(datPtr)
 			end := begin + PeekWWithMapping(begin+2, m)
@@ -301,5 +350,47 @@ func HandleBtBug() {
 		if len(DebugString) < 20 {
 			DebugString += string(rune(GetAReg() & 0x7F))
 		}
+	}
+}
+func PrettyDumpHex64(addr Word, size Word) {
+	saved_mmut := MmuTask
+	MmuTask = 0
+	saved_map00 := MmuMap[0][0]
+	MmuMap[0][0] = 0
+	defer func() {
+		MmuTask = saved_mmut
+		MmuMap[0][0] = saved_map00
+	}()
+	////////////
+
+	for p := Word(addr); p < addr+size; p += 64 {
+		k := Word(64)
+		for i := 0; i < 32; i++ {
+			w := PeekW(p + k - 2)
+			if w != 0 {
+				break
+			}
+			k -= 2
+		}
+		if k == 32 {
+			continue // don't print all zeros row.
+		}
+		var buf bytes.Buffer
+		Z(&buf, "%04x:", p)
+		for q := Word(0); q < k; q += 2 {
+			if q&7 == 0 {
+				Z(&buf, " ")
+			}
+			if q&15 == 0 {
+				Z(&buf, " ")
+			}
+			w := PeekW(p + q)
+			if w == 0 {
+				Z(&buf, "---- ")
+			} else {
+				Z(&buf, "%04x ", PeekW(p+q))
+			}
+		}
+		L("%s", buf.String())
 	}
 }
