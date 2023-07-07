@@ -152,9 +152,10 @@ func MemoryModules() {
 			continue
 		}
 
+		linkCount := PeekB(2 + i + modulePointerOffset)
 		end := mod + PeekW(mod+2)
 		name := mod + PeekW(mod+4)
-		Z(&buf, "%x:%x:<%s> ", mod, end, Os9String(name))
+		Z(&buf, "%x:%x:<%s>%x ", mod, end, Os9String(name), linkCount)
 	}
 	L("%s", buf.String())
 	L("#MemoryModules)")
@@ -197,7 +198,15 @@ func PrettyDumpHex64(addr Word, size Word) {
 			if w == 0 {
 				Z(&buf, "---- ")
 			} else {
-				Z(&buf, "%04x ", PeekW(p+q))
+				Z(&buf, "%04x ", w)
+			}
+		}
+		for q := Word(0); q < k; q += 1 {
+			x := PeekB(p + q)
+			if ' ' <= x && x <= '~' {
+				Z(&buf, "%c", x)
+			} else {
+				Z(&buf, ".")
 			}
 		}
 		L("%s", buf.String())

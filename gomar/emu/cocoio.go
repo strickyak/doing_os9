@@ -249,7 +249,7 @@ func wizTryRecvTCP(sock *socket) {
 			}
 			rx_w += n
 			putWizWord(base+RxWr, rx_w)
-			recvSize := rx_w - rx_r
+			recvSize := 0x7ff & (rx_w - rx_r)
 			putWizWord(base+0x26, recvSize) // Received Size Register
 			wizLog("Recv TCP -- Received Size = %x", recvSize)
 			AssertLT(recvSize, 0x800)
@@ -268,8 +268,8 @@ func wizUpdateRecvTCP(sock *socket) {
 	base := sock.base
 	rx_w := wizWord(base + RxWr)
 	rx_r := wizWord(base + RxRd)
-	diff := rx_w - rx_r // how much received, not read yet.
-	AssertLE(diff, 0x800)
+	diff := 0x7ff & (rx_w - rx_r) // how much received, not read yet.
+	AssertLE(diff, 0x800, rx_w, rx_r, base)
 	putWizWord(base+0x26 /*RX_RSR*/, diff) // fix received size register.
 }
 

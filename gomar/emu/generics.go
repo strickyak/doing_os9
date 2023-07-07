@@ -3,6 +3,7 @@ package emu
 import (
 	"fmt"
 	"log"
+	"runtime/debug"
 	"strings"
 )
 
@@ -38,36 +39,42 @@ func GiveInfo(extra ...any) string {
 
 func AssertEQ[N NUMBER](a, b N, extra ...any) {
 	if !(a == b) {
-		log.Fatalf("FAILED Assertion (%s) == (%s) %s", Str(a), Str(b), GiveInfo)
+		debug.PrintStack()
+		log.Fatalf("FAILED Assertion (%s) == (%s) %s", Str(a), Str(b), GiveInfo(extra))
 	}
 }
 
 func AssertNE[N NUMBER](a, b N, extra ...any) {
 	if !(a != b) {
-		log.Fatalf("FAILED Assertion (%s) != (%s) %s", Str(a), Str(b), GiveInfo)
+		debug.PrintStack()
+		log.Fatalf("FAILED Assertion (%s) != (%s) %s", Str(a), Str(b), GiveInfo(extra))
 	}
 }
 
 func AssertLE[N NUMBER](a, b N, extra ...any) {
 	if !(a <= b) {
-		log.Fatalf("FAILED Assertion (%s) <= (%s) %s", Str(a), Str(b), GiveInfo)
+		debug.PrintStack()
+		log.Fatalf("FAILED Assertion (%s) <= (%s) %s", Str(a), Str(b), GiveInfo(extra))
 	}
 }
 
 func AssertLT[N NUMBER](a, b N, extra ...any) {
 	if !(a < b) {
-		log.Fatalf("FAILED Assertion (%s) < (%s) %s", Str(a), Str(b), GiveInfo)
+		debug.PrintStack()
+		log.Fatalf("FAILED Assertion (%s) < (%s) %s", Str(a), Str(b), GiveInfo(extra))
 	}
 }
 
 func AssertGE[N NUMBER](a, b N, extra ...any) {
 	if !(a >= b) {
-		log.Fatalf("FAILED Assertion (%s) >= (%s) %s", Str(a), Str(b), GiveInfo)
+		debug.PrintStack()
+		log.Fatalf("FAILED Assertion (%s) >= (%s) %s", Str(a), Str(b), GiveInfo(extra))
 	}
 }
 
 func AssertGT[N NUMBER](a, b N, extra ...any) {
 	if !(a > b) {
-		log.Fatalf("FAILED Assertion (%s) > (%s) %s", Str(a), Str(b), GiveInfo)
+		debug.PrintStack()
+		log.Fatalf("FAILED Assertion (%s) > (%s) %s", Str(a), Str(b), GiveInfo(extra))
 	}
 }

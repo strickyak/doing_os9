@@ -104,7 +104,7 @@ func PrintHyper(var_ptr Word) {
 				bb.WriteString(fmt.Sprintf("$%04x", PeekW(var_ptr)))
 			case 'd':
 				bb.WriteString(fmt.Sprintf("%d.", PeekW(var_ptr)))
-			case 's':
+			case 's', 'q':
 				bb.Write(MachinePointerToString(PeekW(var_ptr)))
 			default:
 				log.Panicf("Bad char after % in format string: '%c' in %q", kind, format)
@@ -116,8 +116,8 @@ func PrintHyper(var_ptr Word) {
 		i++
 	}
 	str := bb.String()
-	fmt.Printf("HYPER [#%d %q]\n", Steps, str)
-	log.Printf("HYPER: #%d %q", Steps, str)
+	fmt.Printf("HYPER: [#%d %q]\n", Steps, str)
+	log.Printf("HYPER: [#%d %q]", Steps, str)
 }
 
 func MachinePointerToString(p Word) []byte {

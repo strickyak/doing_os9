@@ -2356,7 +2356,9 @@ func rts() {
 }
 
 func rti() {
-	DoDumpSysMap()
+	if Steps >= *FlagTraceAfter {
+		DoDumpSysMap()
+	}
 
 	stack := MapAddr(sreg, true /*quiet*/)
 	describe := Os9Description[stack]
@@ -2401,6 +2403,8 @@ func rti() {
 			if Level == 2 && MmuTask != 0 {
 				luser = 1
 			}
+
+			PrettyDumpHex64(0, 0xFFFF)
 
 			L("RETURN ERROR: $%x(%v): OS9KERNEL%d %s #%d", errcode, DecodeOs9Error(errcode), luser, describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)

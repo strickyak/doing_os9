@@ -1,0 +1,22 @@
+t
+-x
+del zz
+del z2
+del z3
+load list
+load dump
+load f.wget
+*load cputype
+*cputype
+
+f.wget -v 6 127.0.0.1:8080 readme.txt zz
+list zz
+dump zz
+
+f.wget -v 6 127.0.0.1:8080 /index.html z2
+list z2
+dump z2
+
+f.wget -v 6 127.0.0.1:8080 / z3
+list z3
+dump z3

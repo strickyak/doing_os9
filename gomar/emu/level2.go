@@ -140,7 +140,7 @@ func DoDumpPageZero() {
 }
 
 func DoDumpProcDesc(a Word, queue string, followQ bool) {
-	PrettyDumpHex64(a, 0x100)
+	// PrettyDumpHex64(a, 0x100)
 	if B(a+sym.P_PID) == 0 {
 		L("but PID=0")
 		return
@@ -352,32 +352,36 @@ func HandleBtBug() {
 		}
 	}
 }
-func PrettyDumpHex64(addr Word, size Word) {
-	saved_mmut := MmuTask
-	MmuTask = 0
-	saved_map00 := MmuMap[0][0]
-	MmuMap[0][0] = 0
-	defer func() {
-		MmuTask = saved_mmut
-		MmuMap[0][0] = saved_map00
-	}()
+func PrettyDumpHex64(addr Word, size uint) {
+	if false {
+		saved_mmut := MmuTask
+		MmuTask = 0
+		saved_map00 := MmuMap[0][0]
+		MmuMap[0][0] = 0
+		defer func() {
+			MmuTask = saved_mmut
+			MmuMap[0][0] = saved_map00
+		}()
+	}
 	////////////
 
-	for p := Word(addr); p < addr+size; p += 64 {
-		k := Word(64)
-		for i := 0; i < 32; i++ {
-			w := PeekW(p + k - 2)
-			if w != 0 {
+	L(";")
+	const PERLINE = 64
+	var p Word
+	for k := uint(0); k < size; k += PERLINE {
+		p = addr + Word(k)
+		var i Word
+		for i = 0; i < PERLINE; i += 2 {
+			if PeekW(p+i) != 0 {
 				break
 			}
-			k -= 2
 		}
-		if k == 32 {
+		if i == PERLINE {
 			continue // don't print all zeros row.
 		}
 		var buf bytes.Buffer
 		Z(&buf, "%04x:", p)
-		for q := Word(0); q < k; q += 2 {
+		for q := Word(0); q < PERLINE; q += 2 {
 			if q&7 == 0 {
 				Z(&buf, " ")
 			}
@@ -388,9 +392,21 @@ func PrettyDumpHex64(addr Word, size Word) {
 			if w == 0 {
 				Z(&buf, "---- ")
 			} else {
-				Z(&buf, "%04x ", PeekW(p+q))
+				Z(&buf, "%04x ", w)
+			}
+		}
+		for q := Word(0); q < PERLINE; q += 1 {
+			x := PeekB(p + q)
+			if ' ' <= x && x <= '~' {
+				Z(&buf, "%c", x)
+			} else {
+				Z(&buf, ".")
+			}
+			if (q & 7) == 7 {
+				Z(&buf, "|")
 			}
 		}
 		L("%s", buf.String())
 	}
+	L(";")
 }
