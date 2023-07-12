@@ -2353,6 +2353,10 @@ func rts() {
 	Dis_inst("rts", "", 5)
 	Dis_len(1)
 	PullWord(&pcreg)
+
+	if *FlagBasicText {
+		ShowBasicText()
+	}
 }
 
 func rti() {
@@ -2404,7 +2408,9 @@ func rti() {
 				luser = 1
 			}
 
-			PrettyDumpHex64(0, 0xFFFF)
+			/*
+				PrettyDumpHex64(0, 0xFFFF)
+			*/
 
 			L("RETURN ERROR: $%x(%v): OS9KERNEL%d %s #%d", errcode, DecodeOs9Error(errcode), luser, describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)
@@ -2846,6 +2852,10 @@ func puls() {
 	}
 	if (b & 0x80) != 0 {
 		PullWord(&pcreg)
+	}
+
+	if *FlagBasicText {
+		ShowBasicText()
 	}
 }
 
@@ -3355,7 +3365,7 @@ func Main() {
 		if *FlagBasicText {
 			if (Steps & 255) == 0 {
 				CocodChan <- GetCocoDisplayParams()
-				ShowBasicText()
+				// ShowBasicText() // do it on RTS and PULS, instead.
 			}
 		}
 
