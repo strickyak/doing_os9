@@ -1600,16 +1600,11 @@ func ainc() EA {
 	z := *regPtr
 	(*regPtr)++
 	return EA(z)
-	// return (*ixregs[idx])++;
 }
 
 func ainc2() EA {
-	// Word temp;
 	Dis_ops(",", dixreg[idx], 3)
 	Dis_ops("++", "", 0)
-	//temp=(*ixregs[idx]);
-	//(*ixregs[idx])+=2;
-	//return(temp);
 	regPtr := ixregs[idx]
 	z := *regPtr
 	(*regPtr) += 2
@@ -1618,18 +1613,13 @@ func ainc2() EA {
 
 func adec() EA {
 	Dis_ops(",-", dixreg[idx], 2)
-	// return --(*ixregs[idx]);
 	regPtr := ixregs[idx]
 	(*regPtr)--
 	return EA(*regPtr)
 }
 
 func adec2() EA {
-	// Word temp;
 	Dis_ops(",--", dixreg[idx], 3)
-	//(*ixregs[idx])-=2;
-	//temp=(*ixregs[idx]);
-	//return(temp);
 	regPtr := ixregs[idx]
 	(*regPtr) -= 2
 	return EA(*regPtr)
@@ -1748,7 +1738,6 @@ func postbyte() EA {
 			// Use int16 for negative signed number.
 			// Sign-extend by or'ing with 0xF0.
 			off = F("%d,", int16(0xF0|temp))
-			// off = F("%d,", int16(-(temp^0xffff)-1))
 		} else {
 			off = F("%d,", temp)
 		}
@@ -3330,7 +3319,6 @@ func Main() {
 	early := true
 
 	for Steps = uint64(0); Steps < max; Steps++ {
-		// log.Printf("t=%09x steps=%09x pc=%x", *FlagTraceAfter, Steps, pcreg)
 		if early {
 			early = EarlyAction()
 		}

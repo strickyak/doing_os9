@@ -258,6 +258,10 @@ func B(addr Word) byte {
 	if TraceMem {
 		L("\t\t\t\tGetB (%06x) %04x -> %02x : %c %c", mapped, addr, z, H(z), T(z))
 	}
+	if addr >= 0xfff0 { // XXX
+		L("\t\t\t\tGetB (%06x) %04x -> %02x", mapped, addr, z)
+		L("\t\tAllRam=%v enableRom=%v inRomSpace=%v", sam.AllRam, enableRom, MappedAddressInRomSpace(addr, mapped))
+	}
 	return z
 }
 
@@ -305,7 +309,7 @@ func PutB(addr Word, x byte) {
 	if TraceMem {
 		Ld("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
 	}
-	if addr == 0x5d45 { // XXX
+	if addr >= 0xfff0 { // XXX
 		L("\t\t\t\tPutB (%06x) %04x <- %02x (was %02x)", mapped, addr, x, old)
 	}
 	if AddressInDeviceSpace(addr) {
