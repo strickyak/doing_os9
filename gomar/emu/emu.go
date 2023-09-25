@@ -1388,7 +1388,7 @@ func DecodeOs9Opcode(b byte) (string, bool) {
 
 	case 0x8D:
 		s = "I$GetStt : Get Path Status"
-		p = F("path=%x %s", GetAReg(), DecodeOs9GetStat(GetBReg()))
+		p = F("path=%x %x==%s", GetAReg(), GetBReg(), DecodeOs9GetStat(GetBReg()))
 
 	case 0x8E:
 		s = "I$SetStt : Set Path Status"
@@ -2404,6 +2404,7 @@ func rti() {
 			L("RETURN ERROR: $%x(%v): OS9KERNEL%d %s #%d", errcode, DecodeOs9Error(errcode), luser, describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)
 			L("\t%s", ExplainMMU())
+			DoDumpAllMemory() // yak
 		} else {
 			switch back1 {
 			case 0x82, 0x83, 0x84: // I$Dup, I$Create, I$Open
@@ -2427,6 +2428,7 @@ func rti() {
 			L("RETURN OKAY: OS9KERNEL%d %s #%d", luser, describe, Steps)
 			L("\tregs: %s  #%d", Regs(), Steps)
 			L("\t%s", ExplainMMU())
+			DoDumpAllMemory() // yak
 
 			if back1 == 0x8B {
 				var buf bytes.Buffer
@@ -2658,6 +2660,15 @@ func bra() {
 func brn() {
 	Dis_inst(CondS(IFLAG(), "l", ""), "brn", CondI(IFLAG(), 5, 3))
 	br(false)
+
+	// The magic sequence "NOP ; BRN #offset" (i.e. $12 $21 offset)
+	// is the new way to call the hyperviser.
+	prevInst := B(pcreg - 3) // What came before the BRN?
+	hyperOp := B(pcreg - 1)  // What is the immediate argument to BRN?
+	if prevInst == 0x12 /*NOP*/ {
+		L("NewHyperOp %d.", hyperOp)
+		HyperOp(hyperOp)
+	}
 }
 
 func bhi() {
