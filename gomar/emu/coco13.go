@@ -586,6 +586,15 @@ func DoDumpAllMemory() {
 	DoDumpSamBits()
 	DumpGimeStatus()
 	Ld("ExplainMMU: %s", ExplainMMU())
+
+	JustDoDumpAllMemory()
+}
+
+func JustDoDumpAllMemory() {
+	if !BUILD_TAG_d {
+		return
+	}
+
 	var i, j int
 	var buf bytes.Buffer
 	Ld("\n#DumpAllMemory(\n")
