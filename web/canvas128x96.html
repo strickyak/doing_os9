@@ -1,0 +1,136 @@
+<html> <meta charset="utf-8" />
+
+<!-- Experimenting with Canvas, events, etc.
+  -- because I'm a Javascript Novice.
+  -->
+
+    <title>Canvas Expriment</title>
+    <style>
+      canvas {
+        border: 1px solid black;
+      }
+    </style>
+
+<body bgcolor=#000>
+
+<!-- <font color=magenta> foo </font> <p> -->
+
+<canvas id=theCanvas width=1600 height=1200 bgcolor=#999  tabindex=1>
+   canvas is not working
+</canvas>
+
+<!-- <p> bar <p> -->
+
+<script>
+
+    const theCanvas = document.getElementById("theCanvas");
+    const ctx = theCanvas.getContext("2d");
+theCanvas.focus();
+
+hellox = 126;
+helloy = 126;
+clickX = -1;
+clickY = -1;
+favColor = 0;
+
+pix = []
+for (i=0; i<128; i++) {
+  row = [];
+  for (j=0; j<96; j++) {
+    row.push( (i+j)%4 );
+  }
+  pix.push(row);
+}
+
+function draw() {
+
+    ctx.clearRect(0, 0, 1600, 1200);
+
+  FillStyles = [
+    "rgb(40 40 250)",
+    "rgb(40 250 40)",
+    "rgb(250 40 40)",
+    "rgb(200 200 200)",
+  ];
+
+  ctx.fillStyle = "rgb(40 250 40)";
+  for (y = 0; y < 96; y++) {
+    for (x = 0; x < 128; x++) {
+          ctx.fillStyle = FillStyles[ pix[x][y] ];
+          /*
+          if (clickX == x && clickY == y ) {
+            ctx.fillRect(5 + 12*x, 5 + 12*y, 12, 12);
+          } else {
+            ctx.fillRect(7 + 12*x, 7 + 12*y, 8, 8);
+          }
+          */
+          ctx.fillRect(6 + 12*x, 6 + 12*y, 10, 10);
+          if (clickX == x && clickY == y ) {
+            ctx.fillStyle = "rgb(0 0 0)";
+            ctx.fillRect(8 + 12*x, 8 + 12*y, 6, 6); // black box within
+          }
+    }
+  }
+
+  ctx.fillStyle = "rgb(50 50 250)";
+    ctx.beginPath();
+    ctx.moveTo(75, 50);
+    ctx.lineTo(100, 75);
+    ctx.lineTo(100, 25);
+    ctx.fill();
+
+  ctx.font = "48px serif";
+  // ctx.fillText("*", hellox, helloy);
+
+}
+
+
+
+        function getMousePosition(canvas, event) {
+            let bbox = canvas.getBoundingClientRect();
+            let x = event.clientX - bbox.left;
+            let y = event.clientY - bbox.top;
+            console.log("Coordinate x: " + x,
+                "Coordinate y: " + y);
+            hellox = x;
+            helloy = y;
+        }
+
+        function changePixelColor(canvas, event) {
+            let bbox = canvas.getBoundingClientRect();
+            let x = event.clientX - bbox.left;
+            let y = event.clientY - bbox.top;
+            let i = Math.trunc( (x-6) / 12);
+            let j = Math.trunc( (y-6) / 12);
+            console.log("i: " + i, "j: " + j);
+            pix[i][j] = favColor;
+            if (event.shiftKey) pix[i][j]= 3 - favColor;
+            clickX = i
+            clickY = j
+        }
+
+        // let canvasElem = document.querySelector("canvas");
+
+        theCanvas.addEventListener("mousedown", function (e) {
+            changePixelColor(theCanvas, e);
+            draw();
+        });
+
+        theCanvas.addEventListener("mousemove", function (e) {
+            getMousePosition(theCanvas, e);
+            draw();
+        });
+
+        theCanvas.addEventListener("keydown", function (e) {
+            switch (e.code) {
+            case "Digit1": favColor = 1; break;
+            case "Digit2": favColor = 2; break;
+            case "Digit3": favColor = 3; break;
+            case "Digit4": favColor = 0; break;
+            case "Digit0": favColor = 0; break;
+            }
+        });
+
+
+window.addEventListener("load", draw);
+</script>
