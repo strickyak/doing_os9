@@ -1,5 +1,5 @@
-#ifndef FORTH_H
-#define FORTH_H
+#ifndef _6809_FORTH_H_
+#define _6809_FORTH_H_
 
 // Size of terminal input buffer in characters
 #define TIBSIZE 132
@@ -21,12 +21,25 @@ typedef void (*code_field_t)(void);
 
 #define EOF (-1)
 #define NULL ((void*)0)
+#define true 1
+#define false 0
 
-typedef struct _file_ {} *FILE;
-extern FILE stdin;
-extern FILE stdout;
-extern FILE stderr;
+typedef struct _file_ {
+    int fd;
+} FILE;
+extern FILE stdin[1];
+extern FILE stdout[1];
+extern FILE stderr[1];
 
+extern void abort();
+extern void exit(int a);
+extern int feof(FILE* f);
+extern void fflush(FILE* f);
+extern int fgetc(FILE* f);
+extern int fputc(int ch, FILE* f);
+extern int isspace(int ch);
+extern int printf(const char* fmt, ... );
+extern int strlen(const char* s);
 
 ////////////////////////////
 
@@ -40,4 +53,5 @@ extern FILE stderr;
 #include "number.h"
 #include "stack.h"
 #include "walk.h"
-#endif
+
+#endif // _6809_FORTH_H_
