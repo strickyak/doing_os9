@@ -1,0 +1,11 @@
+void abort() {}
+void exit() {}
+void feof() {}
+void fflush() {}
+void fgetc() {}
+void fputc() {}
+void isspace() {}
+void printf() {}
+void stdin() {}
+void stdout() {}
+void strlen() {}
